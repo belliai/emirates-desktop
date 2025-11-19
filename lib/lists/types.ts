@@ -148,4 +148,5 @@ export interface ListsResults {
   vunList: VUNListRow[]
   qrtList: QRTListRow[]
   header: LoadPlanHeader
+  shipments?: Shipment[]
 }

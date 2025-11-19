@@ -17,6 +17,7 @@ import {
   downloadFile,
 } from "@/lib/lists/export"
 import { extractTextFromFile } from "@/lib/lists/file-extractors"
+import { saveListsDataToSupabase } from "@/lib/lists/supabase-save"
 import { UploadModal } from "./lists/upload-modal"
 import { ResultsDisplay } from "./lists/results-display"
 import { EmptyState } from "./lists/empty-state"
@@ -120,7 +121,25 @@ export default function ListsScreen() {
       console.log('[v0] QRT items:', qrtList.length)
       setProgress(90)
 
-      setResults({ specialCargo, vunList, qrtList, header })
+      const results = { specialCargo, vunList, qrtList, header, shipments }
+      setResults(results)
+      setProgress(95)
+
+      // Save data to Supabase
+      const saveResult = await saveListsDataToSupabase({
+        results,
+        shipments,
+        fileName: file.name,
+        fileSize: file.size,
+      })
+
+      if (saveResult.success) {
+        console.log('[v0] Data saved to Supabase successfully, load_plan_id:', saveResult.loadPlanId)
+      } else {
+        console.error('[v0] Failed to save data to Supabase:', saveResult.error)
+        // Don't show error to user, just log it - the processing was successful
+      }
+
       setProgress(100)
       setShowUploadModal(false)
     } catch (err) {
