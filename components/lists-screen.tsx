@@ -4,7 +4,7 @@ import type React from "react"
 import { useState, useRef } from "react"
 import { Upload } from 'lucide-react'
 import { Button } from "@/components/ui/button"
-import type { ListsResults } from "@/lib/lists/types"
+import type { ListsResults, Shipment, LoadPlanHeader } from "@/lib/lists/types"
 import { parseHeader, parseShipments, formatDateForReport } from "@/lib/lists/parser"
 import { generateSpecialCargoReport, generateVUNList, generateQRTList } from "@/lib/lists/report-generators"
 import {
@@ -24,13 +24,16 @@ import { EmptyState } from "./lists/empty-state"
 import { getDefaultListsResults } from "@/lib/lists/default-data"
 
 export default function ListsScreen() {
+  const defaultResults = getDefaultListsResults()
   const [showUploadModal, setShowUploadModal] = useState(false)
   const [isProcessing, setIsProcessing] = useState(false)
   const [isDragging, setIsDragging] = useState(false)
   const [uploadedFile, setUploadedFile] = useState<File | null>(null)
   const [progress, setProgress] = useState(0)
   const [error, setError] = useState<string | null>(null)
-  const [results, setResults] = useState<ListsResults | null>(getDefaultListsResults())
+  const [results, setResults] = useState<ListsResults | null>(defaultResults)
+  const [allShipments, setAllShipments] = useState<Shipment[]>(defaultResults?.shipments || [])
+  const [combinedHeader, setCombinedHeader] = useState<LoadPlanHeader | null>(defaultResults?.header || null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   const handleExportSpecialCargo = (format: "csv" | "xlsx") => {
@@ -79,118 +82,108 @@ export default function ListsScreen() {
     }
   }
 
-  const handleFileUpload = async (file: File) => {
+  const handleFileUpload = async (file: File | File[]) => {
     setError(null)
     setIsProcessing(true)
-    setProgress(10)
-    setUploadedFile(file)
+    setProgress(0)
+    
+    const fileArray = Array.isArray(file) ? file : [file]
+    setUploadedFile(fileArray[0])
 
     try {
       const validExtensions = [".md", ".txt", ".rtf", ".docx", ".doc", ".pdf"]
-      const hasValidExtension = validExtensions.some((ext) => file.name.toLowerCase().endsWith(ext))
-
-      if (!hasValidExtension) {
-        throw new Error("Invalid file type. Please upload a MD, DOCX, DOC, or PDF file.")
+      
+      // Validate all files
+      for (const f of fileArray) {
+        const hasValidExtension = validExtensions.some((ext) => f.name.toLowerCase().endsWith(ext))
+        if (!hasValidExtension) {
+          throw new Error(`Invalid file type: ${f.name}. Please upload MD, DOCX, DOC, or PDF files.`)
+        }
+        if (f.size > 10 * 1024 * 1024) {
+          throw new Error(`File size exceeds 10MB: ${f.name}`)
+        }
       }
-      
-      if (file.size > 10 * 1024 * 1024) {
-        throw new Error("File size exceeds 10MB")
+
+      let newShipments: Shipment[] = []
+      let newHeader: LoadPlanHeader | null = null
+
+      // Process each file and accumulate shipments
+      for (let i = 0; i < fileArray.length; i++) {
+        const f = fileArray[i]
+        const fileProgress = Math.floor((i / fileArray.length) * 80) + 10
+        setProgress(fileProgress)
+
+        const content = await extractTextFromFile(f)
+        console.log('[v0] Extracted content length:', content.length)
+
+        const header = parseHeader(content)
+        if (!newHeader) {
+          newHeader = header // Use first file's header
+        }
+
+        const shipments = parseShipments(content, header)
+        console.log('[v0] Parsed shipments from', f.name, ':', shipments.length)
+        newShipments = [...newShipments, ...shipments]
       }
-      setProgress(20)
 
-      const content = await extractTextFromFile(file)
-      console.log('[v0] Extracted content length:', content.length)
-      setProgress(40)
+      // Combine with existing shipments
+      const combinedShipments = [...allShipments, ...newShipments]
+      setAllShipments(combinedShipments)
+      
+      // Use combined header (first one or existing)
+      const finalHeader = combinedHeader || newHeader || (defaultResults?.header ?? { 
+        flightNumber: '', 
+        date: '', 
+        aircraftType: '', 
+        aircraftReg: '', 
+        sector: '', 
+        std: '', 
+        preparedBy: '', 
+        preparedOn: '' 
+      })
+      setCombinedHeader(finalHeader)
 
-      const header = parseHeader(content)
-      console.log('[v0] Parsed header:', header)
-      setProgress(50)
+      setProgress(85)
 
-      const shipments = parseShipments(content, header)
-      console.log('[v0] Parsed shipments:', shipments.length)
-      setProgress(60)
+      // Regenerate all reports from combined shipments
+      const specialCargo = generateSpecialCargoReport(finalHeader, combinedShipments)
+      const vunList = generateVUNList(finalHeader, combinedShipments)
+      const qrtList = generateQRTList(finalHeader, combinedShipments)
 
-      const specialCargo = generateSpecialCargoReport(header, shipments)
-      console.log('[v0] Special cargo items:', specialCargo.regular.length + specialCargo.weapons.length)
-      setProgress(70)
+      console.log('[v0] Combined - Special cargo items:', specialCargo.regular.length + specialCargo.weapons.length)
+      console.log('[v0] Combined - VUN items:', vunList.length)
+      console.log('[v0] Combined - QRT items:', qrtList.length)
 
-      const vunList = generateVUNList(header, shipments)
-      console.log('[v0] VUN items:', vunList.length)
-      
-      // Log VUN shipments for verification
-      if (vunList.length > 0) {
-        console.log('[v0] VUN List details:', vunList.map(item => ({
-          serialNo: item.serialNo,
-          awbNo: item.docNo,
-          shc: item.shc,
-          origin: item.origin,
-          destination: item.destination,
-        })))
-      }
-      
-      // Also check shipments with SHC containing VUN
-      const shipmentsWithVUN = shipments.filter(s => s.shc && s.shc.includes('VUN'))
-      if (shipmentsWithVUN.length > 0) {
-        console.log('[v0] Shipments with SHC=VUN found:', shipmentsWithVUN.length)
-        console.log('[v0] VUN Shipments:', shipmentsWithVUN.map(s => ({
-          serialNo: s.serialNo,
-          awbNo: s.awbNo,
-          shc: s.shc,
-          origin: s.origin,
-          destination: s.destination,
-        })))
-      }
-      
-      setProgress(80)
-
-      const qrtList = generateQRTList(header, shipments)
-      console.log('[v0] QRT items:', qrtList.length)
-      
-      // Log QRT shipments for verification
-      if (qrtList.length > 0) {
-        console.log('[v0] QRT List details:', qrtList.map(item => ({
-          serialNo: item.serialNo,
-          awbNo: item.docNo,
-          thc: item.thc,
-          shc: item.shc,
-          origin: item.origin,
-          destination: item.destination,
-        })))
-      }
-      
-      // Also check shipments with THC containing QRT
-      const shipmentsWithQRT = shipments.filter(s => s.thc && s.thc.includes('QRT'))
-      if (shipmentsWithQRT.length > 0) {
-        console.log('[v0] Shipments with THC=QRT found:', shipmentsWithQRT.length)
-        console.log('[v0] QRT Shipments:', shipmentsWithQRT.map(s => ({
-          serialNo: s.serialNo,
-          awbNo: s.awbNo,
-          thc: s.thc,
-          shc: s.shc,
-          origin: s.origin,
-          destination: s.destination,
-        })))
-      }
-      
       setProgress(90)
 
-      const results = { specialCargo, vunList, qrtList, header, shipments }
+      const results: ListsResults = { 
+        specialCargo, 
+        vunList, 
+        qrtList, 
+        header: finalHeader, 
+        shipments: combinedShipments 
+      }
       setResults(results)
       setProgress(95)
 
-      // Save data to Supabase
-      const saveResult = await saveListsDataToSupabase({
-        results,
-        shipments,
-        fileName: file.name,
-        fileSize: file.size,
-      })
+      // Save data to Supabase (save each file)
+      for (const f of fileArray) {
+        try {
+          const saveResult = await saveListsDataToSupabase({
+            results,
+            shipments: combinedShipments,
+            fileName: f.name,
+            fileSize: f.size,
+          })
 
-      if (saveResult.success) {
-        console.log('[v0] Data saved to Supabase successfully, load_plan_id:', saveResult.loadPlanId)
-      } else {
-        console.error('[v0] Failed to save data to Supabase:', saveResult.error)
-        // Don't show error to user, just log it - the processing was successful
+          if (saveResult.success) {
+            console.log('[v0] Data saved to Supabase successfully for', f.name, ', load_plan_id:', saveResult.loadPlanId)
+          } else {
+            console.error('[v0] Failed to save data to Supabase for', f.name, ':', saveResult.error)
+          }
+        } catch (saveErr) {
+          console.error('[v0] Error saving to Supabase for', f.name, ':', saveErr)
+        }
       }
 
       setProgress(100)
@@ -217,17 +210,19 @@ export default function ListsScreen() {
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault()
     setIsDragging(false)
-    const file = e.dataTransfer.files[0]
-    if (file) handleFileUpload(file)
+    const files = Array.from(e.dataTransfer.files)
+    if (files.length > 0) handleFileUpload(files)
   }
 
   const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (file) handleFileUpload(file)
+    const files = e.target.files ? Array.from(e.target.files) : []
+    if (files.length > 0) handleFileUpload(files)
   }
 
   const handleReset = () => {
-    setResults(null)
+    setResults(defaultResults)
+    setAllShipments(defaultResults?.shipments || [])
+    setCombinedHeader(defaultResults?.header || null)
     setUploadedFile(null)
   }
 

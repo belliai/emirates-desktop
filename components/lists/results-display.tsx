@@ -86,12 +86,6 @@ export function ResultsDisplay({
               )}
             </div>
           </div>
-          
-          <div className="bg-gray-50 p-4 rounded-lg lg:min-w-[200px]">
-            <p className="text-sm text-gray-600 mb-1">Flight</p>
-            <p className="text-xl font-semibold text-gray-900">{results.header.flightNumber}</p>
-            <p className="text-xs text-gray-500 mt-1">{formatDateForReport(results.header.date)}</p>
-          </div>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">

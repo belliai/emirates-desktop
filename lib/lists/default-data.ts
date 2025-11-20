@@ -150,6 +150,7 @@ TOTALS : 201     9,355.20     62.69     67.23`
     specialCargo,
     vunList,
     qrtList,
+    shipments: allShipments,
   }
 }
 

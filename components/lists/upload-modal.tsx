@@ -83,7 +83,7 @@ export function UploadModal({
                   <Upload className="w-12 h-12 text-gray-400" />
                   <div>
                     <p className="text-gray-700 font-medium mb-1">Click to upload or drag and drop</p>
-                    <p className="text-sm text-gray-500">.md, .docx, .doc, .pdf - Maximum file size 10 MB</p>
+                    <p className="text-sm text-gray-500">.md, .docx, .doc, .pdf - Maximum file size 10 MB (multiple files supported)</p>
                   </div>
                   <input
                     ref={fileInputRef}
@@ -92,6 +92,7 @@ export function UploadModal({
                     onChange={onFileInputChange}
                     className="hidden"
                     id="lists-file-upload"
+                    multiple
                   />
                   <label
                     htmlFor="lists-file-upload"
