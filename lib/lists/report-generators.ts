@@ -1,5 +1,5 @@
 import type { LoadPlanHeader, Shipment, SpecialCargoReportRow, VUNListRow, QRTListRow } from "./types"
-import { isSpecialCargo, isWeaponsCargo, isVUNCargo, isQRTCargo } from "./classification"
+import { isSpecialCargo, isWeaponsCargo, isVUNCargo, isQRTCargo, isGeneralSpecialCargo } from "./classification"
 import { formatDateForReport } from "./parser"
 
 export function generateSpecialCargoReport(header: LoadPlanHeader, shipments: Shipment[]) {
@@ -7,7 +7,8 @@ export function generateSpecialCargoReport(header: LoadPlanHeader, shipments: Sh
   const weaponsCargo: SpecialCargoReportRow[] = []
 
   shipments.forEach((shipment) => {
-    if (!isSpecialCargo(shipment)) return
+    // General list: include all shipments with SHC = SWP, RXS, MUW, HUM, LHO, AVI, CAR, VEH, HEG, RDS, VIP, ASH, ICE, CPS, EKD, HUU, HUL, DOC
+    if (!isGeneralSpecialCargo(shipment)) return
 
     let inCarrier = ""
     let inFlightNo = ""

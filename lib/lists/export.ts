@@ -1,6 +1,63 @@
 import type { SpecialCargoReportRow, VUNListRow, QRTListRow } from "./types"
 import { formatDateForReport } from "./parser"
 
+/**
+ * Determines the current shift based on the current time
+ * DAY shift: 13:00-23:59
+ * NIGHT shift: 00:00-12:59
+ */
+function getCurrentShift(): "DAY" | "NIGHT" {
+  const now = new Date()
+  const hours = now.getHours()
+  const minutes = now.getMinutes()
+  const totalMinutes = hours * 60 + minutes
+
+  // DAY shift: 13:00 (780 minutes) to 23:59 (1439 minutes)
+  // NIGHT shift: 00:00 (0 minutes) to 12:59 (779 minutes)
+  if (totalMinutes >= 780) {
+    return "DAY"
+  } else {
+    return "NIGHT"
+  }
+}
+
+/**
+ * Generates the header for Special Cargo Report based on current shift and today's date
+ * DAY shift: "SPECIAL CARGO REPORT DATED [DATE] (1300 - 2359Hrs)"
+ * NIGHT shift: "SPECIAL CARGO REPORT DATED [DATE] (0800 - 1259Hrs)"
+ * 
+ * The date used is today's date, not the reportDate parameter
+ */
+export function generateSpecialCargoReportHeader(reportDate: string): string {
+  const shift = getCurrentShift()
+  const now = new Date()
+  
+  // Get today's date in format "DD MONTH YYYY"
+  const day = now.getDate().toString().padStart(2, "0")
+  const monthNames = [
+    "JANUARY", "FEBRUARY", "MARCH", "APRIL", "MAY", "JUNE",
+    "JULY", "AUGUST", "SEPTEMBER", "OCTOBER", "NOVEMBER", "DECEMBER"
+  ]
+  const month = monthNames[now.getMonth()]
+  const year = now.getFullYear()
+  
+  const formattedDate = `${day} ${month} ${year}`
+  
+  if (shift === "DAY") {
+    return `SPECIAL CARGO REPORT DATED ${formattedDate} (1300 - 2359Hrs)`
+  } else {
+    return `SPECIAL CARGO REPORT DATED ${formattedDate} (0800 - 1259Hrs)`
+  }
+}
+
+/**
+ * Generates the header for Special Cargo Report with weapons prefix
+ */
+export function generateWeaponsCargoReportHeader(reportDate: string): string {
+  const baseHeader = generateSpecialCargoReportHeader(reportDate)
+  return `/RXS/SWP/MUW/VIP/VEH/${baseHeader}`
+}
+
 export function exportSpecialCargoReportToCSV(
   regular: SpecialCargoReportRow[],
   weapons: SpecialCargoReportRow[],
@@ -38,7 +95,8 @@ export function exportSpecialCargoReportToCSV(
     "In.Flt. No.",
   ]
 
-  let csv = `SPECIAL CARGO REPORT DATED ON ${reportDate} (1300 - 2359Hrs)${",".repeat(headers.length - 1)}\n`
+  const header = generateSpecialCargoReportHeader(reportDate)
+  let csv = `${header}${",".repeat(headers.length - 1)}\n`
   csv += headers.join(",") + "\n"
 
   regular.forEach((row) => {
@@ -77,7 +135,8 @@ export function exportSpecialCargoReportToCSV(
   })
 
   if (weapons.length > 0) {
-    csv += `\n/RXS/SWP/MUW/VIP/VEH/SPECIAL CARGO REPORT DATED ON ${reportDate} (1300 - 2359Hrs)${",".repeat(headers.length - 1)}\n`
+    const weaponsHeader = generateWeaponsCargoReportHeader(reportDate)
+    csv += `\n${weaponsHeader}${",".repeat(headers.length - 1)}\n`
     csv += headers.join(",") + "\n"
 
     weapons.forEach((row) => {
@@ -261,7 +320,8 @@ export function exportSpecialCargoReportToXLSX(
     "In.Flt. No.",
   ]
 
-  let tsv = `SPECIAL CARGO REPORT DATED ON ${reportDate} (1300 - 2359Hrs)${"\t".repeat(headers.length - 1)}\n`
+  const header = generateSpecialCargoReportHeader(reportDate)
+  let tsv = `${header}${"\t".repeat(headers.length - 1)}\n`
   tsv += headers.join("\t") + "\n"
 
   regular.forEach((row) => {
@@ -300,7 +360,8 @@ export function exportSpecialCargoReportToXLSX(
   })
 
   if (weapons.length > 0) {
-    tsv += `\n/RXS/SWP/MUW/VIP/VEH/SPECIAL CARGO REPORT DATED ON ${reportDate} (1300 - 2359Hrs)${"\t".repeat(headers.length - 1)}\n`
+    const weaponsHeader = generateWeaponsCargoReportHeader(reportDate)
+    tsv += `\n${weaponsHeader}${"\t".repeat(headers.length - 1)}\n`
     tsv += headers.join("\t") + "\n"
 
     weapons.forEach((row) => {
