@@ -169,7 +169,10 @@ export function ResultsDisplay({
                     <tbody>
                       {results.specialCargo.regular.length > 0 ? (
                         results.specialCargo.regular.map((row, idx) => (
-                          <tr key={idx} className="border-b border-gray-100">
+                          <tr 
+                            key={idx} 
+                            className={`border-b border-gray-100 ${row.hasHUM ? 'bg-yellow-50 hover:bg-yellow-100' : ''}`}
+                          >
                             <td className="px-3 py-2 text-gray-900">{row.docNo}</td>
                             <td className="px-3 py-2 text-gray-600">
                               {row.inBrdPt}-{row.outOffPt}
@@ -213,7 +216,10 @@ export function ResultsDisplay({
                     <tbody>
                       {results.specialCargo.weapons.length > 0 ? (
                         results.specialCargo.weapons.map((row, idx) => (
-                          <tr key={idx} className="border-b border-gray-100">
+                          <tr 
+                            key={idx} 
+                            className={`border-b border-gray-100 ${row.hasHUM ? 'bg-yellow-50 hover:bg-yellow-100' : ''}`}
+                          >
                             <td className="px-3 py-2 text-gray-900">{row.carrier} {row.outFlightNo}</td>
                             <td className="px-3 py-2 text-gray-900">{row.docNo}</td>
                             <td className="px-3 py-2 text-gray-600">{row.inBrdPt}</td>
