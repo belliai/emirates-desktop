@@ -21,6 +21,7 @@ import { saveListsDataToSupabase } from "@/lib/lists/supabase-save"
 import { UploadModal } from "./lists/upload-modal"
 import { ResultsDisplay } from "./lists/results-display"
 import { EmptyState } from "./lists/empty-state"
+import { getDefaultListsResults } from "@/lib/lists/default-data"
 
 export default function ListsScreen() {
   const [showUploadModal, setShowUploadModal] = useState(false)
@@ -29,7 +30,7 @@ export default function ListsScreen() {
   const [uploadedFile, setUploadedFile] = useState<File | null>(null)
   const [progress, setProgress] = useState(0)
   const [error, setError] = useState<string | null>(null)
-  const [results, setResults] = useState<ListsResults | null>(null)
+  const [results, setResults] = useState<ListsResults | null>(getDefaultListsResults())
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   const handleExportSpecialCargo = (format: "csv" | "xlsx") => {

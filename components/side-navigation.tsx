@@ -3,7 +3,7 @@
 import type React from "react"
 
 import { useState } from "react"
-import { Home, List, Package, BarChart3, FileText, Bell, Users, ChevronDown, ChevronRight, Settings, Warehouse, ChevronsLeft, ChevronsRight, TrendingUp, AlertTriangle, Calendar, FileBarChart, ClipboardList } from 'lucide-react'
+import { Home, List, BarChart3, FileText, Bell, Users, ChevronDown, ChevronRight, Settings, ChevronsLeft, ChevronsRight, TrendingUp, AlertTriangle, Calendar, ClipboardList, Clipboard } from 'lucide-react'
 import Image from "next/image"
 
 interface SideNavigationProps {
@@ -28,7 +28,7 @@ interface NavSection {
 export default function SideNavigation({ currentScreen, onNavigate }: SideNavigationProps) {
   const [isCollapsed, setIsCollapsed] = useState(false)
   const [expandedSections, setExpandedSections] = useState<Set<string>>(
-    new Set(["data-tables", "operations", "dashboards", "reports", "alerts", "staff"]),
+    new Set(["data-tables", "staff"]), // "forecast" is collapsed by default
   )
 
   const navSections: NavSection[] = [
@@ -39,42 +39,22 @@ export default function SideNavigation({ currentScreen, onNavigate }: SideNaviga
       defaultOpen: true,
       items: [
         { id: "desktop", label: "Dashboard", icon: Home },
+        { id: "load-plans", label: "Load Plans", icon: Clipboard },
         { id: "lists", label: "Lists", icon: List },
-        { id: "non-preannounced", label: "Non-Preannounced", icon: Package },
+        { id: "custom-reports", label: "Custom Reports", icon: FileText },
       ],
     },
     {
-      id: "operations",
-      label: "Operations",
-      icon: Warehouse,
-      defaultOpen: true,
-      items: [
-        { id: "dwc-steering", label: "DWC Steering", icon: BarChart3 },
-        { id: "uld-status", label: "ULD Status Tracking", icon: Package },
-      ],
-    },
-    {
-      id: "dashboards",
-      label: "Dashboards",
+      id: "forecast",
+      label: "Forecast",
       icon: BarChart3,
-      defaultOpen: true,
+      defaultOpen: false,
       items: [
         { id: "bdn-dashboard", label: "BDN Process", icon: ClipboardList },
         { id: "flight-risk", label: "Flight Risk", icon: AlertTriangle },
         { id: "workload-forecast", label: "Workload Forecast", icon: TrendingUp },
+        { id: "threshold-alerts", label: "Threshold Alerts", icon: Bell },
       ],
-    },
-    {
-      id: "reports",
-      label: "Reports",
-      icon: FileBarChart,
-      items: [{ id: "custom-reports", label: "Custom Reports", icon: FileText }],
-    },
-    {
-      id: "alerts",
-      label: "Alerts & Monitoring",
-      icon: Bell,
-      items: [{ id: "threshold-alerts", label: "Threshold Alerts", icon: Bell }],
     },
     {
       id: "staff",

@@ -1,8 +1,33 @@
 // Script to migrate CSV data to Supabase
+// 
+// TODO: To use this script, set the following environment variables:
+// - NEXT_PUBLIC_SUPABASE_URL: Your Supabase project URL
+// - SUPABASE_SERVICE_ROLE_KEY: Your Supabase service role key (for admin operations)
+// 
+// You can find these values in your Supabase dashboard:
+// https://supabase.com/dashboard/project/_/settings/api
+// 
+// Run with: npx tsx scripts/002_seed_data.ts
+// Or: ts-node scripts/002_seed_data.ts
+
 import { createClient } from "@supabase/supabase-js"
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://placeholder.supabase.co"
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "placeholder-service-role-key"
+
+// Check if Supabase is configured
+const isConfigured = 
+  process.env.NEXT_PUBLIC_SUPABASE_URL && 
+  process.env.SUPABASE_SERVICE_ROLE_KEY &&
+  process.env.NEXT_PUBLIC_SUPABASE_URL !== "https://placeholder.supabase.co" &&
+  process.env.SUPABASE_SERVICE_ROLE_KEY !== "placeholder-service-role-key"
+
+if (!isConfigured) {
+  console.error("❌ Supabase is not configured!")
+  console.error("Please set NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY environment variables.")
+  console.error("See the comments at the top of this file for instructions.")
+  process.exit(1)
+}
 
 const supabase = createClient(supabaseUrl, supabaseKey)
 

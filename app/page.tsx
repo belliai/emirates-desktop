@@ -14,6 +14,7 @@ import WorkloadForecastScreen from "@/components/workload-forecast-screen"
 import ThresholdAlertsScreen from "@/components/threshold-alerts-screen"
 import StaffRosterScreen from "@/components/staff-roster-screen"
 import CustomReportsScreen from "@/components/custom-reports-screen"
+import LoadPlansScreen from "@/components/load-plans-screen"
 import SideNavigation from "@/components/side-navigation"
 import { FlightProvider, useFlights } from "@/lib/flight-context"
 import type { ULD } from "@/lib/flight-data"
@@ -23,6 +24,7 @@ function AppContent() {
   const [currentScreen, setCurrentScreen] = useState<
     | "desktop"
     | "history"
+    | "load-plans"
     | "lists"
     | "non-preannounced"
     | "dwc-steering"
@@ -75,6 +77,8 @@ function AppContent() {
     switch (currentScreen) {
       case "desktop":
         return <DesktopScreen onULDSelect={handleULDSelect} />
+      case "load-plans":
+        return <LoadPlansScreen />
       case "lists":
         return <ListsScreen />
       case "non-preannounced":

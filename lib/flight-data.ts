@@ -108,6 +108,18 @@ async function getFlightDataFromCSV(): Promise<Flight[]> {
 
 export async function getFlightData(): Promise<Flight[]> {
   try {
+    // Check if Supabase is configured before attempting to use it
+    const isSupabaseConfigured = 
+      process.env.NEXT_PUBLIC_SUPABASE_URL && 
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY &&
+      process.env.NEXT_PUBLIC_SUPABASE_URL !== "https://placeholder.supabase.co" &&
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY !== "placeholder-anon-key"
+
+    if (!isSupabaseConfigured) {
+      console.log("[v0] Supabase not configured, using CSV fallback")
+      return await getFlightDataFromCSV()
+    }
+
     const supabase = createClient()
 
     // Fetch flights with their ULDs and status history
