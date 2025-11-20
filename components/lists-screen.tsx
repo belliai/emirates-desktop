@@ -115,10 +115,62 @@ export default function ListsScreen() {
 
       const vunList = generateVUNList(header, shipments)
       console.log('[v0] VUN items:', vunList.length)
+      
+      // Log VUN shipments for verification
+      if (vunList.length > 0) {
+        console.log('[v0] VUN List details:', vunList.map(item => ({
+          serialNo: item.serialNo,
+          awbNo: item.docNo,
+          shc: item.shc,
+          origin: item.origin,
+          destination: item.destination,
+        })))
+      }
+      
+      // Also check shipments with SHC containing VUN
+      const shipmentsWithVUN = shipments.filter(s => s.shc && s.shc.includes('VUN'))
+      if (shipmentsWithVUN.length > 0) {
+        console.log('[v0] Shipments with SHC=VUN found:', shipmentsWithVUN.length)
+        console.log('[v0] VUN Shipments:', shipmentsWithVUN.map(s => ({
+          serialNo: s.serialNo,
+          awbNo: s.awbNo,
+          shc: s.shc,
+          origin: s.origin,
+          destination: s.destination,
+        })))
+      }
+      
       setProgress(80)
 
       const qrtList = generateQRTList(header, shipments)
       console.log('[v0] QRT items:', qrtList.length)
+      
+      // Log QRT shipments for verification
+      if (qrtList.length > 0) {
+        console.log('[v0] QRT List details:', qrtList.map(item => ({
+          serialNo: item.serialNo,
+          awbNo: item.docNo,
+          thc: item.thc,
+          shc: item.shc,
+          origin: item.origin,
+          destination: item.destination,
+        })))
+      }
+      
+      // Also check shipments with THC containing QRT
+      const shipmentsWithQRT = shipments.filter(s => s.thc && s.thc.includes('QRT'))
+      if (shipmentsWithQRT.length > 0) {
+        console.log('[v0] Shipments with THC=QRT found:', shipmentsWithQRT.length)
+        console.log('[v0] QRT Shipments:', shipmentsWithQRT.map(s => ({
+          serialNo: s.serialNo,
+          awbNo: s.awbNo,
+          thc: s.thc,
+          shc: s.shc,
+          origin: s.origin,
+          destination: s.destination,
+        })))
+      }
+      
       setProgress(90)
 
       const results = { specialCargo, vunList, qrtList, header, shipments }

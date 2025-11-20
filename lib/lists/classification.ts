@@ -41,9 +41,20 @@ export function isWeaponsCargo(shipment: Shipment): boolean {
 }
 
 export function isVUNCargo(shipment: Shipment): boolean {
-  return rowContainsKeyword(shipment, "VUN")
+  // VUN is a Special Handling Code, so check SHC field specifically
+  if (!shipment.shc) return false
+  
+  // Check if SHC contains VUN (can be standalone "VUN" or part of codes like "VUN-CRT")
+  const shcUpper = shipment.shc.toUpperCase().trim()
+  const shcCodes = shcUpper.split("-").map((code) => code.trim())
+  return shcCodes.includes("VUN")
 }
 
 export function isQRTCargo(shipment: Shipment): boolean {
-  return rowContainsKeyword(shipment, "QRT")
+  // QRT is in the THC (Total Handling Charge) field, so check THC field specifically
+  if (!shipment.thc) return false
+  
+  // Check if THC contains QRT (can be standalone "QRT" or part of codes like "P2 QRT")
+  const thcUpper = shipment.thc.toUpperCase().trim()
+  return thcUpper.includes("QRT")
 }

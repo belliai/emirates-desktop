@@ -61,9 +61,29 @@ export function parseShipments(content: string, header: LoadPlanHeader): Shipmen
     }
 
     if (inShipmentSection) {
-      const shipmentMatch = line.match(
-        /^(\d{3})\s+(\d{3}-\d{8})\s+([A-Z]{3})([A-Z]{3})\s+(\d+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([A-Z-]+)\s+(.+?)\s+([A-Z]{3})\s+([A-Z]\d)\s+(\w+)\s+(SS)\s+([YN])\s+([A-Z]+\d+)?\s*(\d{2}[A-Za-z]{3}\d{4})?\s*([\d:\/]+)?\s*([YN])?/i,
+      // Regex to parse shipment line - SHC can be single code (VUN) or multiple codes (VUN-CRT-EAP)
+      // More flexible regex that handles variable spacing after SHC
+      // Pattern: SER AWB ORG/DES PCS WGT VOL LVOL SHC MAN.DESC PCODE PC THC BS PI FLTIN ARRDT.TIME SI
+      // THC can be empty, "QRT", "P2 QRT", etc. (can contain spaces)
+      let shipmentMatch = line.match(
+        /^(\d{3})\s+(\d{3}-\d{8})\s+([A-Z]{3})([A-Z]{3})\s+(\d+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([A-Z-]+)\s{2,}([A-Z\s]+?)\s{2,}([A-Z]{3})\s+([A-Z]\d)\s+([A-Z0-9\s]*?)\s+(SS)\s+([YN])\s+([A-Z]+\d+)?\s*(\d{2}[A-Za-z]{3}\d{4})?\s*([\d:\/]+)?\s*([YN])?/i,
       )
+      
+      // If first regex doesn't match, try with more flexible spacing
+      if (!shipmentMatch) {
+        const altMatch = line.match(
+          /^(\d{3})\s+(\d{3}-\d{8})\s+([A-Z]{3})([A-Z]{3})\s+(\d+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([A-Z-]+)\s+(.+?)\s+([A-Z]{3})\s+([A-Z]\d)\s+([A-Z0-9\s]*?)\s+(SS)\s+([YN])\s+([A-Z]+\d+)?\s*(\d{2}[A-Za-z]{3}\d{4})?\s*([\d:\/]+)?\s*([YN])?/i,
+        )
+        if (altMatch) {
+          console.log("[v0] Matched with alternative regex")
+          shipmentMatch = altMatch
+        } else {
+          // Log lines that look like shipments but don't match
+          if (line.match(/^\d{3}\s+\d{3}-\d{8}/)) {
+            console.log("[v0] ⚠️ Failed to parse shipment line:", line.substring(0, 100))
+          }
+        }
+      }
 
       if (shipmentMatch) {
         if (currentShipment) {
@@ -93,6 +113,34 @@ export function parseShipments(content: string, header: LoadPlanHeader): Shipmen
           si,
         ] = shipmentMatch
 
+        const trimmedSHC = shc ? shc.trim() : ""
+        
+        // Log VUN shipments specifically for debugging
+        if (trimmedSHC && trimmedSHC.includes("VUN")) {
+          console.log("[v0] ✅ VUN shipment detected during parsing:", {
+            serialNo: serial,
+            awbNo: awb,
+            shc: trimmedSHC,
+            shcRaw: shc,
+            origin,
+            destination,
+          })
+        }
+        
+        // Log QRT shipments specifically for debugging (THC contains QRT)
+        const trimmedTHC = thc ? thc.trim() : ""
+        if (trimmedTHC && trimmedTHC.includes("QRT")) {
+          console.log("[v0] ✅ QRT shipment detected during parsing:", {
+            serialNo: serial,
+            awbNo: awb,
+            thc: trimmedTHC,
+            thcRaw: thc,
+            shc: trimmedSHC,
+            origin,
+            destination,
+          })
+        }
+
         currentShipment = {
           serialNo: serial,
           awbNo: awb,
@@ -102,11 +150,11 @@ export function parseShipments(content: string, header: LoadPlanHeader): Shipmen
           weight: Number.parseFloat(wgt),
           volume: Number.parseFloat(vol),
           lvol: Number.parseFloat(lvol),
-          shc: shc.trim(),
+          shc: trimmedSHC,
           manDesc: manDesc.trim(),
           pcode: pcode || "",
           pc: pc,
-          thc: thc.trim(),
+          thc: thc ? thc.trim() : "",
           bs: bs,
           pi: pi,
           fltIn: fltIn || "",
