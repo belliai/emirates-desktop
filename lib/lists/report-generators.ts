@@ -67,8 +67,17 @@ export function generateSpecialCargoReport(header: LoadPlanHeader, shipments: Sh
 export function generateVUNList(header: LoadPlanHeader, shipments: Shipment[]): VUNListRow[] {
   const vunList: VUNListRow[] = []
 
+  console.log("[v0] generateVUNList: checking", shipments.length, "shipments")
+  
   shipments.forEach((shipment) => {
-    if (!isVUNCargo(shipment)) return
+    const isVUN = isVUNCargo(shipment)
+    if (!isVUN) return
+    
+    console.log("[v0] ✅ Found VUN shipment in generateVUNList:", {
+      serialNo: shipment.serialNo,
+      awbNo: shipment.awbNo,
+      shc: shipment.shc,
+    })
 
     let inCarrier = ""
     let inFlightNo = ""
@@ -167,8 +176,18 @@ export function generateVUNList(header: LoadPlanHeader, shipments: Shipment[]): 
 export function generateQRTList(header: LoadPlanHeader, shipments: Shipment[]): QRTListRow[] {
   const qrtList: QRTListRow[] = []
 
+  console.log("[v0] generateQRTList: checking", shipments.length, "shipments")
+  
   shipments.forEach((shipment) => {
-    if (!isQRTCargo(shipment)) return
+    const isQRT = isQRTCargo(shipment)
+    if (!isQRT) return
+    
+    console.log("[v0] ✅ Found QRT shipment in generateQRTList:", {
+      serialNo: shipment.serialNo,
+      awbNo: shipment.awbNo,
+      thc: shipment.thc,
+      shc: shipment.shc,
+    })
 
     const outFlightNo = header.flightNumber.replace(/^EK/i, "")
     const depDate = formatDateForReport(header.date)

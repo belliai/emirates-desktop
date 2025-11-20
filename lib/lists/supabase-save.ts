@@ -17,15 +17,19 @@ export interface SaveListsDataResult {
 /**
  * Parse date string to Date object
  * Handles formats like "1 Oct", "1-Oct", "1 Oct 2024", etc.
+ * Returns current date as fallback if parsing fails
  */
-function parseDateString(dateStr: string): Date | null {
-  if (!dateStr) return null
+function parseDateString(dateStr: string): Date {
+  if (!dateStr) {
+    console.warn("[v0] Empty date string, using current date as fallback")
+    return new Date()
+  }
 
   try {
     // Try to parse common date formats
     const cleanDate = dateStr.trim()
     
-    // Match patterns like "1 Oct", "1-Oct", "1 Oct 2024"
+    // Match patterns like "1 Oct", "1-Oct", "1 Oct 2024", "1-Oct-2024"
     const match = cleanDate.match(/(\d{1,2})\s*[-]?\s*([A-Za-z]{3})(?:\s*[-]?\s*(\d{4}))?/i)
     if (match) {
       const day = parseInt(match[1], 10)
@@ -33,13 +37,56 @@ function parseDateString(dateStr: string): Date | null {
       const year = match[3] ? parseInt(match[3], 10) : new Date().getFullYear()
       
       const monthMap: { [key: string]: number } = {
-        jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5,
-        jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11
+        jan: 0, january: 0,
+        feb: 1, february: 1,
+        mar: 2, march: 2,
+        apr: 3, april: 3,
+        may: 4,
+        jun: 5, june: 5,
+        jul: 6, july: 6,
+        aug: 7, august: 7,
+        sep: 8, september: 8,
+        oct: 9, october: 9,
+        nov: 10, november: 10,
+        dec: 11, december: 11
       }
       
       const month = monthMap[monthName.toLowerCase()]
-      if (month !== undefined) {
-        return new Date(year, month, day)
+      if (month !== undefined && day >= 1 && day <= 31) {
+        const date = new Date(year, month, day)
+        // Validate the date is valid
+        if (!isNaN(date.getTime()) && date.getDate() === day) {
+          return date
+        }
+      }
+    }
+    
+    // Try other common formats: DD/MM/YYYY, DD-MM-YYYY, YYYY-MM-DD
+    const formats = [
+      /(\d{1,2})\/(\d{1,2})\/(\d{4})/,  // DD/MM/YYYY
+      /(\d{1,2})-(\d{1,2})-(\d{4})/,   // DD-MM-YYYY
+      /(\d{4})-(\d{1,2})-(\d{1,2})/,   // YYYY-MM-DD
+    ]
+    
+    for (const format of formats) {
+      const match = cleanDate.match(format)
+      if (match) {
+        let year: number, month: number, day: number
+        if (format === formats[2]) {
+          // YYYY-MM-DD
+          year = parseInt(match[1], 10)
+          month = parseInt(match[2], 10) - 1
+          day = parseInt(match[3], 10)
+        } else {
+          // DD/MM/YYYY or DD-MM-YYYY
+          day = parseInt(match[1], 10)
+          month = parseInt(match[2], 10) - 1
+          year = parseInt(match[3], 10)
+        }
+        const date = new Date(year, month, day)
+        if (!isNaN(date.getTime())) {
+          return date
+        }
       }
     }
     
@@ -52,7 +99,9 @@ function parseDateString(dateStr: string): Date | null {
     console.error("[v0] Error parsing date:", dateStr, error)
   }
   
-  return null
+  // Final fallback: return current date
+  console.warn("[v0] Could not parse date:", dateStr, "using current date as fallback")
+  return new Date()
 }
 
 /**
@@ -120,12 +169,24 @@ export async function saveListsDataToSupabase({
     const stdTime = parseTimeString(results.header.std)
     const preparedOn = parseDateTimeString(results.header.preparedOn)
 
+    // Format date to YYYY-MM-DD
+    const flightDateStr = flightDate.toISOString().split('T')[0]
+    
+    // Ensure required fields are not null
+    const flightNumber = results.header.flightNumber?.trim() || "UNKNOWN"
+    
+    console.log("[v0] Parsed data for load_plan:", {
+      flight_number: flightNumber,
+      flight_date: flightDateStr,
+      date_original: results.header.date,
+    })
+
     // 1. Insert load_plan
     const { data: loadPlan, error: loadPlanError } = await supabase
       .from("load_plans")
       .insert({
-        flight_number: results.header.flightNumber,
-        flight_date: flightDate ? flightDate.toISOString().split('T')[0] : null,
+        flight_number: flightNumber,
+        flight_date: flightDateStr,
         aircraft_type: results.header.aircraftType || null,
         aircraft_registration: results.header.aircraftReg || null,
         header_version: 1,
@@ -155,6 +216,20 @@ export async function saveListsDataToSupabase({
 
     // 2. Insert load_plan_items from shipments
     if (shipments && shipments.length > 0) {
+      // Check for VUN shipments before saving
+      const vunShipments = shipments.filter(s => s.shc && s.shc.includes('VUN'))
+      if (vunShipments.length > 0) {
+        console.log(`[v0] Found ${vunShipments.length} shipment(s) with SHC=VUN:`, 
+          vunShipments.map(s => ({
+            serialNo: s.serialNo,
+            awbNo: s.awbNo,
+            shc: s.shc,
+            origin: s.origin,
+            destination: s.destination,
+          }))
+        )
+      }
+      
       const loadPlanItems = shipments.map((shipment) => ({
         load_plan_id: loadPlanId,
         serial_number: shipment.serialNo ? parseInt(shipment.serialNo, 10) : null,
