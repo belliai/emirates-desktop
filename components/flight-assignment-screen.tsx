@@ -1,0 +1,331 @@
+"use client"
+
+import { useState } from "react"
+import { Plane, Clock, MapPin, Users, FileText, Check, ChevronsUpDown } from "lucide-react"
+import { useLoadPlans } from "@/lib/load-plan-context"
+import { Button } from "@/components/ui/button"
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Input } from "@/components/ui/input"
+import { cn } from "@/lib/utils"
+
+type FlightAssignment = {
+  flight: string
+  std: string
+  originDestination: string
+  name: string
+  sector: string
+}
+
+const sampleFlightAssignments: FlightAssignment[] = [
+  {
+    flight: "EK0205",
+    std: "09:35",
+    originDestination: "DXB-JFK",
+    name: "",
+    sector: "",
+  },
+  {
+    flight: "EK0544",
+    std: "02:50",
+    originDestination: "DXB-MAA",
+    name: "",
+    sector: "",
+  },
+  {
+    flight: "EK0123",
+    std: "14:20",
+    originDestination: "DXB-LHR",
+    name: "",
+    sector: "",
+  },
+  {
+    flight: "EK0456",
+    std: "18:45",
+    originDestination: "DXB-SIN",
+    name: "",
+    sector: "",
+  },
+  {
+    flight: "EK0789",
+    std: "22:10",
+    originDestination: "DXB-BKK",
+    name: "",
+    sector: "",
+  },
+  {
+    flight: "EK0345",
+    std: "11:15",
+    originDestination: "DXB-CDG",
+    name: "",
+    sector: "",
+  },
+]
+
+const nameOptions = ["david", "harley"]
+
+// Color coding based on destination - only for origin destination cell
+const getOriginDestinationColor = (originDestination: string, name: string, sector: string): string => {
+  // If both name and sector are filled, return white (no color)
+  if (name && sector) {
+    return "bg-white"
+  }
+
+  const destination = originDestination.split("-")[1] || ""
+
+  // UK destinations - Pink
+  const ukDestinations = ["LHR", "LGW", "MAN", "EDI", "BHX", "GLA"]
+  if (ukDestinations.includes(destination)) {
+    return "bg-pink-200"
+  }
+
+  // US destinations - Pink
+  const usDestinations = ["JFK", "LAX", "SFO", "ORD", "MIA", "DFW", "BOS", "IAD", "SEA", "ATL"]
+  if (usDestinations.includes(destination)) {
+    return "bg-pink-200"
+  }
+
+  // Europe destinations - Yellow
+  const europeDestinations = [
+    "CDG",
+    "FRA",
+    "AMS",
+    "MXP",
+    "FCO",
+    "MAD",
+    "BCN",
+    "ZRH",
+    "VIE",
+    "CPH",
+    "ARN",
+    "OSL",
+    "HEL",
+    "DUB",
+    "LIS",
+    "ATH",
+    "BRU",
+    "PRG",
+  ]
+  if (europeDestinations.includes(destination)) {
+    return "bg-yellow-200"
+  }
+
+  // Southeast Asia destinations - Blue
+  const southeastAsiaDestinations = ["SIN", "BKK", "KUL", "MNL", "CGK", "HKG"]
+  if (southeastAsiaDestinations.includes(destination)) {
+    return "bg-blue-200"
+  }
+
+  // South Asia destinations - Purple
+  const southAsiaDestinations = ["MAA", "BOM", "DEL", "CCU"]
+  if (southAsiaDestinations.includes(destination)) {
+    return "bg-purple-200"
+  }
+
+  // East Asia destinations - Cyan
+  const eastAsiaDestinations = ["NRT", "ICN", "PEK", "PVG", "CAN"]
+  if (eastAsiaDestinations.includes(destination)) {
+    return "bg-cyan-200"
+  }
+
+  // Middle East / Africa - Green
+  const meaDestinations = ["CAI", "JNB", "CPT", "DOH", "BAH", "KWI", "RUH", "AMM", "BEY"]
+  if (meaDestinations.includes(destination)) {
+    return "bg-green-200"
+  }
+
+  // Default for other destinations - Orange
+  return "bg-orange-200"
+}
+
+export default function FlightAssignmentScreen() {
+  const { updateFlightAssignment } = useLoadPlans()
+  const [flightAssignments, setFlightAssignments] = useState<FlightAssignment[]>(sampleFlightAssignments)
+
+  const handleNameChange = (index: number, name: string) => {
+    const assignment = flightAssignments[index]
+    setFlightAssignments((prev) => {
+      const updated = [...prev]
+      updated[index] = { ...updated[index], name }
+      return updated
+    })
+    // Update the context so Buildup Staff can filter
+    if (assignment.flight) {
+      updateFlightAssignment(assignment.flight, name)
+    }
+  }
+
+  const handleSectorChange = (index: number, sector: string) => {
+    setFlightAssignments((prev) => {
+      const updated = [...prev]
+      updated[index] = { ...updated[index], sector }
+      return updated
+    })
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-50 p-4">
+      <div className="max-w-full">
+        {/* Header with Roosevelt Name and Icon Bar */}
+        <div className="flex justify-between items-center mb-4 px-2">
+          <h2 className="text-lg font-semibold text-gray-900">Flight Assignment</h2>
+          <div className="flex items-center gap-2 bg-white border border-gray-300 px-3 py-2 rounded-lg">
+            <div className="w-8 h-8 rounded-full bg-[#D71A21] text-white flex items-center justify-center">
+              <span className="text-sm font-semibold">R</span>
+            </div>
+            <span className="text-sm font-medium text-gray-900">Roosevelt</span>
+          </div>
+        </div>
+        <div className="mx-2 rounded-lg border border-gray-200 overflow-x-auto">
+          <div className="bg-white">
+            <table className="w-full">
+              <thead>
+                <tr className="bg-[#D71A21] text-white">
+                  <th className="px-2 py-1 text-left font-semibold text-xs">
+                    <div className="flex items-center gap-2">
+                      <Plane className="w-4 h-4 flex-shrink-0" />
+                      <span className="whitespace-nowrap">Flight</span>
+                    </div>
+                  </th>
+                  <th className="px-2 py-1 text-left font-semibold text-xs">
+                    <div className="flex items-center gap-2">
+                      <Clock className="w-4 h-4 flex-shrink-0" />
+                      <span className="whitespace-nowrap">STD</span>
+                    </div>
+                  </th>
+                  <th className="px-2 py-1 text-left font-semibold text-xs">
+                    <div className="flex items-center gap-2">
+                      <MapPin className="w-4 h-4 flex-shrink-0" />
+                      <span className="whitespace-nowrap">Origin Destination</span>
+                    </div>
+                  </th>
+                  <th className="px-2 py-1 text-left font-semibold text-xs">
+                    <div className="flex items-center gap-2">
+                      <Users className="w-4 h-4 flex-shrink-0" />
+                      <span className="whitespace-nowrap">Name</span>
+                    </div>
+                  </th>
+                  <th className="px-2 py-1 text-left font-semibold text-xs">
+                    <div className="flex items-center gap-2">
+                      <FileText className="w-4 h-4 flex-shrink-0" />
+                      <span className="whitespace-nowrap">Sector</span>
+                    </div>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {flightAssignments.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="px-3 py-2 text-center text-gray-500 text-sm">
+                      No flight assignments available
+                    </td>
+                  </tr>
+                ) : (
+                  flightAssignments.map((assignment, index) => (
+                    <FlightAssignmentRow
+                      key={index}
+                      assignment={assignment}
+                      onNameChange={(name) => handleNameChange(index, name)}
+                      onSectorChange={(sector) => handleSectorChange(index, sector)}
+                    />
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+interface FlightAssignmentRowProps {
+  assignment: FlightAssignment
+  onNameChange: (name: string) => void
+  onSectorChange: (sector: string) => void
+}
+
+function FlightAssignmentRow({ assignment, onNameChange, onSectorChange }: FlightAssignmentRowProps) {
+  const [nameOpen, setNameOpen] = useState(false)
+  const [nameSearch, setNameSearch] = useState("")
+
+  const filteredNames = nameOptions.filter((name) =>
+    name.toLowerCase().includes(nameSearch.toLowerCase())
+  )
+
+  const originDestinationColor = getOriginDestinationColor(
+    assignment.originDestination,
+    assignment.name,
+    assignment.sector
+  )
+
+  return (
+    <tr className="border-b border-gray-100 last:border-b-0 hover:bg-gray-50 bg-white">
+      <td className="px-2 py-1 font-semibold text-gray-900 text-xs whitespace-nowrap truncate">
+        {assignment.flight}
+      </td>
+      <td className="px-2 py-1 text-gray-900 text-xs whitespace-nowrap truncate">{assignment.std}</td>
+      <td className={`px-2 py-1 text-gray-900 text-xs whitespace-nowrap truncate ${originDestinationColor}`}>
+        {assignment.originDestination}
+      </td>
+      <td className="px-2 py-1 text-gray-900 text-xs whitespace-nowrap">
+        <Popover open={nameOpen} onOpenChange={setNameOpen}>
+          <PopoverTrigger asChild>
+            <Button
+              variant="outline"
+              role="combobox"
+              aria-expanded={nameOpen}
+              className="w-full h-8 justify-between text-xs px-2 py-1"
+            >
+              {assignment.name ? assignment.name.charAt(0).toUpperCase() + assignment.name.slice(1) : "Select name..."}
+              <ChevronsUpDown className="ml-2 h-3 w-3 shrink-0 opacity-50" />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-[200px] p-0" align="start">
+            <Command>
+              <CommandInput
+                placeholder="Search name..."
+                value={nameSearch}
+                onValueChange={setNameSearch}
+              />
+              <CommandList>
+                <CommandEmpty>No name found.</CommandEmpty>
+                <CommandGroup>
+                  {filteredNames.map((name) => (
+                    <CommandItem
+                      key={name}
+                      value={name}
+                      onSelect={() => {
+                        onNameChange(name)
+                        setNameOpen(false)
+                        setNameSearch("")
+                      }}
+                    >
+                      <Check
+                        className={cn(
+                          "mr-2 h-4 w-4",
+                          assignment.name === name ? "opacity-100" : "opacity-0"
+                        )}
+                      />
+                      {name.charAt(0).toUpperCase() + name.slice(1)}
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+              </CommandList>
+            </Command>
+          </PopoverContent>
+        </Popover>
+      </td>
+      <td className="px-2 py-1 text-gray-900 text-xs whitespace-nowrap">
+        <Input
+          type="text"
+          value={assignment.sector}
+          onChange={(e) => onSectorChange(e.target.value)}
+          placeholder="E75"
+          className="w-full h-8 text-xs border-gray-300 placeholder:text-gray-400"
+        />
+      </td>
+    </tr>
+  )
+}
+
