@@ -64,6 +64,7 @@ export interface SpecialCargoReportRow {
   uld?: string
   inCarrier: string
   inFlightNo: string
+  hasHUM?: boolean // Flag to highlight shipment with HUM SHC
 }
 
 export interface VUNListRow {

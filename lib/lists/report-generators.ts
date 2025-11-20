@@ -2,6 +2,59 @@ import type { LoadPlanHeader, Shipment, SpecialCargoReportRow, VUNListRow, QRTLi
 import { isSpecialCargo, isWeaponsCargo, isVUNCargo, isQRTCargo, isGeneralSpecialCargo } from "./classification"
 import { formatDateForReport } from "./parser"
 
+/**
+ * Determines if a shipment with ICE SHC should be kept or removed based on complex rules
+ */
+function shouldKeepIceShipment(shipment: Shipment): boolean {
+  if (!shipment.shc) return true
+  
+  const shcUpper = shipment.shc.toUpperCase().trim()
+  const shcCodes = shcUpper.split("-").map((code) => code.trim())
+  const hasIce = shcCodes.includes("ICE")
+  
+  // If shipment does NOT contain ICE
+  if (!hasIce) {
+    // If SHC contains PEM or PES → Remove (return false)
+    if (shcCodes.includes("PEM") || shcCodes.includes("PES")) {
+      return false
+    }
+    // If SHC does NOT contain PEM or PES → Leave (return true)
+    return true
+  }
+  
+  // If shipment contains ICE (mixed with other cargo)
+  const hasOtherCodes = shcCodes.length > 1
+  if (hasOtherCodes) {
+    const requiredCodes = ["HEG", "AVI", "RDS", "SHL", "LHO", "CPS"]
+    const hasRequiredCode = shcCodes.some((code) => requiredCodes.includes(code))
+    
+    // If SHC does NOT contain any of the required codes → Remove
+    if (!hasRequiredCode) {
+      return false
+    }
+    // If SHC contains any of the required codes → Leave
+    return true
+  }
+  
+  // If shipment is ONLY ICE (no other codes)
+  // If Outbound Weight > 20 kg → Remove
+  if (shipment.weight > 20) {
+    return false
+  }
+  // If Outbound Weight < 20 kg → Leave
+  return true
+}
+
+/**
+ * Checks if shipment has HUM SHC (for highlighting)
+ */
+function hasHUM(shc: string): boolean {
+  if (!shc) return false
+  const shcUpper = shc.toUpperCase().trim()
+  const shcCodes = shcUpper.split("-").map((code) => code.trim())
+  return shcCodes.includes("HUM")
+}
+
 export function generateSpecialCargoReport(header: LoadPlanHeader, shipments: Shipment[]) {
   const regularCargo: SpecialCargoReportRow[] = []
   const weaponsCargo: SpecialCargoReportRow[] = []
@@ -9,6 +62,14 @@ export function generateSpecialCargoReport(header: LoadPlanHeader, shipments: Sh
   shipments.forEach((shipment) => {
     // General list: include all shipments with SHC = SWP, RXS, MUW, HUM, LHO, AVI, CAR, VEH, HEG, RDS, VIP, ASH, ICE, CPS, EKD, HUU, HUL, DOC
     if (!isGeneralSpecialCargo(shipment)) return
+    
+    // Apply ICE filtering rules
+    const shcUpper = shipment.shc?.toUpperCase().trim() || ""
+    if (shcUpper.includes("ICE")) {
+      if (!shouldKeepIceShipment(shipment)) {
+        return // Remove this shipment
+      }
+    }
 
     let inCarrier = ""
     let inFlightNo = ""
@@ -53,6 +114,7 @@ export function generateSpecialCargoReport(header: LoadPlanHeader, shipments: Sh
       uld: shipment.uld,
       inCarrier,
       inFlightNo,
+      hasHUM: hasHUM(shipment.shc || ""), // Flag for highlighting HUM shipments
     }
 
     if (isWeaponsCargo(shipment)) {
@@ -207,6 +269,7 @@ export function generateQRTList(header: LoadPlanHeader, shipments: Shipment[]): 
       weight: shipment.weight,
       volume: shipment.volume,
       lvol: shipment.lvol,
+      mct: "", // MCT field for QRT list
       shc: shipment.shc,
       manifestDesc: shipment.manDesc,
       pcode: shipment.pcode,
