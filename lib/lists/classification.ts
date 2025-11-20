@@ -34,10 +34,37 @@ export function isSpecialCargo(shipment: Shipment): boolean {
          rowContainsKeyword(shipment, "VIP")
 }
 
+/**
+ * Checks if shipment has SHC codes that should be included in General Special Cargo list
+ * SHC codes: SWP, RXS, MUW, HUM, LHO, AVI, CAR, VEH, HEG, RDS, VIP, ASH, ICE, CPS, EKD, HUU, HUL, DOC
+ */
+export function isGeneralSpecialCargo(shipment: Shipment): boolean {
+  if (!shipment.shc) return false
+  
+  const generalSpecialCargoCodes = [
+    "SWP", "RXS", "MUW", "HUM", "LHO", "AVI", "CAR", "VEH", 
+    "HEG", "RDS", "VIP", "ASH", "ICE", "CPS", "EKD", "HUU", "HUL", "DOC"
+  ]
+  
+  const shcUpper = shipment.shc.toUpperCase().trim()
+  const shcCodes = shcUpper.split("-").map((code) => code.trim())
+  
+  return shcCodes.some((code) => generalSpecialCargoCodes.includes(code))
+}
+
+/**
+ * Checks if shipment has SHC codes that should be included in Special list (weapons)
+ * SHC codes: RXS, SWP, MUW, VIP
+ */
 export function isWeaponsCargo(shipment: Shipment): boolean {
   if (!shipment.shc) return false
-  const shcCodes = shipment.shc.split("-").map((code) => code.trim())
-  return shcCodes.some((code) => WEAPONS_CODES.includes(code))
+  
+  const specialListCodes = ["RXS", "SWP", "MUW", "VIP"]
+  
+  const shcUpper = shipment.shc.toUpperCase().trim()
+  const shcCodes = shcUpper.split("-").map((code) => code.trim())
+  
+  return shcCodes.some((code) => specialListCodes.includes(code))
 }
 
 export function isVUNCargo(shipment: Shipment): boolean {
