@@ -20,7 +20,7 @@ const generateId = () => {
     return window.crypto.randomUUID()
   }
   // Fallback for SSR/build time
-  return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+  return `${Date.now()}-${Math.random().toString(36).substring(2, 11)}`
 }
 
 export type AWBAssignmentType = "single" | "split" | "existing" | "offload"

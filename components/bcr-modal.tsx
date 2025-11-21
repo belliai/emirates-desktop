@@ -173,10 +173,10 @@ export default function BCRModal({ isOpen, onClose, loadPlan, bcrData: initialBc
 
     try {
       // Dynamic import for client-side only
-      const [{ default: html2canvas }, { default: jsPDF }] = await Promise.all([
-        import('html2canvas'),
-        import('jspdf')
-      ])
+      const html2canvasModule = await import('html2canvas')
+      const jsPDFModule = await import('jspdf')
+      const html2canvas = html2canvasModule.default
+      const jsPDF = jsPDFModule.default
 
       const canvas = await html2canvas(pdfContentRef.current, {
         scale: 2,
