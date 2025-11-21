@@ -51,7 +51,7 @@ export default function SideNavigation({ currentScreen, onNavigate }: SideNaviga
       icon: BarChart3,
       defaultOpen: false,
       items: [
-        { id: "bdn-dashboard", label: "BDN Process", icon: ClipboardList },
+        { id: "bdn-dashboard", label: "Workload Visibility", icon: ClipboardList },
         { id: "flight-risk", label: "Flight Risk", icon: AlertTriangle },
         { id: "workload-forecast", label: "Workload Forecast", icon: TrendingUp },
         { id: "threshold-alerts", label: "Threshold Alerts", icon: Bell },
