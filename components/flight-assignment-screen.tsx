@@ -138,6 +138,72 @@ const getOriginDestinationColor = (originDestination: string, name: string, sect
   return "bg-orange-200"
 }
 
+const getDestinationCategory = (destination: string): { category: string; color: string } => {
+  // UK destinations
+  const ukDestinations = ["LHR", "LGW", "MAN", "EDI", "BHX", "GLA"]
+  if (ukDestinations.includes(destination)) {
+    return { category: "UK", color: "bg-pink-200" }
+  }
+
+  // US destinations
+  const usDestinations = ["JFK", "LAX", "SFO", "ORD", "MIA", "DFW", "BOS", "IAD", "SEA", "ATL"]
+  if (usDestinations.includes(destination)) {
+    return { category: "US", color: "bg-pink-200" }
+  }
+
+  // Europe destinations
+  const europeDestinations = [
+    "CDG",
+    "FRA",
+    "AMS",
+    "MXP",
+    "FCO",
+    "MAD",
+    "BCN",
+    "ZRH",
+    "VIE",
+    "CPH",
+    "ARN",
+    "OSL",
+    "HEL",
+    "DUB",
+    "LIS",
+    "ATH",
+    "BRU",
+    "PRG",
+  ]
+  if (europeDestinations.includes(destination)) {
+    return { category: "Europe", color: "bg-yellow-200" }
+  }
+
+  // Southeast Asia destinations
+  const southeastAsiaDestinations = ["SIN", "BKK", "KUL", "MNL", "CGK", "HKG"]
+  if (southeastAsiaDestinations.includes(destination)) {
+    return { category: "Southeast Asia", color: "bg-blue-200" }
+  }
+
+  // South Asia destinations
+  const southAsiaDestinations = ["MAA", "BOM", "DEL", "CCU"]
+  if (southAsiaDestinations.includes(destination)) {
+    return { category: "South Asia", color: "bg-purple-200" }
+  }
+
+  // East Asia destinations
+  const eastAsiaDestinations = ["NRT", "ICN", "PEK", "PVG", "CAN"]
+  if (eastAsiaDestinations.includes(destination)) {
+    return { category: "East Asia", color: "bg-cyan-200" }
+  }
+
+  // Middle East / Africa
+  const meaDestinations = ["CAI", "JNB", "CPT", "DOH", "BAH", "KWI", "RUH", "AMM", "BEY"]
+  if (meaDestinations.includes(destination)) {
+    return { category: "Middle East/Africa", color: "bg-green-200" }
+  }
+
+  // Default for other destinations
+  return { category: "Other", color: "bg-orange-200" }
+}
+
 export default function FlightAssignmentScreen() {
   const { updateFlightAssignment } = useLoadPlans()
   const [flightAssignments, setFlightAssignments] = useState<FlightAssignment[]>(sampleFlightAssignments)
@@ -163,6 +229,19 @@ export default function FlightAssignmentScreen() {
     })
   }
 
+  // Calculate pending flights by category
+  const pendingByCategory: Record<string, { count: number; color: string }> = {}
+  flightAssignments.forEach((assignment) => {
+    if (!assignment.name || !assignment.sector) {
+      const destination = assignment.originDestination.split("-")[1] || ""
+      const { category, color } = getDestinationCategory(destination)
+      if (!pendingByCategory[category]) {
+        pendingByCategory[category] = { count: 0, color }
+      }
+      pendingByCategory[category].count++
+    }
+  })
+
   return (
     <div className="min-h-screen bg-gray-50 p-4">
       <div className="max-w-full">
@@ -174,6 +253,24 @@ export default function FlightAssignmentScreen() {
               <span className="text-sm font-semibold">R</span>
             </div>
             <span className="text-sm font-medium text-gray-900">Roosevelt</span>
+          </div>
+        </div>
+
+        {/* Pending Summary by Location */}
+        <div className="mb-4 px-2">
+          <div className="flex flex-wrap gap-2 items-center">
+            {Object.keys(pendingByCategory).length > 0 ? (
+              Object.entries(pendingByCategory).map(([category, { count, color }]) => (
+                <span
+                  key={category}
+                  className={`${color} px-3 py-1.5 rounded-md text-xs font-medium text-gray-900 inline-block`}
+                >
+                  {category}: {count}
+                </span>
+              ))
+            ) : (
+              <span className="text-xs text-gray-500">No pending flights</span>
+            )}
           </div>
         </div>
         <div className="mx-2 rounded-lg border border-gray-200 overflow-x-auto">

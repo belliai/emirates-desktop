@@ -62,7 +62,7 @@ const HARDCODED_STAFF = [
   },
 ]
 
-export default function StaffRosterScreen() {
+export default function PerformanceScreen() {
   const [selectedDestination, setSelectedDestination] = useState("all")
   const [selectedBoardingPoint, setSelectedBoardingPoint] = useState("all")
 
@@ -192,3 +192,4 @@ export default function StaffRosterScreen() {
     </div>
   )
 }
+

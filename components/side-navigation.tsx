@@ -3,7 +3,7 @@
 import type React from "react"
 
 import { useState } from "react"
-import { Home, List, BarChart3, FileText, Bell, Users, ChevronDown, ChevronRight, Settings, ChevronsLeft, ChevronsRight, TrendingUp, AlertTriangle, Calendar, ClipboardList, Clipboard, Plane } from 'lucide-react'
+import { Home, List, BarChart3, FileText, Bell, Users, ChevronDown, ChevronRight, Settings, ChevronsLeft, ChevronsRight, TrendingUp, AlertTriangle, ClipboardList, Clipboard, Plane } from 'lucide-react'
 import Image from "next/image"
 
 interface SideNavigationProps {
@@ -62,7 +62,6 @@ export default function SideNavigation({ currentScreen, onNavigate }: SideNaviga
       label: "Staff Management",
       icon: Users,
       items: [
-        { id: "staff-roster", label: "Staff Roster", icon: Calendar },
         { id: "staff", label: "Performance", icon: Users },
         { id: "flight-assignment", label: "Flight Assignment", icon: Plane },
       ],

@@ -12,7 +12,7 @@ import ULDStatusTrackingScreen from "@/components/uld-status-tracking-screen"
 import FlightRiskScreen from "@/components/flight-risk-screen"
 import WorkloadForecastScreen from "@/components/workload-forecast-screen"
 import ThresholdAlertsScreen from "@/components/threshold-alerts-screen"
-import StaffRosterScreen from "@/components/staff-roster-screen"
+import PerformanceScreen from "@/components/performance-screen"
 import CustomReportsScreen from "@/components/custom-reports-screen"
 import LoadPlansScreen from "@/components/load-plans-screen"
 import BuildupStaffScreen from "@/components/buildup-staff-screen"
@@ -36,7 +36,6 @@ function AppContent() {
     | "flight-risk"
     | "workload-forecast"
     | "threshold-alerts"
-    | "staff-roster"
     | "custom-reports"
     | "staff"
     | "uld-management"
@@ -102,13 +101,12 @@ function AppContent() {
         return <WorkloadForecastScreen />
       case "threshold-alerts":
         return <ThresholdAlertsScreen />
-      case "staff-roster":
-        return <StaffRosterScreen />
       case "custom-reports":
         return <CustomReportsScreen />
       case "flight-assignment":
         return <FlightAssignmentScreen />
       case "staff":
+        return <PerformanceScreen />
       case "uld-management":
         return (
           <div className="min-h-screen bg-gray-50 p-4">
