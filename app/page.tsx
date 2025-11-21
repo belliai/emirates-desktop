@@ -17,6 +17,7 @@ import CustomReportsScreen from "@/components/custom-reports-screen"
 import LoadPlansScreen from "@/components/load-plans-screen"
 import BuildupStaffScreen from "@/components/buildup-staff-screen"
 import FlightAssignmentScreen from "@/components/flight-assignment-screen"
+import SituationalAwarenessScreen from "@/components/situational-awareness-screen"
 import SideNavigation from "@/components/side-navigation"
 import { FlightProvider, useFlights } from "@/lib/flight-context"
 import { LoadPlanProvider } from "@/lib/load-plan-context"
@@ -41,6 +42,7 @@ function AppContent() {
     | "uld-management"
     | "buildup-staff"
     | "flight-assignment"
+    | "situational-awareness"
   >("desktop")
   const [selectedULD, setSelectedULD] = useState<(ULD & { flightNumber: string; uldIndex: number }) | null>(null)
   const { updateULDStatus, addMultipleStatusUpdates } = useFlights()
@@ -93,6 +95,8 @@ function AppContent() {
         return <ULDSteeringScreen />
       case "bdn-dashboard":
         return <BDNDashboardScreen />
+      case "situational-awareness":
+        return <SituationalAwarenessScreen />
       case "uld-status":
         return <ULDStatusTrackingScreen />
       case "flight-risk":

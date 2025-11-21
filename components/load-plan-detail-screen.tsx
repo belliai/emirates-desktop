@@ -2,7 +2,9 @@
 
 import { useState } from "react"
 import React from "react"
-import { ArrowLeft, Plane, Calendar, Package, Users, Clock, FileText, Plus, Trash2 } from "lucide-react"
+import { ArrowLeft, Plane, Calendar, Package, Users, Clock, FileText, Plus, Trash2, FileCheck } from "lucide-react"
+import BCRModal, { generateBCRData, type AWBComment } from "./bcr-modal"
+import AWBAssignmentModal, { LoadedStatusModal, type AWBAssignmentData, type SplitGroup } from "./awb-assignment-modal"
 
 export type AWBRow = {
   ser: string
@@ -73,10 +75,36 @@ interface LoadPlanDetailScreenProps {
   onSave?: (updatedPlan: LoadPlanDetail) => void
 }
 
+// Infrastructure for AWB assignments
+type AWBAssignment = {
+  awbNo: string
+  sectorIndex: number
+  uldSectionIndex: number
+  awbIndex: number
+  assignmentData: AWBAssignmentData
+  isLoaded: boolean
+}
+
 export default function LoadPlanDetailScreen({ loadPlan, onBack, onSave }: LoadPlanDetailScreenProps) {
   const [editedPlan, setEditedPlan] = useState<LoadPlanDetail>(loadPlan)
   const [editingField, setEditingField] = useState<string | null>(null)
   const [editingAWB, setEditingAWB] = useState<{ sectorIndex: number; itemIndex: number } | null>(null)
+  const [showBCRModal, setShowBCRModal] = useState(false)
+  const [awbComments, setAwbComments] = useState<AWBComment[]>([]) // Infrastructure for future commenting
+  
+  // AWB Assignment state
+  const [selectedAWB, setSelectedAWB] = useState<{
+    awb: AWBRow
+    sectorIndex: number
+    uldSectionIndex: number
+    awbIndex: number
+  } | null>(null)
+  const [showAssignmentModal, setShowAssignmentModal] = useState(false)
+  const [showLoadedModal, setShowLoadedModal] = useState(false)
+  const [loadedAWBNo, setLoadedAWBNo] = useState<string>("")
+  const [awbAssignments, setAwbAssignments] = useState<Map<string, AWBAssignment>>(new Map())
+  const [hoveredUld, setHoveredUld] = useState<string | null>(null)
+  
   const isReadOnly = !onSave
 
   const updateField = (field: keyof LoadPlanDetail, value: string) => {
@@ -263,14 +291,25 @@ export default function LoadPlanDetailScreen({ loadPlan, onBack, onSave }: LoadP
             </button>
             <h1 className="text-lg font-semibold text-gray-900">Load Plan Detail</h1>
           </div>
-          {onSave && (
-            <button
-              onClick={handleSave}
-              className="px-4 py-2 bg-[#D71A21] text-white rounded-lg hover:bg-[#B01419] transition-colors font-medium"
-            >
-              Save Changes
-            </button>
-          )}
+          <div className="flex items-center gap-3">
+            {isReadOnly && (
+              <button
+                onClick={() => setShowBCRModal(true)}
+                className="px-4 py-2 bg-[#D71A21] text-white rounded-lg hover:bg-[#B01419] transition-colors font-medium flex items-center gap-2"
+              >
+                <FileCheck className="w-4 h-4" />
+                Generate BCR
+              </button>
+            )}
+            {onSave && (
+              <button
+                onClick={handleSave}
+                className="px-4 py-2 bg-[#D71A21] text-white rounded-lg hover:bg-[#B01419] transition-colors font-medium"
+              >
+                Save Changes
+              </button>
+            )}
+          </div>
         </div>
       </header>
 
@@ -453,9 +492,42 @@ export default function LoadPlanDetailScreen({ loadPlan, onBack, onSave }: LoadP
                           const actualUldSectionIndex = sector.uldSections.indexOf(uldSection)
                           return (
                             <React.Fragment key={uldSectionIndex}>
-                              {uldSection.awbs.map((awb, awbIndex) => (
-                                <React.Fragment key={awbIndex}>
-                                  <tr className="border-b border-gray-100 hover:bg-gray-50">
+                              {uldSection.awbs.map((awb, awbIndex) => {
+                                const assignmentKey = `${awb.awbNo}-${sectorIndex}-${actualUldSectionIndex}-${awbIndex}`
+                                const assignment = awbAssignments.get(assignmentKey)
+                                const isLoaded = assignment?.isLoaded || false
+                                const assignmentUld = assignment?.assignmentData.type === "single" 
+                                  ? assignment.assignmentData.uld 
+                                  : assignment?.assignmentData.type === "existing"
+                                  ? assignment.assignmentData.existingUld
+                                  : null
+                                const isHovered = hoveredUld === assignmentUld && assignmentUld
+                                const splitGroups = assignment?.assignmentData.type === "split" ? assignment.assignmentData.splitGroups : []
+                                
+                                return (
+                                  <React.Fragment key={awbIndex}>
+                                    <tr 
+                                      className={`border-b border-gray-100 ${isLoaded ? "bg-gray-200 opacity-60" : "hover:bg-gray-50"} ${isHovered ? "border-l-4 border-l-red-500" : ""} ${isReadOnly ? "cursor-pointer" : ""}`}
+                                      onClick={() => {
+                                        if (isReadOnly) {
+                                          if (isLoaded) {
+                                            setLoadedAWBNo(awb.awbNo)
+                                            setShowLoadedModal(true)
+                                          } else {
+                                            setSelectedAWB({ awb, sectorIndex, uldSectionIndex: actualUldSectionIndex, awbIndex })
+                                            setShowAssignmentModal(true)
+                                          }
+                                        }
+                                      }}
+                                      onMouseEnter={() => {
+                                        if (assignmentUld) {
+                                          setHoveredUld(assignmentUld)
+                                        }
+                                      }}
+                                      onMouseLeave={() => {
+                                        setHoveredUld(null)
+                                      }}
+                                    >
                                     <td className="px-2 py-1">
                                       <EditableField
                                         value={awb.ser}
@@ -629,21 +701,61 @@ export default function LoadPlanDetailScreen({ loadPlan, onBack, onSave }: LoadP
                                       )}
                                     </td>
                                   </tr>
-                                  {awb.remarks && (
-                                    <tr>
-                                      <td colSpan={20} className="px-2 py-1 text-xs text-gray-700 italic">
-                                        <EditableField
-                                          value={awb.remarks}
-                                          onChange={(value) => updateAWBField(sectorIndex, actualUldSectionIndex, awbIndex, "remarks", value)}
-                                          className="text-xs italic w-full"
-                                          multiline
-                                          readOnly={isReadOnly}
-                                        />
-                                      </td>
-                                    </tr>
-                                  )}
-                                </React.Fragment>
-                              ))}
+                                    {awb.remarks && (
+                                      <tr>
+                                        <td colSpan={20} className="px-2 py-1 text-xs text-gray-700 italic">
+                                          <EditableField
+                                            value={awb.remarks}
+                                            onChange={(value) => updateAWBField(sectorIndex, actualUldSectionIndex, awbIndex, "remarks", value)}
+                                            className="text-xs italic w-full"
+                                            multiline
+                                            readOnly={isReadOnly}
+                                          />
+                                        </td>
+                                      </tr>
+                                    )}
+                                    {/* Split Groups - Indented rows */}
+                                    {splitGroups && splitGroups.length > 0 && splitGroups.map((group, groupIndex) => {
+                                      const groupUld = group.uld
+                                      const isGroupHovered = hoveredUld === groupUld && groupUld
+                                      return (
+                                        <tr 
+                                          key={`split-${group.id}`}
+                                          className={`border-b border-gray-100 bg-gray-50 ${isGroupHovered ? "border-l-4 border-l-red-500" : ""}`}
+                                          onMouseEnter={() => {
+                                            if (groupUld) {
+                                              setHoveredUld(groupUld)
+                                            }
+                                          }}
+                                          onMouseLeave={() => {
+                                            setHoveredUld(null)
+                                          }}
+                                        >
+                                          <td className="px-2 py-1 pl-8 text-xs text-gray-500">
+                                            <span className="text-gray-400">└─</span>
+                                          </td>
+                                          <td className="px-2 py-1 text-xs font-medium text-gray-700">
+                                            {awb.awbNo}
+                                          </td>
+                                          <td className="px-2 py-1 text-xs text-gray-500">
+                                            {awb.orgDes}
+                                          </td>
+                                          <td className="px-2 py-1 text-xs text-gray-700 font-semibold">
+                                            {group.pieces || "-"}
+                                          </td>
+                                          <td className="px-2 py-1 text-xs text-gray-500">
+                                            {groupUld || "-"}
+                                          </td>
+                                          <td className="px-2 py-1 text-xs text-gray-600 font-mono">
+                                            {group.no || "-"}
+                                          </td>
+                                          <td colSpan={14} className="px-2 py-1"></td>
+                                        </tr>
+                                      )
+                                    })}
+                                  </React.Fragment>
+                                )
+                              })}
                               {uldSection.uld && (
                                 <tr className="">
                                   <td colSpan={19} className="px-2 py-1 font-semibold text-gray-900 text-center">
@@ -1029,6 +1141,80 @@ export default function LoadPlanDetailScreen({ loadPlan, onBack, onSave }: LoadP
           </div>
         </div>
       </div>
+
+      {/* BCR Modal */}
+      {isReadOnly && (
+        <BCRModal
+          isOpen={showBCRModal}
+          onClose={() => setShowBCRModal(false)}
+          loadPlan={editedPlan}
+          bcrData={generateBCRData(editedPlan, awbComments)}
+        />
+      )}
+
+      {/* AWB Assignment Modal */}
+      {isReadOnly && selectedAWB && (
+        <AWBAssignmentModal
+          isOpen={showAssignmentModal}
+          onClose={() => {
+            setShowAssignmentModal(false)
+            setSelectedAWB(null)
+          }}
+          awb={selectedAWB.awb}
+          existingUlds={Array.from(new Set(
+            Array.from(awbAssignments.values())
+              .map(a => {
+                if (a.assignmentData.type === "single") return a.assignmentData.uld
+                if (a.assignmentData.type === "existing") return a.assignmentData.existingUld
+                return null
+              })
+              .filter((uld): uld is string => uld !== null)
+          ))}
+          onConfirm={(data) => {
+            const key = `${selectedAWB.awb.awbNo}-${selectedAWB.sectorIndex}-${selectedAWB.uldSectionIndex}-${selectedAWB.awbIndex}`
+            setAwbAssignments((prev) => {
+              const updated = new Map(prev)
+              updated.set(key, {
+                awbNo: selectedAWB.awb.awbNo,
+                sectorIndex: selectedAWB.sectorIndex,
+                uldSectionIndex: selectedAWB.uldSectionIndex,
+                awbIndex: selectedAWB.awbIndex,
+                assignmentData: data,
+                isLoaded: data.isLoaded !== false, // Default to true unless explicitly false
+              })
+              return updated
+            })
+            setShowAssignmentModal(false)
+            setSelectedAWB(null)
+          }}
+        />
+      )}
+
+      {/* Loaded Status Modal */}
+      {isReadOnly && (
+        <LoadedStatusModal
+          isOpen={showLoadedModal}
+          onClose={() => {
+            setShowLoadedModal(false)
+            setLoadedAWBNo("")
+          }}
+          awbNo={loadedAWBNo}
+          onCancelLoading={() => {
+            // Find and remove the loaded status
+            setAwbAssignments((prev) => {
+              const updated = new Map(prev)
+              for (const [key, assignment] of updated.entries()) {
+                if (assignment.awbNo === loadedAWBNo) {
+                  updated.set(key, { ...assignment, isLoaded: false })
+                }
+              }
+              return updated
+            })
+            setShowLoadedModal(false)
+            setLoadedAWBNo("")
+          }}
+        />
+      )}
     </div>
   )
 }

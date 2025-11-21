@@ -258,10 +258,10 @@ export default function BDNDashboardScreen() {
           <h1 className="text-xl font-bold text-gray-900">Workload Visibility</h1>
         </div>
 
-        {/* Top Half - Work Area Timeline */}
+        {/* Top Half - Workload */}
         <div className="bg-white rounded-lg border border-gray-200 p-6 mb-4">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-gray-900">Work Area Timeline</h3>
+            <h3 className="text-lg font-semibold text-gray-900">Workload</h3>
             <div className="flex gap-2">
               <Select
                 value={workAreaFilter}
@@ -327,15 +327,15 @@ export default function BDNDashboardScreen() {
                           style={{ width: `${remainingPercentage}%`, backgroundColor: "rgba(220, 38, 38, 0.4)" }}
                         >
                           <span className="text-white text-sm font-semibold">{data.remaining}</span>
-                        </div>
-                      </div>
-                    </div>
+            </div>
+            </div>
+          </div>
                     {/* Total label */}
                     <div className="absolute right-2 top-1/2 -translate-y-1/2 text-sm font-semibold text-gray-700">
                       {data.total} Total
-                    </div>
-                  </div>
-                </div>
+            </div>
+          </div>
+            </div>
               )
             })}
           </div>
@@ -346,7 +346,7 @@ export default function BDNDashboardScreen() {
           {/* Left Half - Graph and Table */}
           <div className="w-1/2 space-y-4">
             {/* Single Bar Chart */}
-            <div className="bg-white rounded-lg border border-gray-200 p-6">
+        <div className="bg-white rounded-lg border border-gray-200 p-6">
               <h3 className="text-lg font-semibold text-gray-900 mb-4">Advance Planned v/s Built</h3>
               <div className="h-80">
                 <ResponsiveContainer width="100%" height="100%">
@@ -392,9 +392,9 @@ export default function BDNDashboardScreen() {
                   <h3 className="text-lg font-semibold text-gray-900">Detailed Breakdown</h3>
                   {isTableOpen ? (
                     <ChevronDown className="w-5 h-5 text-gray-600" />
-                  ) : (
+                    ) : (
                     <ChevronRight className="w-5 h-5 text-gray-600" />
-                  )}
+                    )}
                 </div>
               </CollapsibleTrigger>
               <CollapsibleContent>
@@ -474,7 +474,7 @@ export default function BDNDashboardScreen() {
                             </tr>
                           </tbody>
                         </table>
-                      </div>
+                    </div>
 
                       {/* Pending Section */}
                       <div>
@@ -717,7 +717,7 @@ export default function BDNDashboardScreen() {
                 </div>
               </CollapsibleContent>
             </Collapsible>
-          </div>
+                  </div>
 
           {/* Right Half - Screening Graph and Tables */}
           <div className="w-1/2 space-y-4">
@@ -799,7 +799,7 @@ export default function BDNDashboardScreen() {
                   ) : (
                     <ChevronRight className="w-5 h-5 text-gray-600" />
                   )}
-                </div>
+                              </div>
               </CollapsibleTrigger>
               <CollapsibleContent>
                 <div className="bg-white rounded-lg border border-gray-200 border-t-0 overflow-hidden">
@@ -1002,8 +1002,8 @@ export default function BDNDashboardScreen() {
                             </tr>
                           </tbody>
                         </table>
-                      </div>
-                    </div>
+                              </div>
+                            </div>
 
                     {/* US SCREENING & LOADING DETAILS Table */}
                     <div className="space-y-4 border-t border-gray-300 pt-6">

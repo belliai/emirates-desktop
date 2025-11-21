@@ -3,7 +3,7 @@
 import type React from "react"
 
 import { useState } from "react"
-import { Home, List, BarChart3, FileText, Bell, Users, ChevronDown, ChevronRight, Settings, ChevronsLeft, ChevronsRight, TrendingUp, AlertTriangle, ClipboardList, Clipboard, Plane } from 'lucide-react'
+import { Home, List, BarChart3, FileText, Bell, Users, ChevronDown, ChevronRight, Settings, ChevronsLeft, ChevronsRight, TrendingUp, AlertTriangle, ClipboardList, Clipboard, Plane, LayoutDashboard, Activity } from 'lucide-react'
 import Image from "next/image"
 
 interface SideNavigationProps {
@@ -28,7 +28,7 @@ interface NavSection {
 export default function SideNavigation({ currentScreen, onNavigate }: SideNavigationProps) {
   const [isCollapsed, setIsCollapsed] = useState(false)
   const [expandedSections, setExpandedSections] = useState<Set<string>>(
-    new Set(["data-tables", "staff"]), // "forecast" is collapsed by default
+    new Set(["data-tables", "staff"]), // "dashboards" and "forecast" are collapsed by default
   )
 
   const navSections: NavSection[] = [
@@ -46,12 +46,21 @@ export default function SideNavigation({ currentScreen, onNavigate }: SideNaviga
       ],
     },
     {
+      id: "dashboards",
+      label: "Dashboards",
+      icon: LayoutDashboard,
+      defaultOpen: false,
+      items: [
+        { id: "bdn-dashboard", label: "Workload Visibility", icon: ClipboardList },
+        { id: "situational-awareness", label: "Situational Awareness", icon: Activity },
+      ],
+    },
+    {
       id: "forecast",
       label: "Forecast",
       icon: BarChart3,
       defaultOpen: false,
       items: [
-        { id: "bdn-dashboard", label: "Workload Visibility", icon: ClipboardList },
         { id: "flight-risk", label: "Flight Risk", icon: AlertTriangle },
         { id: "workload-forecast", label: "Workload Forecast", icon: TrendingUp },
         { id: "threshold-alerts", label: "Threshold Alerts", icon: Bell },
