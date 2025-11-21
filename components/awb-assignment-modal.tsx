@@ -14,6 +14,15 @@ import {
 } from "@/components/ui/dropdown-menu"
 import type { AWBRow } from "./load-plan-detail-screen"
 
+// Client-safe ID generator
+const generateId = () => {
+  if (typeof window !== 'undefined' && window.crypto?.randomUUID) {
+    return window.crypto.randomUUID()
+  }
+  // Fallback for SSR/build time
+  return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+}
+
 export type AWBAssignmentType = "single" | "split" | "existing" | "offload"
 
 export type SplitGroup = {
@@ -51,13 +60,13 @@ export default function AWBAssignmentModal({
   const [uld, setUld] = useState("")
   const [existingUld, setExistingUld] = useState("")
   const [splitGroups, setSplitGroups] = useState<SplitGroup[]>([
-    { id: crypto.randomUUID(), no: "", pieces: "", uld: "" },
+    { id: generateId(), no: "", pieces: "", uld: "" },
   ])
 
   if (!isOpen) return null
 
   const handleAddSplitGroup = () => {
-    setSplitGroups([...splitGroups, { id: crypto.randomUUID(), no: "", pieces: "", uld: "" }])
+    setSplitGroups([...splitGroups, { id: generateId(), no: "", pieces: "", uld: "" }])
   }
 
   const handleRemoveSplitGroup = (index: number) => {
