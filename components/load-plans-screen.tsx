@@ -3,7 +3,7 @@
 import { useState, useRef } from "react"
 import { ChevronRight, Plane, Calendar, Package, Users, Clock, FileText, Upload } from "lucide-react"
 import LoadPlanDetailScreen from "./load-plan-detail-screen"
-import type { LoadPlanDetail } from "./load-plan-detail-screen"
+import type { LoadPlanDetail } from "./load-plan-types"
 import { extractTextFromFile } from "@/lib/lists/file-extractors"
 import { UploadModal } from "./lists/upload-modal"
 import { Button } from "@/components/ui/button"

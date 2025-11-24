@@ -987,7 +987,7 @@ export default function SituationalAwarenessScreen() {
             </div>
             
             {/* Complex Line Chart - AWB Level Progress */}
-            <div className="p-3 h-80 relative">
+            <div className="p-3 relative" style={{ height: "320px" }}>
               {/* Shift Selector - Top Right */}
               <div className="absolute top-3 right-3 z-10">
                 <Select
@@ -1005,8 +1005,9 @@ export default function SituationalAwarenessScreen() {
                 </Select>
               </div>
 
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={lineChartData} margin={{ top: 5, right: 20, left: 0, bottom: 50 }}>
+              {lineChartData && lineChartData.length > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={lineChartData} margin={{ top: 5, right: 20, left: 0, bottom: 50 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
                   <XAxis
                     dataKey="sequence"
@@ -1061,8 +1062,13 @@ export default function SituationalAwarenessScreen() {
                       activeDot={{ r: 5 }}
                     />
                   )}
-                </LineChart>
-              </ResponsiveContainer>
+                  </LineChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="flex items-center justify-center h-full text-gray-500 text-sm">
+                  No data available
+                </div>
+              )}
 
               {/* Split Toggle - Bottom Right */}
               <div className="absolute bottom-3 right-3 z-10">
@@ -1475,3 +1481,4 @@ export default function SituationalAwarenessScreen() {
     </div>  
   )
 }
+

@@ -2,72 +2,17 @@
 
 import { useState } from "react"
 import React from "react"
-import { ArrowLeft, Plane, Calendar, Package, Users, Clock, FileText, Plus, Trash2, FileCheck } from "lucide-react"
+import { Plus, Trash2 } from "lucide-react"
 import BCRModal, { generateBCRData, type AWBComment } from "./bcr-modal"
-import AWBAssignmentModal, { LoadedStatusModal, type AWBAssignmentData, type SplitGroup } from "./awb-assignment-modal"
+import AWBAssignmentModal, { LoadedStatusModal, type AWBAssignmentData } from "./awb-assignment-modal"
+import { LoadPlanHeader } from "./load-plan-header"
+import { FlightHeaderRow } from "./flight-header-row"
+import { EditableField } from "./editable-field"
+import { useLoadPlanState, type AWBAssignment } from "./use-load-plan-state"
+import type { LoadPlanDetail, AWBRow } from "./load-plan-types"
 
-export type AWBRow = {
-  ser: string
-  awbNo: string
-  orgDes: string
-  pcs: string
-  wgt: string
-  vol: string
-  lvol: string
-  shc: string
-  manDesc: string
-  pcode: string
-  pc: string
-  thc: string
-  bs: string
-  pi: string
-  fltin: string
-  arrdtTime: string
-  qnnAqnn: string
-  whs: string
-  si: string
-  remarks?: string
-}
-
-export type ULDSection = {
-  uld: string
-  awbs: AWBRow[]
-  isRampTransfer?: boolean
-}
-
-export type LoadPlanItem = {
-  type: "uld" | "awb"
-  uld?: string
-  awb?: AWBRow
-  isRampTransfer?: boolean
-}
-
-export type LoadPlanDetail = {
-  flight: string
-  date: string
-  acftType: string
-  acftReg: string
-  headerVersion: string
-  pax: string
-  std: string
-  preparedBy: string
-  ttlPlnUld: string
-  uldVersion: string
-  preparedOn: string
-  remarks?: string[]
-  sectors: {
-    sector: string
-    uldSections: ULDSection[]
-    bagg?: string
-    cou?: string
-    totals: {
-      pcs: string
-      wgt: string
-      vol: string
-      lvol: string
-    }
-  }[]
-}
+// Re-export types for backward compatibility
+export type { AWBRow, ULDSection, LoadPlanItem, LoadPlanDetail } from "./load-plan-types"
 
 interface LoadPlanDetailScreenProps {
   loadPlan: LoadPlanDetail
@@ -75,205 +20,38 @@ interface LoadPlanDetailScreenProps {
   onSave?: (updatedPlan: LoadPlanDetail) => void
 }
 
-// Infrastructure for AWB assignments
-type AWBAssignment = {
-  awbNo: string
-  sectorIndex: number
-  uldSectionIndex: number
-  awbIndex: number
-  assignmentData: AWBAssignmentData
-  isLoaded: boolean
-}
-
 export default function LoadPlanDetailScreen({ loadPlan, onBack, onSave }: LoadPlanDetailScreenProps) {
-  const [editedPlan, setEditedPlan] = useState<LoadPlanDetail>(loadPlan)
-  const [editingField, setEditingField] = useState<string | null>(null)
-  const [editingAWB, setEditingAWB] = useState<{ sectorIndex: number; itemIndex: number } | null>(null)
   const [showBCRModal, setShowBCRModal] = useState(false)
-  const [awbComments, setAwbComments] = useState<AWBComment[]>([]) // Infrastructure for future commenting
+  const [awbComments, setAwbComments] = useState<AWBComment[]>([])
   
-  // AWB Assignment state
-  const [selectedAWB, setSelectedAWB] = useState<{
-    awb: AWBRow
-    sectorIndex: number
-    uldSectionIndex: number
-    awbIndex: number
-  } | null>(null)
-  const [showAssignmentModal, setShowAssignmentModal] = useState(false)
-  const [showLoadedModal, setShowLoadedModal] = useState(false)
-  const [loadedAWBNo, setLoadedAWBNo] = useState<string>("")
-  const [awbAssignments, setAwbAssignments] = useState<Map<string, AWBAssignment>>(new Map())
-  const [hoveredUld, setHoveredUld] = useState<string | null>(null)
+  const {
+    editedPlan,
+    selectedAWB,
+    setSelectedAWB,
+    showAssignmentModal,
+    setShowAssignmentModal,
+    showLoadedModal,
+    setShowLoadedModal,
+    loadedAWBNo,
+    setLoadedAWBNo,
+    awbAssignments,
+    setAwbAssignments,
+    hoveredUld,
+    setHoveredUld,
+    updateField,
+    updateSectorField,
+    updateSectorTotals,
+    addNewAWBRow,
+    addNewULDSection,
+    addNewSector,
+    deleteAWBRow,
+    deleteULDSection,
+    deleteSector,
+    updateAWBField,
+    updateULDField,
+  } = useLoadPlanState(loadPlan)
   
   const isReadOnly = !onSave
-
-  const updateField = (field: keyof LoadPlanDetail, value: string) => {
-    setEditedPlan((prev) => ({ ...prev, [field]: value }))
-  }
-
-  const updateSectorField = (sectorIndex: number, field: string, value: string) => {
-    setEditedPlan((prev) => {
-      const updatedSectors = [...prev.sectors]
-      updatedSectors[sectorIndex] = { ...updatedSectors[sectorIndex], [field]: value }
-      return { ...prev, sectors: updatedSectors }
-    })
-  }
-
-  const updateSectorTotals = (sectorIndex: number, field: string, value: string) => {
-    setEditedPlan((prev) => {
-      const updatedSectors = [...prev.sectors]
-      updatedSectors[sectorIndex] = {
-        ...updatedSectors[sectorIndex],
-        totals: { ...updatedSectors[sectorIndex].totals, [field]: value },
-      }
-      return { ...prev, sectors: updatedSectors }
-    })
-  }
-
-  const addNewAWBRow = (sectorIndex: number, uldSectionIndex: number, afterAWBIndex?: number) => {
-    setEditedPlan((prev) => {
-      const updatedSectors = [...prev.sectors]
-      const sector = updatedSectors[sectorIndex]
-      const updatedSections = [...sector.uldSections]
-      const uldSection = updatedSections[uldSectionIndex]
-
-      const newAWB: AWBRow = {
-        ser: String(uldSection.awbs.length + 1).padStart(3, "0"),
-        awbNo: "",
-        orgDes: "",
-        pcs: "",
-        wgt: "",
-        vol: "",
-        lvol: "",
-        shc: "",
-        manDesc: "",
-        pcode: "",
-        pc: "",
-        thc: "",
-        bs: "",
-        pi: "",
-        fltin: "",
-        arrdtTime: "",
-        qnnAqnn: "",
-        whs: "",
-        si: "",
-      }
-
-      if (afterAWBIndex !== undefined) {
-        updatedSections[uldSectionIndex] = {
-          ...uldSection,
-          awbs: [
-            ...uldSection.awbs.slice(0, afterAWBIndex + 1),
-            newAWB,
-            ...uldSection.awbs.slice(afterAWBIndex + 1),
-          ],
-        }
-      } else {
-        updatedSections[uldSectionIndex] = {
-          ...uldSection,
-          awbs: [...uldSection.awbs, newAWB],
-        }
-      }
-
-      updatedSectors[sectorIndex] = { ...sector, uldSections: updatedSections }
-      return { ...prev, sectors: updatedSectors }
-    })
-  }
-
-  const addNewULDSection = (sectorIndex: number) => {
-    setEditedPlan((prev) => {
-      const updatedSectors = [...prev.sectors]
-      const sector = updatedSectors[sectorIndex]
-      const newULDSection: ULDSection = {
-        uld: "",
-        awbs: [],
-      }
-      updatedSectors[sectorIndex] = {
-        ...sector,
-        uldSections: [...sector.uldSections, newULDSection],
-      }
-      return { ...prev, sectors: updatedSectors }
-    })
-  }
-
-  const addNewSector = () => {
-    setEditedPlan((prev) => {
-      const newSector = {
-        sector: "",
-        uldSections: [] as ULDSection[],
-        totals: {
-          pcs: "0",
-          wgt: "0",
-          vol: "0",
-          lvol: "0",
-        },
-      }
-      return { ...prev, sectors: [...prev.sectors, newSector] }
-    })
-  }
-
-  const deleteAWBRow = (sectorIndex: number, uldSectionIndex: number, awbIndex: number) => {
-    setEditedPlan((prev) => {
-      const updatedSectors = [...prev.sectors]
-      const sector = updatedSectors[sectorIndex]
-      const updatedSections = [...sector.uldSections]
-      updatedSections[uldSectionIndex] = {
-        ...updatedSections[uldSectionIndex],
-        awbs: updatedSections[uldSectionIndex].awbs.filter((_, i) => i !== awbIndex),
-      }
-      updatedSectors[sectorIndex] = { ...sector, uldSections: updatedSections }
-      return { ...prev, sectors: updatedSectors }
-    })
-  }
-
-  const deleteULDSection = (sectorIndex: number, uldSectionIndex: number) => {
-    setEditedPlan((prev) => {
-      const updatedSectors = [...prev.sectors]
-      const sector = updatedSectors[sectorIndex]
-      updatedSectors[sectorIndex] = {
-        ...sector,
-        uldSections: sector.uldSections.filter((_, i) => i !== uldSectionIndex),
-      }
-      return { ...prev, sectors: updatedSectors }
-    })
-  }
-
-  const deleteSector = (sectorIndex: number) => {
-    setEditedPlan((prev) => ({
-      ...prev,
-      sectors: prev.sectors.filter((_, i) => i !== sectorIndex),
-    }))
-  }
-
-  const updateAWBField = (
-    sectorIndex: number,
-    uldSectionIndex: number,
-    awbIndex: number,
-    field: keyof AWBRow,
-    value: string,
-  ) => {
-    setEditedPlan((prev) => {
-      const updatedSectors = [...prev.sectors]
-      const sector = updatedSectors[sectorIndex]
-      const updatedSections = [...sector.uldSections]
-      const updatedAWBs = [...updatedSections[uldSectionIndex].awbs]
-      updatedAWBs[awbIndex] = { ...updatedAWBs[awbIndex], [field]: value }
-      updatedSections[uldSectionIndex] = { ...updatedSections[uldSectionIndex], awbs: updatedAWBs }
-      updatedSectors[sectorIndex] = { ...sector, uldSections: updatedSections }
-      return { ...prev, sectors: updatedSectors }
-    })
-  }
-
-  const updateULDField = (sectorIndex: number, uldSectionIndex: number, value: string) => {
-    setEditedPlan((prev) => {
-      const updatedSectors = [...prev.sectors]
-      const sector = updatedSectors[sectorIndex]
-      const updatedSections = [...sector.uldSections]
-      updatedSections[uldSectionIndex] = { ...updatedSections[uldSectionIndex], uld: value }
-      updatedSectors[sectorIndex] = { ...sector, uldSections: updatedSections }
-      return { ...prev, sectors: updatedSectors }
-    })
-  }
 
   const handleSave = () => {
     if (onSave) {
@@ -281,128 +59,70 @@ export default function LoadPlanDetailScreen({ loadPlan, onBack, onSave }: LoadP
     }
     onBack()
   }
+
+  const handleAWBRowClick = (
+    awb: AWBRow,
+    sectorIndex: number,
+    uldSectionIndex: number,
+    awbIndex: number,
+    assignment: AWBAssignment | undefined
+  ) => {
+    if (!isReadOnly) return
+    
+    if (assignment?.isLoaded) {
+      setLoadedAWBNo(awb.awbNo)
+      setShowLoadedModal(true)
+    } else {
+      setSelectedAWB({ awb, sectorIndex, uldSectionIndex, awbIndex })
+      setShowAssignmentModal(true)
+    }
+  }
+
+  const handleAssignmentConfirm = (data: AWBAssignmentData) => {
+    if (!selectedAWB) return
+    
+    const key = `${selectedAWB.awb.awbNo}-${selectedAWB.sectorIndex}-${selectedAWB.uldSectionIndex}-${selectedAWB.awbIndex}`
+    setAwbAssignments((prev) => {
+      const updated = new Map(prev)
+      updated.set(key, {
+        awbNo: selectedAWB.awb.awbNo,
+        sectorIndex: selectedAWB.sectorIndex,
+        uldSectionIndex: selectedAWB.uldSectionIndex,
+        awbIndex: selectedAWB.awbIndex,
+        assignmentData: data,
+        isLoaded: data.isLoaded !== false,
+      })
+      return updated
+    })
+    setShowAssignmentModal(false)
+    setSelectedAWB(null)
+  }
+
+  const existingUlds = Array.from(new Set(
+    Array.from(awbAssignments.values())
+      .map(a => {
+        if (a.assignmentData.type === "single") return a.assignmentData.uld
+        if (a.assignmentData.type === "existing") return a.assignmentData.existingUld
+        return null
+      })
+      .filter((uld): uld is string => uld !== null)
+  ))
+
   return (
     <div className="min-h-screen bg-white">
-      <header className="sticky top-0 z-50 border-b border-gray-200 bg-white">
-        <div className="flex items-center justify-between px-4 py-3">
-          <div className="flex items-center gap-3">
-            <button onClick={onBack} className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
-              <ArrowLeft className="h-6 w-6 text-gray-700" />
-            </button>
-            <h1 className="text-lg font-semibold text-gray-900">Load Plan Detail</h1>
-          </div>
-          <div className="flex items-center gap-3">
-            {isReadOnly && (
-              <button
-                onClick={() => setShowBCRModal(true)}
-                className="px-4 py-2 bg-[#D71A21] text-white rounded-lg hover:bg-[#B01419] transition-colors font-medium flex items-center gap-2"
-              >
-                <FileCheck className="w-4 h-4" />
-                Generate BCR
-              </button>
-            )}
-            {onSave && (
-              <button
-                onClick={handleSave}
-                className="px-4 py-2 bg-[#D71A21] text-white rounded-lg hover:bg-[#B01419] transition-colors font-medium"
-              >
-                Save Changes
-              </button>
-            )}
-          </div>
-        </div>
-      </header>
+      <LoadPlanHeader
+        onBack={onBack}
+        isReadOnly={isReadOnly}
+        onGenerateBCR={isReadOnly ? () => setShowBCRModal(true) : undefined}
+        onSave={onSave ? handleSave : undefined}
+      />
 
       <div className="bg-gray-50">
-        {/* Flight Header Row - Similar to list screen, showing clicked row as header */}
-        <div className="bg-white border-b border-gray-200">
-          {/* Header Labels Row */}
-          <div className="grid grid-cols-[1fr_0.8fr_1fr_1fr_1.5fr_0.8fr_1fr_1fr] gap-2 px-3 py-2 bg-gray-50 border-b border-gray-200">
-            <div className="flex items-center gap-2">
-              <Plane className="w-4 h-4 text-gray-500" />
-              <span className="text-xs font-semibold text-gray-700">Flight</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <Calendar className="w-4 h-4 text-gray-500" />
-              <span className="text-xs font-semibold text-gray-700">Date</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <Package className="w-4 h-4 text-gray-500" />
-              <span className="text-xs font-semibold text-gray-700">ACFT TYPE</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <Package className="w-4 h-4 text-gray-500" />
-              <span className="text-xs font-semibold text-gray-700">ACFT REG</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <Users className="w-4 h-4 text-gray-500" />
-              <span className="text-xs font-semibold text-gray-700">PAX</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <Clock className="w-4 h-4 text-gray-500" />
-              <span className="text-xs font-semibold text-gray-700">STD</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <FileText className="w-4 h-4 text-gray-500" />
-              <span className="text-xs font-semibold text-gray-700">TTL PLN ULD</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <FileText className="w-4 h-4 text-gray-500" />
-              <span className="text-xs font-semibold text-gray-700">ULD Version</span>
-            </div>
-          </div>
-          {/* Data Row - The clicked row becomes the header */}
-          <div className="grid grid-cols-[1fr_0.8fr_1fr_1fr_1.5fr_0.8fr_1fr_1fr] gap-2 px-3 py-3">
-            <EditableField
-              value={editedPlan.flight}
-              onChange={(value) => updateField("flight", value)}
-              className="font-semibold text-gray-900"
-              readOnly={isReadOnly}
-            />
-            <EditableField
-              value={editedPlan.date}
-              onChange={(value) => updateField("date", value)}
-              className="text-gray-700"
-              readOnly={isReadOnly}
-            />
-            <EditableField
-              value={editedPlan.acftType}
-              onChange={(value) => updateField("acftType", value)}
-              className="text-gray-700"
-              readOnly={isReadOnly}
-            />
-            <EditableField
-              value={editedPlan.acftReg}
-              onChange={(value) => updateField("acftReg", value)}
-              className="text-gray-700"
-              readOnly={isReadOnly}
-            />
-            <EditableField
-              value={editedPlan.pax}
-              onChange={(value) => updateField("pax", value)}
-              className="text-gray-700"
-              readOnly={isReadOnly}
-            />
-            <EditableField
-              value={editedPlan.std}
-              onChange={(value) => updateField("std", value)}
-              className="text-gray-700"
-              readOnly={isReadOnly}
-            />
-            <EditableField
-              value={editedPlan.ttlPlnUld}
-              onChange={(value) => updateField("ttlPlnUld", value)}
-              className="text-gray-700"
-              readOnly={isReadOnly}
-            />
-            <EditableField
-              value={editedPlan.uldVersion}
-              onChange={(value) => updateField("uldVersion", value)}
-              className="text-gray-700"
-              readOnly={isReadOnly}
-            />
-          </div>
-        </div>
+        <FlightHeaderRow
+          plan={editedPlan}
+          onFieldUpdate={updateField}
+          isReadOnly={isReadOnly}
+        />
 
         <div className="p-4 space-y-6">
           {/* Sectors */}
@@ -434,677 +154,28 @@ export default function LoadPlanDetailScreen({ loadPlan, onBack, onSave }: LoadP
                   )}
                 </div>
 
-                {/* Table */}
-                <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-xs font-mono">
-                      <thead>
-                        <tr className="border-b-2 border-gray-300">
-                          <th className="px-2 py-2 text-left font-semibold">SER.</th>
-                          <th className="px-2 py-2 text-left font-semibold">AWB NO</th>
-                          <th className="px-2 py-2 text-left font-semibold">ORG/DES</th>
-                          <th className="px-2 py-2 text-left font-semibold">PCS</th>
-                          <th className="px-2 py-2 text-left font-semibold">WGT</th>
-                          <th className="px-2 py-2 text-left font-semibold">VOL</th>
-                          <th className="px-2 py-2 text-left font-semibold">LVOL</th>
-                          <th className="px-2 py-2 text-left font-semibold">SHC</th>
-                          <th className="px-2 py-2 text-left font-semibold">MAN.DESC</th>
-                          <th className="px-2 py-2 text-left font-semibold">PCODE</th>
-                          <th className="px-2 py-2 text-left font-semibold">PC</th>
-                          <th className="px-2 py-2 text-left font-semibold">THC</th>
-                          <th className="px-2 py-2 text-left font-semibold">BS</th>
-                          <th className="px-2 py-2 text-left font-semibold">PI</th>
-                          <th className="px-2 py-2 text-left font-semibold">FLTIN</th>
-                          <th className="px-2 py-2 text-left font-semibold">ARRDT.TIME</th>
-                          <th className="px-2 py-2 text-left font-semibold">QNN/AQNN</th>
-                          <th className="px-2 py-2 text-left font-semibold">WHS</th>
-                          <th className="px-2 py-2 text-left font-semibold">SI</th>
-                          <th className="px-2 py-2 text-left font-semibold w-20">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {/* Special Instructions */}
-                        {editedPlan.remarks && editedPlan.remarks.length > 0 && (
-                          <tr>
-                            <td colSpan={20} className="px-2 py-2 bg-gray-100 border-b border-gray-200">
-                              <div className="space-y-1">
-                                {editedPlan.remarks.map((remark, index) => (
-                                  <EditableField
-                                    key={index}
-                                    value={remark}
-                                    onChange={(value) => {
-                                      setEditedPlan((prev) => {
-                                        const updatedRemarks = [...(prev.remarks || [])]
-                                        updatedRemarks[index] = value
-                                        return { ...prev, remarks: updatedRemarks }
-                                      })
-                                    }}
-                                    className="text-xs text-gray-900 block w-full"
-                                    multiline
-                                  />
-                                ))}
-                              </div>
-                            </td>
-                          </tr>
-                        )}
-                        {/* Regular Sections */}
-                        {regularSections.map((uldSection, uldSectionIndex) => {
-                          const actualUldSectionIndex = sector.uldSections.indexOf(uldSection)
-                          return (
-                            <React.Fragment key={uldSectionIndex}>
-                              {uldSection.awbs.map((awb, awbIndex) => {
-                                const assignmentKey = `${awb.awbNo}-${sectorIndex}-${actualUldSectionIndex}-${awbIndex}`
-                                const assignment = awbAssignments.get(assignmentKey)
-                                const isLoaded = assignment?.isLoaded || false
-                                const assignmentUld = assignment?.assignmentData.type === "single" 
-                                  ? assignment.assignmentData.uld 
-                                  : assignment?.assignmentData.type === "existing"
-                                  ? assignment.assignmentData.existingUld
-                                  : null
-                                const isHovered = hoveredUld === assignmentUld && assignmentUld
-                                const splitGroups = assignment?.assignmentData.type === "split" ? assignment.assignmentData.splitGroups : []
-                                
-                                return (
-                                  <React.Fragment key={awbIndex}>
-                                    <tr 
-                                      className={`border-b border-gray-100 ${isLoaded ? "bg-gray-200 opacity-60" : "hover:bg-gray-50"} ${isHovered ? "border-l-4 border-l-red-500" : ""} ${isReadOnly ? "cursor-pointer" : ""}`}
-                                      onClick={() => {
-                                        if (isReadOnly) {
-                                          if (isLoaded) {
-                                            setLoadedAWBNo(awb.awbNo)
-                                            setShowLoadedModal(true)
-                                          } else {
-                                            setSelectedAWB({ awb, sectorIndex, uldSectionIndex: actualUldSectionIndex, awbIndex })
-                                            setShowAssignmentModal(true)
-                                          }
-                                        }
-                                      }}
-                                      onMouseEnter={() => {
-                                        if (assignmentUld) {
-                                          setHoveredUld(assignmentUld)
-                                        }
-                                      }}
-                                      onMouseLeave={() => {
-                                        setHoveredUld(null)
-                                      }}
-                                    >
-                                    <td className="px-2 py-1">
-                                      <EditableField
-                                        value={awb.ser}
-                                        onChange={(value) => updateAWBField(sectorIndex, actualUldSectionIndex, awbIndex, "ser", value)}
-                                        className="text-xs"
-                                        readOnly={isReadOnly}
-                                      />
-                                    </td>
-                                    <td className="px-2 py-1">
-                                      <EditableField
-                                        value={awb.awbNo}
-                                        onChange={(value) => updateAWBField(sectorIndex, actualUldSectionIndex, awbIndex, "awbNo", value)}
-                                        className="text-xs font-medium"
-                                        readOnly={isReadOnly}
-                                      />
-                                    </td>
-                                    <td className="px-2 py-1">
-                                      <EditableField
-                                        value={awb.orgDes}
-                                        onChange={(value) => updateAWBField(sectorIndex, actualUldSectionIndex, awbIndex, "orgDes", value)}
-                                        className="text-xs"
-                                        readOnly={isReadOnly}
-                                      />
-                                    </td>
-                                    <td className="px-2 py-1">
-                                      <EditableField
-                                        value={awb.pcs}
-                                        onChange={(value) => updateAWBField(sectorIndex, actualUldSectionIndex, awbIndex, "pcs", value)}
-                                        className="text-xs"
-                                        readOnly={isReadOnly}
-                                      />
-                                    </td>
-                                    <td className="px-2 py-1">
-                                      <EditableField
-                                        value={awb.wgt}
-                                        onChange={(value) => updateAWBField(sectorIndex, actualUldSectionIndex, awbIndex, "wgt", value)}
-                                        className="text-xs"
-                                        readOnly={isReadOnly}
-                                      />
-                                    </td>
-                                    <td className="px-2 py-1">
-                                      <EditableField
-                                        value={awb.vol}
-                                        onChange={(value) => updateAWBField(sectorIndex, actualUldSectionIndex, awbIndex, "vol", value)}
-                                        className="text-xs"
-                                        readOnly={isReadOnly}
-                                      />
-                                    </td>
-                                    <td className="px-2 py-1">
-                                      <EditableField
-                                        value={awb.lvol}
-                                        onChange={(value) => updateAWBField(sectorIndex, actualUldSectionIndex, awbIndex, "lvol", value)}
-                                        className="text-xs"
-                                        readOnly={isReadOnly}
-                                      />
-                                    </td>
-                                    <td className="px-2 py-1">
-                                      <EditableField
-                                        value={awb.shc || ""}
-                                        onChange={(value) => updateAWBField(sectorIndex, actualUldSectionIndex, awbIndex, "shc", value)}
-                                        className="text-xs"
-                                        readOnly={isReadOnly}
-                                      />
-                                    </td>
-                                    <td className="px-2 py-1">
-                                      <EditableField
-                                        value={awb.manDesc}
-                                        onChange={(value) => updateAWBField(sectorIndex, actualUldSectionIndex, awbIndex, "manDesc", value)}
-                                        className="text-xs"
-                                        readOnly={isReadOnly}
-                                      />
-                                    </td>
-                                    <td className="px-2 py-1">
-                                      <EditableField
-                                        value={awb.pcode || ""}
-                                        onChange={(value) => updateAWBField(sectorIndex, actualUldSectionIndex, awbIndex, "pcode", value)}
-                                        className="text-xs"
-                                        readOnly={isReadOnly}
-                                      />
-                                    </td>
-                                    <td className="px-2 py-1">
-                                      <EditableField
-                                        value={awb.pc || ""}
-                                        onChange={(value) => updateAWBField(sectorIndex, actualUldSectionIndex, awbIndex, "pc", value)}
-                                        className="text-xs"
-                                        readOnly={isReadOnly}
-                                      />
-                                    </td>
-                                    <td className="px-2 py-1">
-                                      <EditableField
-                                        value={awb.thc || ""}
-                                        onChange={(value) => updateAWBField(sectorIndex, actualUldSectionIndex, awbIndex, "thc", value)}
-                                        className="text-xs"
-                                        readOnly={isReadOnly}
-                                      />
-                                    </td>
-                                    <td className="px-2 py-1">
-                                      <EditableField
-                                        value={awb.bs || ""}
-                                        onChange={(value) => updateAWBField(sectorIndex, actualUldSectionIndex, awbIndex, "bs", value)}
-                                        className="text-xs"
-                                        readOnly={isReadOnly}
-                                      />
-                                    </td>
-                                    <td className="px-2 py-1">
-                                      <EditableField
-                                        value={awb.pi || ""}
-                                        onChange={(value) => updateAWBField(sectorIndex, actualUldSectionIndex, awbIndex, "pi", value)}
-                                        className="text-xs"
-                                        readOnly={isReadOnly}
-                                      />
-                                    </td>
-                                    <td className="px-2 py-1">
-                                      <EditableField
-                                        value={awb.fltin || ""}
-                                        onChange={(value) => updateAWBField(sectorIndex, actualUldSectionIndex, awbIndex, "fltin", value)}
-                                        className="text-xs"
-                                        readOnly={isReadOnly}
-                                      />
-                                    </td>
-                                    <td className="px-2 py-1">
-                                      <EditableField
-                                        value={awb.arrdtTime || ""}
-                                        onChange={(value) => updateAWBField(sectorIndex, actualUldSectionIndex, awbIndex, "arrdtTime", value)}
-                                        className="text-xs"
-                                        readOnly={isReadOnly}
-                                      />
-                                    </td>
-                                    <td className="px-2 py-1">
-                                      <EditableField
-                                        value={awb.qnnAqnn || ""}
-                                        onChange={(value) => updateAWBField(sectorIndex, actualUldSectionIndex, awbIndex, "qnnAqnn", value)}
-                                        className="text-xs"
-                                        readOnly={isReadOnly}
-                                      />
-                                    </td>
-                                    <td className="px-2 py-1">
-                                      <EditableField
-                                        value={awb.whs || ""}
-                                        onChange={(value) => updateAWBField(sectorIndex, actualUldSectionIndex, awbIndex, "whs", value)}
-                                        className="text-xs"
-                                        readOnly={isReadOnly}
-                                      />
-                                    </td>
-                                    <td className="px-2 py-1">
-                                      <EditableField
-                                        value={awb.si || ""}
-                                        onChange={(value) => updateAWBField(sectorIndex, actualUldSectionIndex, awbIndex, "si", value)}
-                                        className="text-xs"
-                                        readOnly={isReadOnly}
-                                      />
-                                    </td>
-                                    <td className="px-2 py-1">
-                                      {!isReadOnly && (
-                                        <div className="flex items-center gap-1">
-                                          <button
-                                            onClick={() => addNewAWBRow(sectorIndex, actualUldSectionIndex, awbIndex)}
-                                            className="p-1 hover:bg-gray-100 rounded text-gray-600"
-                                            title="Add Row After"
-                                          >
-                                            <Plus className="w-3 h-3" />
-                                          </button>
-                                          <button
-                                            onClick={() => deleteAWBRow(sectorIndex, actualUldSectionIndex, awbIndex)}
-                                            className="p-1 hover:bg-red-100 rounded text-red-600"
-                                            title="Delete Row"
-                                          >
-                                            <Trash2 className="w-3 h-3" />
-                                          </button>
-                                        </div>
-                                      )}
-                                    </td>
-                                  </tr>
-                                    {awb.remarks && (
-                                      <tr>
-                                        <td colSpan={20} className="px-2 py-1 text-xs text-gray-700 italic">
-                                          <EditableField
-                                            value={awb.remarks}
-                                            onChange={(value) => updateAWBField(sectorIndex, actualUldSectionIndex, awbIndex, "remarks", value)}
-                                            className="text-xs italic w-full"
-                                            multiline
-                                            readOnly={isReadOnly}
-                                          />
-                                        </td>
-                                      </tr>
-                                    )}
-                                    {/* Split Groups - Indented rows */}
-                                    {splitGroups && splitGroups.length > 0 && splitGroups.map((group, groupIndex) => {
-                                      const groupUld = group.uld
-                                      const isGroupHovered = hoveredUld === groupUld && groupUld
-                                      return (
-                                        <tr 
-                                          key={`split-${group.id}`}
-                                          className={`border-b border-gray-100 bg-gray-50 ${isGroupHovered ? "border-l-4 border-l-red-500" : ""}`}
-                                          onMouseEnter={() => {
-                                            if (groupUld) {
-                                              setHoveredUld(groupUld)
-                                            }
-                                          }}
-                                          onMouseLeave={() => {
-                                            setHoveredUld(null)
-                                          }}
-                                        >
-                                          <td className="px-2 py-1 pl-8 text-xs text-gray-500">
-                                            <span className="text-gray-400">└─</span>
-                                          </td>
-                                          <td className="px-2 py-1 text-xs font-medium text-gray-700">
-                                            {awb.awbNo}
-                                          </td>
-                                          <td className="px-2 py-1 text-xs text-gray-500">
-                                            {awb.orgDes}
-                                          </td>
-                                          <td className="px-2 py-1 text-xs text-gray-700 font-semibold">
-                                            {group.pieces || "-"}
-                                          </td>
-                                          <td className="px-2 py-1 text-xs text-gray-500">
-                                            {groupUld || "-"}
-                                          </td>
-                                          <td className="px-2 py-1 text-xs text-gray-600 font-mono">
-                                            {group.no || "-"}
-                                          </td>
-                                          <td colSpan={14} className="px-2 py-1"></td>
-                                        </tr>
-                                      )
-                                    })}
-                                  </React.Fragment>
-                                )
-                              })}
-                              {uldSection.uld && (
-                                <tr className="">
-                                  <td colSpan={19} className="px-2 py-1 font-semibold text-gray-900 text-center">
-                                    <EditableField
-                                      value={uldSection.uld}
-                                      onChange={(value) => updateULDField(sectorIndex, actualUldSectionIndex, value)}
-                                      className="font-semibold text-gray-900 text-center min-w-[200px]"
-                                      readOnly={isReadOnly}
-                                    />
-                                  </td>
-                                  <td className="px-2 py-1">
-                                    {!isReadOnly && (
-                                      <div className="flex items-center gap-1">
-                                        <button
-                                          onClick={() => addNewAWBRow(sectorIndex, actualUldSectionIndex)}
-                                          className="p-1 hover:bg-gray-100 rounded text-gray-600"
-                                          title="Add AWB Row"
-                                        >
-                                          <Plus className="w-3 h-3" />
-                                        </button>
-                                        <button
-                                          onClick={() => deleteULDSection(sectorIndex, actualUldSectionIndex)}
-                                          className="p-1 hover:bg-red-100 rounded text-red-600"
-                                          title="Delete ULD Section"
-                                        >
-                                          <Trash2 className="w-3 h-3" />
-                                        </button>
-                                      </div>
-                                    )}
-                                  </td>
-                                </tr>
-                              )}
-                            </React.Fragment>
-                          )
-                        })}
-                        {/* Ramp Transfer Sections */}
-                        {rampTransferSections.length > 0 && (
-                          <>
-                            <tr className="bg-gray-50">
-                              <td colSpan={20} className="px-2 py-1 font-semibold text-gray-900 text-center">
-                                ***** RAMP TRANSFER *****
-                              </td>
-                            </tr>
-                            {rampTransferSections.map((uldSection, uldSectionIndex) => {
-                              const actualUldSectionIndex = sector.uldSections.indexOf(uldSection)
-                              return (
-                                <React.Fragment key={uldSectionIndex}>
-                                  {uldSection.uld && (
-                                    <tr className="bg-gray-50">
-                                      <td colSpan={19} className="px-2 py-1 font-semibold text-gray-900 text-center">
-                                        <EditableField
-                                          value={uldSection.uld}
-                                          onChange={(value) => updateULDField(sectorIndex, actualUldSectionIndex, value)}
-                                          className="font-semibold text-gray-900 text-center min-w-[200px]"
-                                          readOnly={isReadOnly}
-                                        />
-                                      </td>
-                                      <td className="px-2 py-1">
-                                        {!isReadOnly && (
-                                          <div className="flex items-center gap-1">
-                                            <button
-                                              onClick={() => addNewAWBRow(sectorIndex, actualUldSectionIndex)}
-                                              className="p-1 hover:bg-gray-100 rounded text-gray-600"
-                                              title="Add AWB Row"
-                                            >
-                                              <Plus className="w-3 h-3" />
-                                            </button>
-                                            <button
-                                              onClick={() => deleteULDSection(sectorIndex, actualUldSectionIndex)}
-                                              className="p-1 hover:bg-red-100 rounded text-red-600"
-                                              title="Delete ULD Section"
-                                            >
-                                              <Trash2 className="w-3 h-3" />
-                                            </button>
-                                          </div>
-                                        )}
-                                      </td>
-                                    </tr>
-                                  )}
-                                  {uldSection.awbs.map((awb, awbIndex) => (
-                                    <React.Fragment key={awbIndex}>
-                                      <tr className="border-b border-gray-100 hover:bg-gray-50 bg-gray-50">
-                                        <td className="px-2 py-1">
-                                          <EditableField
-                                            value={awb.ser}
-                                            onChange={(value) => updateAWBField(sectorIndex, actualUldSectionIndex, awbIndex, "ser", value)}
-                                            className="text-xs"
-                                          />
-                                        </td>
-                                        <td className="px-2 py-1">
-                                          <EditableField
-                                            value={awb.awbNo}
-                                            onChange={(value) => updateAWBField(sectorIndex, actualUldSectionIndex, awbIndex, "awbNo", value)}
-                                            className="text-xs font-medium"
-                                          />
-                                        </td>
-                                        <td className="px-2 py-1">
-                                          <EditableField
-                                            value={awb.orgDes}
-                                            onChange={(value) => updateAWBField(sectorIndex, actualUldSectionIndex, awbIndex, "orgDes", value)}
-                                            className="text-xs"
-                                          />
-                                        </td>
-                                        <td className="px-2 py-1">
-                                          <EditableField
-                                            value={awb.pcs}
-                                            onChange={(value) => updateAWBField(sectorIndex, actualUldSectionIndex, awbIndex, "pcs", value)}
-                                            className="text-xs"
-                                          />
-                                        </td>
-                                        <td className="px-2 py-1">
-                                          <EditableField
-                                            value={awb.wgt}
-                                            onChange={(value) => updateAWBField(sectorIndex, actualUldSectionIndex, awbIndex, "wgt", value)}
-                                            className="text-xs"
-                                          />
-                                        </td>
-                                        <td className="px-2 py-1">
-                                          <EditableField
-                                            value={awb.vol}
-                                            onChange={(value) => updateAWBField(sectorIndex, actualUldSectionIndex, awbIndex, "vol", value)}
-                                            className="text-xs"
-                                          />
-                                        </td>
-                                        <td className="px-2 py-1">
-                                          <EditableField
-                                            value={awb.lvol}
-                                            onChange={(value) => updateAWBField(sectorIndex, actualUldSectionIndex, awbIndex, "lvol", value)}
-                                            className="text-xs"
-                                          />
-                                        </td>
-                                        <td className="px-2 py-1">
-                                          <EditableField
-                                            value={awb.shc || ""}
-                                            onChange={(value) => updateAWBField(sectorIndex, actualUldSectionIndex, awbIndex, "shc", value)}
-                                            className="text-xs"
-                                          />
-                                        </td>
-                                        <td className="px-2 py-1">
-                                          <EditableField
-                                            value={awb.manDesc}
-                                            onChange={(value) => updateAWBField(sectorIndex, actualUldSectionIndex, awbIndex, "manDesc", value)}
-                                            className="text-xs"
-                                          />
-                                        </td>
-                                        <td className="px-2 py-1">
-                                          <EditableField
-                                            value={awb.pcode || ""}
-                                            onChange={(value) => updateAWBField(sectorIndex, actualUldSectionIndex, awbIndex, "pcode", value)}
-                                            className="text-xs"
-                                          />
-                                        </td>
-                                        <td className="px-2 py-1">
-                                          <EditableField
-                                            value={awb.pc || ""}
-                                            onChange={(value) => updateAWBField(sectorIndex, actualUldSectionIndex, awbIndex, "pc", value)}
-                                            className="text-xs"
-                                          />
-                                        </td>
-                                        <td className="px-2 py-1">
-                                          <EditableField
-                                            value={awb.thc || ""}
-                                            onChange={(value) => updateAWBField(sectorIndex, actualUldSectionIndex, awbIndex, "thc", value)}
-                                            className="text-xs"
-                                          />
-                                        </td>
-                                        <td className="px-2 py-1">
-                                          <EditableField
-                                            value={awb.bs || ""}
-                                            onChange={(value) => updateAWBField(sectorIndex, actualUldSectionIndex, awbIndex, "bs", value)}
-                                            className="text-xs"
-                                          />
-                                        </td>
-                                        <td className="px-2 py-1">
-                                          <EditableField
-                                            value={awb.pi || ""}
-                                            onChange={(value) => updateAWBField(sectorIndex, actualUldSectionIndex, awbIndex, "pi", value)}
-                                            className="text-xs"
-                                          />
-                                        </td>
-                                        <td className="px-2 py-1">
-                                          <EditableField
-                                            value={awb.fltin || ""}
-                                            onChange={(value) => updateAWBField(sectorIndex, actualUldSectionIndex, awbIndex, "fltin", value)}
-                                            className="text-xs"
-                                          />
-                                        </td>
-                                        <td className="px-2 py-1">
-                                          <EditableField
-                                            value={awb.arrdtTime || ""}
-                                            onChange={(value) => updateAWBField(sectorIndex, actualUldSectionIndex, awbIndex, "arrdtTime", value)}
-                                            className="text-xs"
-                                          />
-                                        </td>
-                                        <td className="px-2 py-1">
-                                          <EditableField
-                                            value={awb.qnnAqnn || ""}
-                                            onChange={(value) => updateAWBField(sectorIndex, actualUldSectionIndex, awbIndex, "qnnAqnn", value)}
-                                            className="text-xs"
-                                          />
-                                        </td>
-                                        <td className="px-2 py-1">
-                                          <EditableField
-                                            value={awb.whs || ""}
-                                            onChange={(value) => updateAWBField(sectorIndex, actualUldSectionIndex, awbIndex, "whs", value)}
-                                            className="text-xs"
-                                          />
-                                        </td>
-                                        <td className="px-2 py-1">
-                                          <EditableField
-                                            value={awb.si || ""}
-                                            onChange={(value) => updateAWBField(sectorIndex, actualUldSectionIndex, awbIndex, "si", value)}
-                                            className="text-xs"
-                                          />
-                                        </td>
-                                        <td className="px-2 py-1">
-                                          <div className="flex items-center gap-1">
-                                            <button
-                                              onClick={() => addNewAWBRow(sectorIndex, actualUldSectionIndex, awbIndex)}
-                                              className="p-1 hover:bg-gray-100 rounded text-gray-600"
-                                              title="Add Row After"
-                                            >
-                                              <Plus className="w-3 h-3" />
-                                            </button>
-                                            <button
-                                              onClick={() => deleteAWBRow(sectorIndex, actualUldSectionIndex, awbIndex)}
-                                              className="p-1 hover:bg-red-100 rounded text-red-600"
-                                              title="Delete Row"
-                                            >
-                                              <Trash2 className="w-3 h-3" />
-                                            </button>
-                                          </div>
-                                        </td>
-                                      </tr>
-                                      {awb.remarks && (
-                                        <tr>
-                                          <td colSpan={20} className="px-2 py-1 text-xs text-gray-700 italic">
-                                            <EditableField
-                                              value={awb.remarks}
-                                              onChange={(value) => updateAWBField(sectorIndex, actualUldSectionIndex, awbIndex, "remarks", value)}
-                                              className="text-xs italic w-full"
-                                              multiline
-                                            />
-                                          </td>
-                                        </tr>
-                                      )}
-                                    </React.Fragment>
-                                  ))}
-                                  {uldSection.uld && (
-                                    <tr className="bg-gray-50">
-                                      <td colSpan={19} className="px-2 py-1 font-semibold text-gray-900 text-center">
-                                        <EditableField
-                                          value={uldSection.uld}
-                                          onChange={(value) => updateULDField(sectorIndex, actualUldSectionIndex, value)}
-                                          className="font-semibold text-gray-900 text-center min-w-[200px]"
-                                          readOnly={isReadOnly}
-                                        />
-                                      </td>
-                                      <td className="px-2 py-1">
-                                        {!isReadOnly && (
-                                          <div className="flex items-center gap-1">
-                                            <button
-                                              onClick={() => addNewAWBRow(sectorIndex, actualUldSectionIndex)}
-                                              className="p-1 hover:bg-gray-100 rounded text-gray-600"
-                                              title="Add AWB Row"
-                                            >
-                                              <Plus className="w-3 h-3" />
-                                            </button>
-                                            <button
-                                              onClick={() => deleteULDSection(sectorIndex, actualUldSectionIndex)}
-                                              className="p-1 hover:bg-red-100 rounded text-red-600"
-                                              title="Delete ULD Section"
-                                            >
-                                              <Trash2 className="w-3 h-3" />
-                                            </button>
-                                          </div>
-                                        )}
-                                      </td>
-                                    </tr>
-                                  )}
-                                </React.Fragment>
-                              )
-                            })}
-                          </>
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                  {!isReadOnly && (
-                    <div className="p-2 border-t border-gray-200">
-                      <button
-                        onClick={() => addNewULDSection(sectorIndex)}
-                        className="flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded-lg transition-colors w-full"
-                      >
-                        <Plus className="w-4 h-4" />
-                        Add ULD Section
-                      </button>
-                    </div>
-                  )}
-                </div>
-
-                {/* Footer Info */}
-                <div className="bg-white border border-gray-200 rounded-lg p-4 space-y-2">
-                  <div className="text-sm text-gray-900">
-                    <span className="font-semibold">BAGG</span>{" "}
-                    <EditableField
-                      value={sector.bagg || ""}
-                      onChange={(value) => updateSectorField(sectorIndex, "bagg", value)}
-                      className="inline-block min-w-[200px]"
-                      readOnly={isReadOnly}
-                    />
-                  </div>
-                  <div className="text-sm text-gray-900">
-                    <span className="font-semibold">COU</span>{" "}
-                    <EditableField
-                      value={sector.cou || ""}
-                      onChange={(value) => updateSectorField(sectorIndex, "cou", value)}
-                      className="inline-block min-w-[200px]"
-                      readOnly={isReadOnly}
-                    />
-                  </div>
-                  <div className="text-sm text-gray-900 mt-4">
-                    <span className="font-semibold">TOTALS:</span>{" "}
-                    <EditableField
-                      value={sector.totals.pcs}
-                      onChange={(value) => updateSectorTotals(sectorIndex, "pcs", value)}
-                      className="inline-block min-w-[50px]"
-                      readOnly={isReadOnly}
-                    />{" "}
-                    <EditableField
-                      value={sector.totals.wgt}
-                      onChange={(value) => updateSectorTotals(sectorIndex, "wgt", value)}
-                      className="inline-block min-w-[80px]"
-                      readOnly={isReadOnly}
-                    />{" "}
-                    <EditableField
-                      value={sector.totals.vol}
-                      onChange={(value) => updateSectorTotals(sectorIndex, "vol", value)}
-                      className="inline-block min-w-[80px]"
-                      readOnly={isReadOnly}
-                    />{" "}
-                    <EditableField
-                      value={sector.totals.lvol}
-                      onChange={(value) => updateSectorTotals(sectorIndex, "lvol", value)}
-                      className="inline-block min-w-[80px]"
-                      readOnly={isReadOnly}
-                    />
-                  </div>
-                </div>
+                {/* Sector Table - Keeping inline for now due to complexity */}
+                <SectorTable
+                  sector={sector}
+                  sectorIndex={sectorIndex}
+                  regularSections={regularSections}
+                  rampTransferSections={rampTransferSections}
+                  editedPlan={editedPlan}
+                  awbAssignments={awbAssignments}
+                  hoveredUld={hoveredUld}
+                  isReadOnly={isReadOnly}
+                  onAWBRowClick={handleAWBRowClick}
+                  onHoverUld={setHoveredUld}
+                  onUpdateAWBField={updateAWBField}
+                  onUpdateULDField={updateULDField}
+                  onAddNewAWBRow={addNewAWBRow}
+                  onDeleteAWBRow={deleteAWBRow}
+                  onAddNewULDSection={addNewULDSection}
+                  onDeleteULDSection={deleteULDSection}
+                  onUpdateSectorField={updateSectorField}
+                  onUpdateSectorTotals={updateSectorTotals}
+                  setEditedPlan={setEditedPlan}
+                />
               </div>
             )
           })}
@@ -1142,7 +213,7 @@ export default function LoadPlanDetailScreen({ loadPlan, onBack, onSave }: LoadP
         </div>
       </div>
 
-      {/* BCR Modal */}
+      {/* Modals */}
       {isReadOnly && (
         <BCRModal
           isOpen={showBCRModal}
@@ -1152,7 +223,6 @@ export default function LoadPlanDetailScreen({ loadPlan, onBack, onSave }: LoadP
         />
       )}
 
-      {/* AWB Assignment Modal */}
       {isReadOnly && selectedAWB && (
         <AWBAssignmentModal
           isOpen={showAssignmentModal}
@@ -1161,36 +231,11 @@ export default function LoadPlanDetailScreen({ loadPlan, onBack, onSave }: LoadP
             setSelectedAWB(null)
           }}
           awb={selectedAWB.awb}
-          existingUlds={Array.from(new Set(
-            Array.from(awbAssignments.values())
-              .map(a => {
-                if (a.assignmentData.type === "single") return a.assignmentData.uld
-                if (a.assignmentData.type === "existing") return a.assignmentData.existingUld
-                return null
-              })
-              .filter((uld): uld is string => uld !== null)
-          ))}
-          onConfirm={(data) => {
-            const key = `${selectedAWB.awb.awbNo}-${selectedAWB.sectorIndex}-${selectedAWB.uldSectionIndex}-${selectedAWB.awbIndex}`
-            setAwbAssignments((prev) => {
-              const updated = new Map(prev)
-              updated.set(key, {
-                awbNo: selectedAWB.awb.awbNo,
-                sectorIndex: selectedAWB.sectorIndex,
-                uldSectionIndex: selectedAWB.uldSectionIndex,
-                awbIndex: selectedAWB.awbIndex,
-                assignmentData: data,
-                isLoaded: data.isLoaded !== false, // Default to true unless explicitly false
-              })
-              return updated
-            })
-            setShowAssignmentModal(false)
-            setSelectedAWB(null)
-          }}
+          existingUlds={existingUlds}
+          onConfirm={handleAssignmentConfirm}
         />
       )}
 
-      {/* Loaded Status Modal */}
       {isReadOnly && (
         <LoadedStatusModal
           isOpen={showLoadedModal}
@@ -1200,7 +245,6 @@ export default function LoadPlanDetailScreen({ loadPlan, onBack, onSave }: LoadP
           }}
           awbNo={loadedAWBNo}
           onCancelLoading={() => {
-            // Find and remove the loaded status
             setAwbAssignments((prev) => {
               const updated = new Map(prev)
               for (const [key, assignment] of updated.entries()) {
@@ -1219,79 +263,461 @@ export default function LoadPlanDetailScreen({ loadPlan, onBack, onSave }: LoadP
   )
 }
 
-interface EditableFieldProps {
-  value: string
-  onChange: (value: string) => void
-  className?: string
-  multiline?: boolean
-  readOnly?: boolean
+// Sector Table Component - Extracted but kept in same file for now
+interface SectorTableProps {
+  sector: LoadPlanDetail["sectors"][0]
+  sectorIndex: number
+  regularSections: typeof sector.uldSections
+  rampTransferSections: typeof sector.uldSections
+  editedPlan: LoadPlanDetail
+  awbAssignments: Map<string, AWBAssignment>
+  hoveredUld: string | null
+  isReadOnly: boolean
+  onAWBRowClick: (awb: AWBRow, sectorIndex: number, uldSectionIndex: number, awbIndex: number, assignment: AWBAssignment | undefined) => void
+  onHoverUld: (uld: string | null) => void
+  onUpdateAWBField: (sectorIndex: number, uldSectionIndex: number, awbIndex: number, field: keyof AWBRow, value: string) => void
+  onUpdateULDField: (sectorIndex: number, uldSectionIndex: number, value: string) => void
+  onAddNewAWBRow: (sectorIndex: number, uldSectionIndex: number, afterAWBIndex?: number) => void
+  onDeleteAWBRow: (sectorIndex: number, uldSectionIndex: number, awbIndex: number) => void
+  onAddNewULDSection: (sectorIndex: number) => void
+  onDeleteULDSection: (sectorIndex: number, uldSectionIndex: number) => void
+  onUpdateSectorField: (sectorIndex: number, field: string, value: string) => void
+  onUpdateSectorTotals: (sectorIndex: number, field: string, value: string) => void
+  setEditedPlan: (updater: (prev: LoadPlanDetail) => LoadPlanDetail) => void
 }
 
-function EditableField({ value, onChange, className = "", multiline = false, readOnly = false }: EditableFieldProps) {
-  const [isEditing, setIsEditing] = useState(false)
-  const [editValue, setEditValue] = useState(value)
-
-  const handleBlur = () => {
-    onChange(editValue)
-    setIsEditing(false)
-  }
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !multiline) {
-      handleBlur()
-    }
-    if (e.key === "Escape") {
-      setEditValue(value)
-      setIsEditing(false)
-    }
-  }
-
-  if (readOnly) {
-    return (
-      <span className={`px-1 py-0.5 ${className}`}>
-        {value || ""}
-      </span>
-    )
-  }
-
-  if (isEditing) {
-    if (multiline) {
-      return (
-        <textarea
-          value={editValue}
-          onChange={(e) => setEditValue(e.target.value)}
-          onBlur={handleBlur}
-          onKeyDown={handleKeyDown}
-          className={`w-full px-2 py-1 border border-[#D71A21] rounded focus:outline-none focus:ring-1 focus:ring-[#D71A21] ${className}`}
-          autoFocus
-          rows={2}
-        />
-      )
-    }
-    return (
-      <input
-        type="text"
-        value={editValue}
-        onChange={(e) => setEditValue(e.target.value)}
-        onBlur={handleBlur}
-        onKeyDown={handleKeyDown}
-        className={`px-2 py-1 border border-[#D71A21] rounded focus:outline-none focus:ring-1 focus:ring-[#D71A21] min-w-[60px] ${className}`}
-        autoFocus
-      />
-    )
-  }
-
+function SectorTable({
+  sector,
+  sectorIndex,
+  regularSections,
+  rampTransferSections,
+  editedPlan,
+  awbAssignments,
+  hoveredUld,
+  isReadOnly,
+  onAWBRowClick,
+  onHoverUld,
+  onUpdateAWBField,
+  onUpdateULDField,
+  onAddNewAWBRow,
+  onDeleteAWBRow,
+  onAddNewULDSection,
+  onDeleteULDSection,
+  onUpdateSectorField,
+  onUpdateSectorTotals,
+  setEditedPlan,
+}: SectorTableProps) {
   return (
-    <span
-      onClick={() => {
-        setEditValue(value)
-        setIsEditing(true)
-      }}
-      className={`cursor-pointer hover:bg-gray-100 px-1 py-0.5 rounded transition-colors ${className}`}
-      title="Click to edit"
-    >
-      {value || ""}
-    </span>
+    <>
+      <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs font-mono">
+            <thead>
+              <tr className="border-b-2 border-gray-300">
+                <th className="px-2 py-2 text-left font-semibold">SER.</th>
+                <th className="px-2 py-2 text-left font-semibold">AWB NO</th>
+                <th className="px-2 py-2 text-left font-semibold">ORG/DES</th>
+                <th className="px-2 py-2 text-left font-semibold">PCS</th>
+                <th className="px-2 py-2 text-left font-semibold">WGT</th>
+                <th className="px-2 py-2 text-left font-semibold">VOL</th>
+                <th className="px-2 py-2 text-left font-semibold">LVOL</th>
+                <th className="px-2 py-2 text-left font-semibold">SHC</th>
+                <th className="px-2 py-2 text-left font-semibold">MAN.DESC</th>
+                <th className="px-2 py-2 text-left font-semibold">PCODE</th>
+                <th className="px-2 py-2 text-left font-semibold">PC</th>
+                <th className="px-2 py-2 text-left font-semibold">THC</th>
+                <th className="px-2 py-2 text-left font-semibold">BS</th>
+                <th className="px-2 py-2 text-left font-semibold">PI</th>
+                <th className="px-2 py-2 text-left font-semibold">FLTIN</th>
+                <th className="px-2 py-2 text-left font-semibold">ARRDT.TIME</th>
+                <th className="px-2 py-2 text-left font-semibold">QNN/AQNN</th>
+                <th className="px-2 py-2 text-left font-semibold">WHS</th>
+                <th className="px-2 py-2 text-left font-semibold">SI</th>
+                <th className="px-2 py-2 text-left font-semibold w-20">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {/* Special Instructions - Note: Remarks update needs setEditedPlan, keeping simple for now */}
+              {editedPlan.remarks && editedPlan.remarks.length > 0 && (
+                <tr>
+                  <td colSpan={20} className="px-2 py-2 bg-gray-100 border-b border-gray-200">
+                    <div className="space-y-1">
+                      {editedPlan.remarks.map((remark, index) => (
+                        <EditableField
+                          key={index}
+                          value={remark}
+                          onChange={(value) => {
+                            setEditedPlan((prev) => {
+                              const updatedRemarks = [...(prev.remarks || [])]
+                              updatedRemarks[index] = value
+                              return { ...prev, remarks: updatedRemarks }
+                            })
+                          }}
+                          className="text-xs text-gray-900 block w-full"
+                          multiline
+                        />
+                      ))}
+                    </div>
+                  </td>
+                </tr>
+              )}
+              {/* Regular Sections - Render AWB rows */}
+              {regularSections.map((uldSection, uldSectionIndex) => {
+                const actualUldSectionIndex = sector.uldSections.indexOf(uldSection)
+                return (
+                  <React.Fragment key={uldSectionIndex}>
+                    {uldSection.awbs.map((awb, awbIndex) => {
+                      const assignmentKey = `${awb.awbNo}-${sectorIndex}-${actualUldSectionIndex}-${awbIndex}`
+                      const assignment = awbAssignments.get(assignmentKey)
+                      const isLoaded = assignment?.isLoaded || false
+                      const assignmentUld = assignment?.assignmentData.type === "single" 
+                        ? assignment.assignmentData.uld 
+                        : assignment?.assignmentData.type === "existing"
+                        ? assignment.assignmentData.existingUld
+                        : null
+                      const isHovered = hoveredUld === assignmentUld && assignmentUld
+                      const splitGroups = assignment?.assignmentData.type === "split" ? assignment.assignmentData.splitGroups : []
+                      
+                      return (
+                        <React.Fragment key={awbIndex}>
+                          <AWBRow
+                            awb={awb}
+                            sectorIndex={sectorIndex}
+                            uldSectionIndex={actualUldSectionIndex}
+                            awbIndex={awbIndex}
+                            assignment={assignment}
+                            isLoaded={isLoaded}
+                            assignmentUld={assignmentUld}
+                            isHovered={isHovered}
+                            splitGroups={splitGroups || []}
+                            isReadOnly={isReadOnly}
+                            onRowClick={() => onAWBRowClick(awb, sectorIndex, actualUldSectionIndex, awbIndex, assignment)}
+                            onMouseEnter={() => assignmentUld && onHoverUld(assignmentUld)}
+                            onMouseLeave={() => onHoverUld(null)}
+                            onUpdateField={(field, value) => onUpdateAWBField(sectorIndex, actualUldSectionIndex, awbIndex, field, value)}
+                            onAddRowAfter={() => onAddNewAWBRow(sectorIndex, actualUldSectionIndex, awbIndex)}
+                            onDeleteRow={() => onDeleteAWBRow(sectorIndex, actualUldSectionIndex, awbIndex)}
+                            hoveredUld={hoveredUld}
+                          />
+                        </React.Fragment>
+                      )
+                    })}
+                    {uldSection.uld && (
+                      <ULDRow
+                        uld={uldSection.uld}
+                        sectorIndex={sectorIndex}
+                        uldSectionIndex={actualUldSectionIndex}
+                        isReadOnly={isReadOnly}
+                        onUpdate={(value) => onUpdateULDField(sectorIndex, actualUldSectionIndex, value)}
+                        onAddAWB={() => onAddNewAWBRow(sectorIndex, actualUldSectionIndex)}
+                        onDelete={() => onDeleteULDSection(sectorIndex, actualUldSectionIndex)}
+                      />
+                    )}
+                  </React.Fragment>
+                )
+              })}
+              {/* Ramp Transfer Sections - Similar structure */}
+              {rampTransferSections.length > 0 && (
+                <>
+                  <tr className="bg-gray-50">
+                    <td colSpan={20} className="px-2 py-1 font-semibold text-gray-900 text-center">
+                      ***** RAMP TRANSFER *****
+                    </td>
+                  </tr>
+                  {rampTransferSections.map((uldSection, uldSectionIndex) => {
+                    const actualUldSectionIndex = sector.uldSections.indexOf(uldSection)
+                    return (
+                      <React.Fragment key={uldSectionIndex}>
+                        {uldSection.uld && (
+                          <ULDRow
+                            uld={uldSection.uld}
+                            sectorIndex={sectorIndex}
+                            uldSectionIndex={actualUldSectionIndex}
+                            isReadOnly={isReadOnly}
+                            onUpdate={(value) => onUpdateULDField(sectorIndex, actualUldSectionIndex, value)}
+                            onAddAWB={() => onAddNewAWBRow(sectorIndex, actualUldSectionIndex)}
+                            onDelete={() => onDeleteULDSection(sectorIndex, actualUldSectionIndex)}
+                            isRampTransfer
+                          />
+                        )}
+                        {uldSection.awbs.map((awb, awbIndex) => {
+                          const assignmentKey = `${awb.awbNo}-${sectorIndex}-${actualUldSectionIndex}-${awbIndex}`
+                          const assignment = awbAssignments.get(assignmentKey)
+                          return (
+                            <AWBRow
+                              key={awbIndex}
+                              awb={awb}
+                              sectorIndex={sectorIndex}
+                              uldSectionIndex={actualUldSectionIndex}
+                              awbIndex={awbIndex}
+                              assignment={assignment}
+                              isReadOnly={false}
+                              onUpdateField={(field, value) => onUpdateAWBField(sectorIndex, actualUldSectionIndex, awbIndex, field, value)}
+                              onAddRowAfter={() => onAddNewAWBRow(sectorIndex, actualUldSectionIndex, awbIndex)}
+                              onDeleteRow={() => onDeleteAWBRow(sectorIndex, actualUldSectionIndex, awbIndex)}
+                              isRampTransfer
+                              hoveredUld={hoveredUld}
+                            />
+                          )
+                        })}
+                      </React.Fragment>
+                    )
+                  })}
+                </>
+              )}
+            </tbody>
+          </table>
+        </div>
+        {!isReadOnly && (
+          <div className="p-2 border-t border-gray-200">
+            <button
+              onClick={() => onAddNewULDSection(sectorIndex)}
+              className="flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded-lg transition-colors w-full"
+            >
+              <Plus className="w-4 h-4" />
+              Add ULD Section
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* Footer Info */}
+      <div className="bg-white border border-gray-200 rounded-lg p-4 space-y-2">
+        <div className="text-sm text-gray-900">
+          <span className="font-semibold">BAGG</span>{" "}
+          <EditableField
+            value={sector.bagg || ""}
+            onChange={(value) => onUpdateSectorField(sectorIndex, "bagg", value)}
+            className="inline-block min-w-[200px]"
+            readOnly={isReadOnly}
+          />
+        </div>
+        <div className="text-sm text-gray-900">
+          <span className="font-semibold">COU</span>{" "}
+          <EditableField
+            value={sector.cou || ""}
+            onChange={(value) => onUpdateSectorField(sectorIndex, "cou", value)}
+            className="inline-block min-w-[200px]"
+            readOnly={isReadOnly}
+          />
+        </div>
+        <div className="text-sm text-gray-900 mt-4">
+          <span className="font-semibold">TOTALS:</span>{" "}
+          <EditableField
+            value={sector.totals.pcs}
+            onChange={(value) => onUpdateSectorTotals(sectorIndex, "pcs", value)}
+            className="inline-block min-w-[50px]"
+            readOnly={isReadOnly}
+          />{" "}
+          <EditableField
+            value={sector.totals.wgt}
+            onChange={(value) => onUpdateSectorTotals(sectorIndex, "wgt", value)}
+            className="inline-block min-w-[80px]"
+            readOnly={isReadOnly}
+          />{" "}
+          <EditableField
+            value={sector.totals.vol}
+            onChange={(value) => onUpdateSectorTotals(sectorIndex, "vol", value)}
+            className="inline-block min-w-[80px]"
+            readOnly={isReadOnly}
+          />{" "}
+          <EditableField
+            value={sector.totals.lvol}
+            onChange={(value) => onUpdateSectorTotals(sectorIndex, "lvol", value)}
+            className="inline-block min-w-[80px]"
+            readOnly={isReadOnly}
+          />
+        </div>
+      </div>
+    </>
   )
 }
 
+// AWB Row Component
+interface AWBRowProps {
+  awb: AWBRow
+  sectorIndex: number
+  uldSectionIndex: number
+  awbIndex: number
+  assignment?: AWBAssignment
+  isLoaded?: boolean
+  assignmentUld?: string | null
+  isHovered?: boolean
+  splitGroups?: Array<{ id: string; no: string; pieces: string; uld?: string }>
+  isReadOnly: boolean
+  onRowClick?: () => void
+  onMouseEnter?: () => void
+  onMouseLeave?: () => void
+  onUpdateField: (field: keyof AWBRow, value: string) => void
+  onAddRowAfter?: () => void
+  onDeleteRow?: () => void
+  isRampTransfer?: boolean
+  hoveredUld?: string | null
+}
+
+function AWBRow({
+  awb,
+  isLoaded,
+  isHovered,
+  splitGroups,
+  isReadOnly,
+  onRowClick,
+  onMouseEnter,
+  onMouseLeave,
+  onUpdateField,
+  onAddRowAfter,
+  onDeleteRow,
+  isRampTransfer,
+  hoveredUld,
+}: AWBRowProps) {
+  const awbFields: Array<{ key: keyof AWBRow; className?: string }> = [
+    { key: "ser" },
+    { key: "awbNo", className: "font-medium" },
+    { key: "orgDes" },
+    { key: "pcs" },
+    { key: "wgt" },
+    { key: "vol" },
+    { key: "lvol" },
+    { key: "shc" },
+    { key: "manDesc" },
+    { key: "pcode" },
+    { key: "pc" },
+    { key: "thc" },
+    { key: "bs" },
+    { key: "pi" },
+    { key: "fltin" },
+    { key: "arrdtTime" },
+    { key: "qnnAqnn" },
+    { key: "whs" },
+    { key: "si" },
+  ]
+
+  return (
+    <>
+      <tr
+        className={`border-b border-gray-100 ${isLoaded ? "bg-gray-200 opacity-60" : isRampTransfer ? "bg-gray-50 hover:bg-gray-50" : "hover:bg-gray-50"} ${isHovered ? "border-l-4 border-l-red-500" : ""} ${isReadOnly ? "cursor-pointer" : ""}`}
+        onClick={onRowClick}
+        onMouseEnter={onMouseEnter}
+        onMouseLeave={onMouseLeave}
+      >
+        {awbFields.map(({ key, className }) => (
+          <td key={key} className="px-2 py-1">
+            <EditableField
+              value={awb[key] || ""}
+              onChange={(value) => onUpdateField(key, value)}
+              className={`text-xs ${className || ""}`}
+              readOnly={isReadOnly}
+            />
+          </td>
+        ))}
+        <td className="px-2 py-1">
+          {!isReadOnly && (
+            <div className="flex items-center gap-1">
+              {onAddRowAfter && (
+                <button
+                  onClick={onAddRowAfter}
+                  className="p-1 hover:bg-gray-100 rounded text-gray-600"
+                  title="Add Row After"
+                >
+                  <Plus className="w-3 h-3" />
+                </button>
+              )}
+              {onDeleteRow && (
+                <button
+                  onClick={onDeleteRow}
+                  className="p-1 hover:bg-red-100 rounded text-red-600"
+                  title="Delete Row"
+                >
+                  <Trash2 className="w-3 h-3" />
+                </button>
+              )}
+            </div>
+          )}
+        </td>
+      </tr>
+      {awb.remarks && (
+        <tr>
+          <td colSpan={20} className="px-2 py-1 text-xs text-gray-700 italic">
+            <EditableField
+              value={awb.remarks}
+              onChange={(value) => onUpdateField("remarks", value)}
+              className="text-xs italic w-full"
+              multiline
+              readOnly={isReadOnly}
+            />
+          </td>
+        </tr>
+      )}
+      {/* Split Groups */}
+      {splitGroups && splitGroups.length > 0 && splitGroups.map((group) => {
+        const groupUld = group.uld
+        const isGroupHovered = hoveredUld === groupUld && groupUld
+        return (
+          <tr
+            key={`split-${group.id}`}
+            className={`border-b border-gray-100 bg-gray-50 ${isGroupHovered ? "border-l-4 border-l-red-500" : ""}`}
+            onMouseEnter={() => groupUld && onMouseEnter?.()}
+            onMouseLeave={onMouseLeave}
+          >
+            <td className="px-2 py-1 pl-8 text-xs text-gray-500">
+              <span className="text-gray-400">└─</span>
+            </td>
+            <td className="px-2 py-1 text-xs font-medium text-gray-700">{awb.awbNo}</td>
+            <td className="px-2 py-1 text-xs text-gray-500">{awb.orgDes}</td>
+            <td className="px-2 py-1 text-xs text-gray-700 font-semibold">{group.pieces || "-"}</td>
+            <td className="px-2 py-1 text-xs text-gray-500">{groupUld || "-"}</td>
+            <td className="px-2 py-1 text-xs text-gray-600 font-mono">{group.no || "-"}</td>
+            <td colSpan={14} className="px-2 py-1"></td>
+          </tr>
+        )
+      })}
+    </>
+  )
+}
+
+// ULD Row Component
+interface ULDRowProps {
+  uld: string
+  sectorIndex: number
+  uldSectionIndex: number
+  isReadOnly: boolean
+  onUpdate: (value: string) => void
+  onAddAWB: () => void
+  onDelete: () => void
+  isRampTransfer?: boolean
+}
+
+function ULDRow({ uld, isReadOnly, onUpdate, onAddAWB, onDelete, isRampTransfer }: ULDRowProps) {
+  return (
+    <tr className={isRampTransfer ? "bg-gray-50" : ""}>
+      <td colSpan={19} className="px-2 py-1 font-semibold text-gray-900 text-center">
+        <EditableField
+          value={uld}
+          onChange={onUpdate}
+          className="font-semibold text-gray-900 text-center min-w-[200px]"
+          readOnly={isReadOnly}
+        />
+      </td>
+      <td className="px-2 py-1">
+        {!isReadOnly && (
+          <div className="flex items-center gap-1">
+            <button
+              onClick={onAddAWB}
+              className="p-1 hover:bg-gray-100 rounded text-gray-600"
+              title="Add AWB Row"
+            >
+              <Plus className="w-3 h-3" />
+            </button>
+            <button
+              onClick={onDelete}
+              className="p-1 hover:bg-red-100 rounded text-red-600"
+              title="Delete ULD Section"
+            >
+              <Trash2 className="w-3 h-3" />
+            </button>
+          </div>
+        )}
+      </td>
+    </tr>
+  )
+}

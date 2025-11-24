@@ -5,7 +5,7 @@ import { ChevronRight, Plane, Calendar, Package, Users, Clock, FileText } from "
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useLoadPlans, type LoadPlan } from "@/lib/load-plan-context"
 import LoadPlanDetailScreen from "./load-plan-detail-screen"
-import type { LoadPlanDetail } from "./load-plan-detail-screen"
+import type { LoadPlanDetail } from "./load-plan-types"
 
 const getLoadPlanDetail = (flight: string): LoadPlanDetail | null => {
   if (flight === "EK0205") {
