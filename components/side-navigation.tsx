@@ -3,7 +3,7 @@
 import type React from "react"
 
 import { useState } from "react"
-import { Home, List, BarChart3, FileText, Bell, Users, ChevronDown, ChevronRight, Settings, ChevronsLeft, ChevronsRight, TrendingUp, AlertTriangle, ClipboardList, Clipboard, Plane, LayoutDashboard, Activity } from 'lucide-react'
+import { Home, List, BarChart3, FileText, Bell, Users, ChevronDown, ChevronRight, Settings, ChevronsLeft, ChevronsRight, TrendingUp, AlertTriangle, ClipboardList, Clipboard, Plane, LayoutDashboard, Activity, Package } from 'lucide-react'
 import Image from "next/image"
 
 interface SideNavigationProps {
@@ -28,7 +28,7 @@ interface NavSection {
 export default function SideNavigation({ currentScreen, onNavigate }: SideNavigationProps) {
   const [isCollapsed, setIsCollapsed] = useState(false)
   const [expandedSections, setExpandedSections] = useState<Set<string>>(
-    new Set(["data-tables", "staff"]), // "dashboards" and "forecast" are collapsed by default
+    new Set(["data-tables", "staff", "dashboards"]), // "dashboards" is open by default
   )
 
   const navSections: NavSection[] = [
@@ -49,10 +49,21 @@ export default function SideNavigation({ currentScreen, onNavigate }: SideNaviga
       id: "dashboards",
       label: "Dashboards",
       icon: LayoutDashboard,
-      defaultOpen: false,
+      defaultOpen: true,
       items: [
         { id: "bdn-dashboard", label: "Workload Visibility", icon: ClipboardList },
         { id: "situational-awareness", label: "Situational Awareness", icon: Activity },
+      ],
+    },
+    {
+      id: "work-areas",
+      label: "Work Areas",
+      icon: Package,
+      defaultOpen: false,
+      items: [
+        { id: "work-area-gcr", label: "GCR", icon: Package },
+        { id: "work-area-per", label: "PER", icon: Package },
+        { id: "work-area-pil", label: "PIL", icon: Package },
       ],
     },
     {

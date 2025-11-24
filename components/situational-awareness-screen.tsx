@@ -304,6 +304,20 @@ const calculateFlightStats = () => {
 
 const flightStats = calculateFlightStats()
 
+// Custom bar shapes to adjust positioning
+const AKEBar = (props: any) => {
+  const { fill, x, y, width, height } = props
+  // Shift AKE bar left by 15px to better center it
+  return <Rectangle x={(x || 0) - 15} y={y} width={width} height={height} fill={fill} radius={[4, 4, 0, 0]} />
+}
+
+const TotalBar = (props: any) => {
+  const { fill, x, y, width, height, payload } = props
+  // Shift Total bar right by 15px to better center it
+  const isBulk = payload?.type === "Total" && fill === "#F59E0B"
+  return <Rectangle x={(x || 0) + 15} y={y} width={width} height={height} fill={fill} radius={isBulk ? [4, 4, 0, 0] : [0, 0, 0, 0]} />
+}
+
 // Calculate total planned PCS
 const totalPlannedPcs = awbProgressData.reduce((sum, a) => sum + parseInt(a.pcs), 0)
 
@@ -454,7 +468,7 @@ const uldTypeChartData = [
     pmcAke: 0,
     bulk: 0,
     total: uldBreakdownData.AKE,
-    color: "#EF4444",
+    color: "#EF4444", // Slightly lighter red for AKE
   },
   {
     type: "Total",
@@ -537,27 +551,12 @@ type ChartDataPoint = {
   shift: "Day" | "Night"
 }
 
-// Custom bar shapes for left/right alignment
-const LeftAlignedBar = (props: any) => {
-  const { fill, x, y, width, height } = props
-  // For PMC and AKE, keep bar at left (x position is already correct for left alignment with smaller barSize)
-  return <Rectangle x={x} y={y} width={width} height={height} fill={fill} radius={[4, 4, 0, 0]} />
+
+interface SituationalAwarenessScreenProps {
+  onNavigate?: (screen: string) => void
 }
 
-const RightAlignedBar = (props: any) => {
-  const { fill, x, y, width, height, payload } = props
-  // For Total bar, shift to the right edge of the category
-  // With barCategoryGap of 35% and 3 categories, the available width is 65%
-  // Each category gets approximately 21.67% of total width
-  // Bars are centered by default at x, so we need to shift right
-  // The shift should be approximately: (categoryWidth - barWidth) / 2 + some adjustment
-  // For a barSize of 50, we need to shift right by about 25-30 pixels to align with right edge
-  const shiftRight = Math.max((width || 0) * 0.5, 25) // Shift by 50% of bar width or minimum 25px
-  const isBulk = payload?.type === "Total" && fill === "#F59E0B"
-  return <Rectangle x={(x || 0) + shiftRight} y={y} width={width} height={height} fill={fill} radius={isBulk ? [4, 4, 0, 0] : [0, 0, 0, 0]} />
-}
-
-export default function SituationalAwarenessScreen() {
+export default function SituationalAwarenessScreen({ onNavigate }: SituationalAwarenessScreenProps = {}) {
   const { loadPlans } = useLoadPlans()
   const [selectedShift, setSelectedShift] = useState<"0600-0900" | "0901-1259">("0600-0900")
   const [workAreaFilter, setWorkAreaFilter] = useState<"overall" | "sortByWorkArea">("overall")
@@ -926,8 +925,23 @@ export default function SituationalAwarenessScreen() {
               const remainingPercentage = (data.remaining / data.total) * 100
               const efficiency = data.total > 0 ? ((completed / data.total) * 100).toFixed(1) : "0"
 
+              const handleAreaClick = () => {
+                if (onNavigate) {
+                  const workAreaMap: Record<string, string> = {
+                    GCR: "work-area-gcr",
+                    PER: "work-area-per",
+                    PIL: "work-area-pil",
+                  }
+                  onNavigate(workAreaMap[area] || "desktop")
+                }
+              }
+
               return (
-                <div key={area} className="border-b border-gray-100 last:border-b-0 pb-2 last:pb-0">
+                <div 
+                  key={area} 
+                  className="border-b border-gray-100 last:border-b-0 pb-2 last:pb-0 cursor-pointer hover:bg-gray-50 transition-colors rounded px-2 py-1"
+                  onClick={handleAreaClick}
+                >
                   <div className="flex items-center justify-between mb-1.5">
                     <div className="flex items-center gap-2.5">
                       <div className="w-10 text-xs font-semibold text-gray-900">{area}</div>
@@ -1224,7 +1238,7 @@ export default function SituationalAwarenessScreen() {
                                 display: "inline-block",
                                 width: "10px",
                                 height: "10px",
-                                backgroundColor: "#DC2626",
+                                backgroundColor: "#EF4444",
                                 borderRadius: "2px"
                               }}
                             />
@@ -1248,8 +1262,8 @@ export default function SituationalAwarenessScreen() {
                       )
                     }}
                   />
-                  {/* PMC bar - left-aligned */}
-                  <Bar dataKey="pmc" fill="#DC2626" name="PMC" shape={LeftAlignedBar} barSize={50}>
+                  {/* PMC bar */}
+                  <Bar dataKey="pmc" fill="#DC2626" name="PMC" barSize={50} radius={[4, 4, 0, 0]}>
                     {uldTypeChartData.map((entry, index) => {
                       if (entry.type === "PMC") {
                         return <Cell key={`cell-pmc-${index}`} fill="#DC2626" />
@@ -1257,17 +1271,17 @@ export default function SituationalAwarenessScreen() {
                       return <Cell key={`cell-empty-pmc-${index}`} fill="transparent" />
                     })}
                   </Bar>
-                  {/* AKE bar - left-aligned */}
-                  <Bar dataKey="ake" fill="#DC2626" name="AKE" shape={LeftAlignedBar} barSize={50}>
+                  {/* AKE bar - shifted left */}
+                  <Bar dataKey="ake" fill="#EF4444" name="AKE" barSize={50} shape={AKEBar}>
                     {uldTypeChartData.map((entry, index) => {
                       if (entry.type === "AKE") {
-                        return <Cell key={`cell-ake-${index}`} fill="#DC2626" />
+                        return <Cell key={`cell-ake-${index}`} fill="#EF4444" />
                       }
                       return <Cell key={`cell-empty-ake-${index}`} fill="transparent" />
                     })}
                   </Bar>
-                  {/* Total bar with stacked PMC+AKE (bottom) and BULK (top) - right-aligned */}
-                  <Bar dataKey="pmcAke" stackId="total" fill="#DC2626" name="" shape={RightAlignedBar} barSize={50}>
+                  {/* Total bar with stacked PMC+AKE (bottom) and BULK (top) - shifted right */}
+                  <Bar dataKey="pmcAke" stackId="total" fill="#DC2626" name="" barSize={50} shape={TotalBar}>
                     {uldTypeChartData.map((entry, index) => {
                       if (entry.type === "Total") {
                         return <Cell key={`cell-total-pmcake-${index}`} fill="#DC2626" />
@@ -1275,7 +1289,7 @@ export default function SituationalAwarenessScreen() {
                       return <Cell key={`cell-empty-pmcake-${index}`} fill="transparent" />
                     })}
                   </Bar>
-                  <Bar dataKey="bulk" stackId="total" fill="#F59E0B" name="Bulk" shape={RightAlignedBar}>
+                  <Bar dataKey="bulk" stackId="total" fill="#F59E0B" name="Bulk" shape={TotalBar}>
                     {uldTypeChartData.map((entry, index) => {
                       if (entry.type === "Total") {
                         return <Cell key={`cell-total-bulk-${index}`} fill="#F59E0B" />

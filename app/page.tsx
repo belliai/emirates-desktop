@@ -18,6 +18,7 @@ import LoadPlansScreen from "@/components/load-plans-screen"
 import BuildupStaffScreen from "@/components/buildup-staff-screen"
 import FlightAssignmentScreen from "@/components/flight-assignment-screen"
 import SituationalAwarenessScreen from "@/components/situational-awareness-screen"
+import WorkAreaScreen from "@/components/work-area-screen"
 import SideNavigation from "@/components/side-navigation"
 import { FlightProvider, useFlights } from "@/lib/flight-context"
 import { LoadPlanProvider } from "@/lib/load-plan-context"
@@ -43,6 +44,9 @@ function AppContent() {
     | "buildup-staff"
     | "flight-assignment"
     | "situational-awareness"
+    | "work-area-gcr"
+    | "work-area-per"
+    | "work-area-pil"
   >("desktop")
   const [selectedULD, setSelectedULD] = useState<(ULD & { flightNumber: string; uldIndex: number }) | null>(null)
   const [buildupStaffParams, setBuildupStaffParams] = useState<{ staff?: string } | null>(null)
@@ -105,9 +109,15 @@ function AppContent() {
       case "dwc-steering":
         return <ULDSteeringScreen />
       case "bdn-dashboard":
-        return <BDNDashboardScreen />
+        return <BDNDashboardScreen onNavigate={handleNavigate} />
       case "situational-awareness":
-        return <SituationalAwarenessScreen />
+        return <SituationalAwarenessScreen onNavigate={handleNavigate} />
+      case "work-area-gcr":
+        return <WorkAreaScreen workArea="GCR" onBack={() => setCurrentScreen("desktop")} />
+      case "work-area-per":
+        return <WorkAreaScreen workArea="PER" onBack={() => setCurrentScreen("desktop")} />
+      case "work-area-pil":
+        return <WorkAreaScreen workArea="PIL" onBack={() => setCurrentScreen("desktop")} />
       case "uld-status":
         return <ULDStatusTrackingScreen />
       case "flight-risk":
