@@ -26,6 +26,8 @@ export function useLoadPlanState(initialPlan: LoadPlanDetail) {
   const [loadedAWBNo, setLoadedAWBNo] = useState<string>("")
   const [awbAssignments, setAwbAssignments] = useState<Map<string, AWBAssignment>>(new Map())
   const [hoveredUld, setHoveredUld] = useState<string | null>(null)
+  // Map key: `${sectorIndex}-${uldSectionIndex}` -> string[] (ULD numbers)
+  const [uldNumbers, setUldNumbers] = useState<Map<string, string[]>>(new Map())
 
   const updateField = (field: keyof LoadPlanDetail, value: string) => {
     setEditedPlan((prev) => ({ ...prev, [field]: value }))
@@ -195,6 +197,15 @@ export function useLoadPlanState(initialPlan: LoadPlanDetail) {
     })
   }
 
+  const updateULDNumbers = (sectorIndex: number, uldSectionIndex: number, numbers: string[]) => {
+    const key = `${sectorIndex}-${uldSectionIndex}`
+    setUldNumbers((prev) => {
+      const updated = new Map(prev)
+      updated.set(key, numbers)
+      return updated
+    })
+  }
+
   return {
     editedPlan,
     setEditedPlan,
@@ -210,6 +221,8 @@ export function useLoadPlanState(initialPlan: LoadPlanDetail) {
     setAwbAssignments,
     hoveredUld,
     setHoveredUld,
+    uldNumbers,
+    updateULDNumbers,
     updateField,
     updateSectorField,
     updateSectorTotals,

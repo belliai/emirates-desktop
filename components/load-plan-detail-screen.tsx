@@ -3,7 +3,8 @@
 import { useState } from "react"
 import React from "react"
 import { Plus, Trash2 } from "lucide-react"
-import BCRModal, { generateBCRData, type AWBComment } from "./bcr-modal"
+import BCRModal, { generateBCRData } from "./bcr-modal"
+import type { AWBComment } from "./bcr-modal"
 import AWBAssignmentModal, { LoadedStatusModal, type AWBAssignmentData } from "./awb-assignment-modal"
 import HandoverModal from "./handover-modal"
 import { LoadPlanHeader } from "./load-plan-header"
@@ -12,6 +13,9 @@ import { EditableField } from "./editable-field"
 import { useLoadPlanState, type AWBAssignment } from "./use-load-plan-state"
 import { useLoadPlans } from "@/lib/load-plan-context"
 import type { LoadPlanDetail, AWBRow } from "./load-plan-types"
+import { ULDNumberModal } from "./uld-number-modal"
+import { parseULDSection, formatULDSection } from "@/lib/uld-parser"
+import { AWBQuickActionModal } from "./awb-quick-action-modal"
 
 // Re-export types for backward compatibility
 export type { AWBRow, ULDSection, LoadPlanItem, LoadPlanDetail } from "./load-plan-types"
@@ -27,7 +31,36 @@ export default function LoadPlanDetailScreen({ loadPlan, onBack, onSave, onNavig
   const [showBCRModal, setShowBCRModal] = useState(false)
   const [showHandoverModal, setShowHandoverModal] = useState(false)
   const [awbComments, setAwbComments] = useState<AWBComment[]>([])
+  const [showULDModal, setShowULDModal] = useState(false)
+  const [selectedULDSection, setSelectedULDSection] = useState<{
+    sectorIndex: number
+    uldSectionIndex: number
+    uld: string
+  } | null>(null)
+  const [showQuickActionModal, setShowQuickActionModal] = useState(false)
+  const [selectedAWBForQuickAction, setSelectedAWBForQuickAction] = useState<{
+    awb: AWBRow
+    sectorIndex: number
+    uldSectionIndex: number
+    awbIndex: number
+  } | null>(null)
   const { sendToFlightAssignment, flightAssignments } = useLoadPlans()
+  
+  // Load ULD numbers from localStorage on mount
+  const [uldNumbersFromStorage, setUldNumbersFromStorage] = useState<Map<string, string[]>>(() => {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem(`uld-numbers-${loadPlan.flight}`)
+      if (stored) {
+        try {
+          const parsed = JSON.parse(stored)
+          return new Map(Object.entries(parsed))
+        } catch (e) {
+          return new Map()
+        }
+      }
+    }
+    return new Map()
+  })
   
   const {
     editedPlan,
@@ -44,6 +77,8 @@ export default function LoadPlanDetailScreen({ loadPlan, onBack, onSave, onNavig
     setAwbAssignments,
     hoveredUld,
     setHoveredUld,
+    uldNumbers,
+    updateULDNumbers,
     updateField,
     updateSectorField,
     updateSectorTotals,
@@ -57,7 +92,31 @@ export default function LoadPlanDetailScreen({ loadPlan, onBack, onSave, onNavig
     updateULDField,
   } = useLoadPlanState(loadPlan)
   
+  // Merge stored ULD numbers with component state
+  const mergedUldNumbers = new Map(uldNumbers)
+  uldNumbersFromStorage.forEach((value, key) => {
+    if (!mergedUldNumbers.has(key)) {
+      mergedUldNumbers.set(key, value)
+    }
+  })
+  
   const isReadOnly = !onSave
+  
+  // Enhanced updateULDNumbers that also saves to localStorage
+  const handleUpdateULDNumbers = (sectorIndex: number, uldSectionIndex: number, numbers: string[]) => {
+    updateULDNumbers(sectorIndex, uldSectionIndex, numbers)
+    const key = `${sectorIndex}-${uldSectionIndex}`
+    setUldNumbersFromStorage((prev) => {
+      const updated = new Map(prev)
+      updated.set(key, numbers)
+      // Save to localStorage
+      if (typeof window !== 'undefined') {
+        const toStore = Object.fromEntries(updated)
+        localStorage.setItem(`uld-numbers-${loadPlan.flight}`, JSON.stringify(toStore))
+      }
+      return updated
+    })
+  }
 
   const handleSave = () => {
     if (onSave) {
@@ -138,6 +197,55 @@ export default function LoadPlanDetailScreen({ loadPlan, onBack, onSave, onNavig
     setShowHandoverModal(false)
   }
 
+  const handleMarkAWBLoaded = () => {
+    if (!selectedAWBForQuickAction) return
+    
+    const { awb, sectorIndex, uldSectionIndex, awbIndex } = selectedAWBForQuickAction
+    const assignmentKey = `${awb.awbNo}-${sectorIndex}-${uldSectionIndex}-${awbIndex}`
+    
+    setAwbAssignments((prev) => {
+      const updated = new Map(prev)
+      const existing = updated.get(assignmentKey)
+      if (existing) {
+        updated.set(assignmentKey, {
+          ...existing,
+          isLoaded: true,
+        })
+      } else {
+        updated.set(assignmentKey, {
+          awbNo: awb.awbNo,
+          sectorIndex,
+          uldSectionIndex,
+          awbIndex,
+          assignmentData: { type: "single", isLoaded: true },
+          isLoaded: true,
+        })
+      }
+      return updated
+    })
+  }
+
+  const handleMarkAWBOffload = (remainingPieces: string, remarks: string) => {
+    if (!selectedAWBForQuickAction) return
+    
+    const { awb } = selectedAWBForQuickAction
+    const comment: AWBComment = {
+      awbNo: awb.awbNo,
+      status: "offloaded",
+      remarks: `Remaining ${remainingPieces} pieces offloaded. ${remarks || ""}`.trim(),
+    }
+    
+    setAwbComments((prev) => {
+      const existingIndex = prev.findIndex(c => c.awbNo === awb.awbNo)
+      if (existingIndex >= 0) {
+        const updated = [...prev]
+        updated[existingIndex] = comment
+        return updated
+      }
+      return [...prev, comment]
+    })
+  }
+
   return (
     <div className="min-h-screen bg-white">
       <LoadPlanHeader
@@ -194,9 +302,18 @@ export default function LoadPlanDetailScreen({ loadPlan, onBack, onSave, onNavig
                   editedPlan={editedPlan}
                   awbAssignments={awbAssignments}
                   hoveredUld={hoveredUld}
+                  uldNumbers={mergedUldNumbers}
                   isReadOnly={isReadOnly}
                   onAWBRowClick={handleAWBRowClick}
+                  onAWBLeftSectionClick={(awb, sectorIndex, uldSectionIndex, awbIndex) => {
+                    setSelectedAWBForQuickAction({ awb, sectorIndex, uldSectionIndex, awbIndex })
+                    setShowQuickActionModal(true)
+                  }}
                   onHoverUld={setHoveredUld}
+                  onULDSectionClick={(sectorIndex, uldSectionIndex, uld) => {
+                    setSelectedULDSection({ sectorIndex, uldSectionIndex, uld })
+                    setShowULDModal(true)
+                  }}
                   onUpdateAWBField={updateAWBField}
                   onUpdateULDField={updateULDField}
                   onAddNewAWBRow={addNewAWBRow}
@@ -300,6 +417,35 @@ export default function LoadPlanDetailScreen({ loadPlan, onBack, onSave, onNavig
           }}
         />
       )}
+
+      {selectedULDSection && (
+        <ULDNumberModal
+          isOpen={showULDModal}
+          onClose={() => {
+            setShowULDModal(false)
+            setSelectedULDSection(null)
+          }}
+          uldSection={selectedULDSection.uld}
+          sectorIndex={selectedULDSection.sectorIndex}
+          uldSectionIndex={selectedULDSection.uldSectionIndex}
+          initialNumbers={mergedUldNumbers.get(`${selectedULDSection.sectorIndex}-${selectedULDSection.uldSectionIndex}`) || []}
+          onSave={(numbers) => {
+            handleUpdateULDNumbers(selectedULDSection.sectorIndex, selectedULDSection.uldSectionIndex, numbers)
+          }}
+        />
+      )}
+      {selectedAWBForQuickAction && (
+        <AWBQuickActionModal
+          isOpen={showQuickActionModal}
+          onClose={() => {
+            setShowQuickActionModal(false)
+            setSelectedAWBForQuickAction(null)
+          }}
+          awb={selectedAWBForQuickAction.awb}
+          onMarkLoaded={handleMarkAWBLoaded}
+          onMarkOffload={handleMarkAWBOffload}
+        />
+      )}
     </div>
   )
 }
@@ -313,9 +459,12 @@ interface SectorTableProps {
   editedPlan: LoadPlanDetail
   awbAssignments: Map<string, AWBAssignment>
   hoveredUld: string | null
+  uldNumbers: Map<string, string[]>
   isReadOnly: boolean
   onAWBRowClick: (awb: AWBRow, sectorIndex: number, uldSectionIndex: number, awbIndex: number, assignment: AWBAssignment | undefined) => void
+  onAWBLeftSectionClick: (awb: AWBRow, sectorIndex: number, uldSectionIndex: number, awbIndex: number) => void
   onHoverUld: (uld: string | null) => void
+  onULDSectionClick: (sectorIndex: number, uldSectionIndex: number, uld: string) => void
   onUpdateAWBField: (sectorIndex: number, uldSectionIndex: number, awbIndex: number, field: keyof AWBRow, value: string) => void
   onUpdateULDField: (sectorIndex: number, uldSectionIndex: number, value: string) => void
   onAddNewAWBRow: (sectorIndex: number, uldSectionIndex: number, afterAWBIndex?: number) => void
@@ -335,9 +484,12 @@ function SectorTable({
   editedPlan,
   awbAssignments,
   hoveredUld,
+  uldNumbers,
   isReadOnly,
   onAWBRowClick,
+  onAWBLeftSectionClick,
   onHoverUld,
+  onULDSectionClick,
   onUpdateAWBField,
   onUpdateULDField,
   onAddNewAWBRow,
@@ -433,6 +585,7 @@ function SectorTable({
                             splitGroups={splitGroups || []}
                             isReadOnly={isReadOnly}
                             onRowClick={() => onAWBRowClick(awb, sectorIndex, actualUldSectionIndex, awbIndex, assignment)}
+                            onLeftSectionClick={() => onAWBLeftSectionClick(awb, sectorIndex, actualUldSectionIndex, awbIndex)}
                             onMouseEnter={() => assignmentUld && onHoverUld(assignmentUld)}
                             onMouseLeave={() => onHoverUld(null)}
                             onUpdateField={(field, value) => onUpdateAWBField(sectorIndex, actualUldSectionIndex, awbIndex, field, value)}
@@ -448,10 +601,12 @@ function SectorTable({
                         uld={uldSection.uld}
                         sectorIndex={sectorIndex}
                         uldSectionIndex={actualUldSectionIndex}
+                        uldNumbers={uldNumbers.get(`${sectorIndex}-${actualUldSectionIndex}`) || []}
                         isReadOnly={isReadOnly}
                         onUpdate={(value) => onUpdateULDField(sectorIndex, actualUldSectionIndex, value)}
                         onAddAWB={() => onAddNewAWBRow(sectorIndex, actualUldSectionIndex)}
                         onDelete={() => onDeleteULDSection(sectorIndex, actualUldSectionIndex)}
+                        onClick={() => onULDSectionClick(sectorIndex, actualUldSectionIndex, uldSection.uld)}
                       />
                     )}
                   </React.Fragment>
@@ -474,10 +629,12 @@ function SectorTable({
                             uld={uldSection.uld}
                             sectorIndex={sectorIndex}
                             uldSectionIndex={actualUldSectionIndex}
+                            uldNumbers={uldNumbers.get(`${sectorIndex}-${actualUldSectionIndex}`) || []}
                             isReadOnly={isReadOnly}
                             onUpdate={(value) => onUpdateULDField(sectorIndex, actualUldSectionIndex, value)}
                             onAddAWB={() => onAddNewAWBRow(sectorIndex, actualUldSectionIndex)}
                             onDelete={() => onDeleteULDSection(sectorIndex, actualUldSectionIndex)}
+                            onClick={() => onULDSectionClick(sectorIndex, actualUldSectionIndex, uldSection.uld)}
                             isRampTransfer
                           />
                         )}
@@ -492,7 +649,9 @@ function SectorTable({
                               uldSectionIndex={actualUldSectionIndex}
                               awbIndex={awbIndex}
                               assignment={assignment}
-                              isReadOnly={false}
+                              isReadOnly={isReadOnly}
+                              onRowClick={() => onAWBRowClick(awb, sectorIndex, actualUldSectionIndex, awbIndex, assignment)}
+                              onLeftSectionClick={() => onAWBLeftSectionClick(awb, sectorIndex, actualUldSectionIndex, awbIndex)}
                               onUpdateField={(field, value) => onUpdateAWBField(sectorIndex, actualUldSectionIndex, awbIndex, field, value)}
                               onAddRowAfter={() => onAddNewAWBRow(sectorIndex, actualUldSectionIndex, awbIndex)}
                               onDeleteRow={() => onDeleteAWBRow(sectorIndex, actualUldSectionIndex, awbIndex)}
@@ -587,6 +746,7 @@ interface AWBRowProps {
   splitGroups?: Array<{ id: string; no: string; pieces: string; uld?: string }>
   isReadOnly: boolean
   onRowClick?: () => void
+  onLeftSectionClick?: () => void
   onMouseEnter?: () => void
   onMouseLeave?: () => void
   onUpdateField: (field: keyof AWBRow, value: string) => void
@@ -603,6 +763,7 @@ function AWBRow({
   splitGroups,
   isReadOnly,
   onRowClick,
+  onLeftSectionClick,
   onMouseEnter,
   onMouseLeave,
   onUpdateField,
@@ -611,6 +772,8 @@ function AWBRow({
   isRampTransfer,
   hoveredUld,
 }: AWBRowProps) {
+  const [hoveredSection, setHoveredSection] = useState<"left" | "right" | null>(null)
+
   const awbFields: Array<{ key: keyof AWBRow; className?: string }> = [
     { key: "ser" },
     { key: "awbNo", className: "font-medium" },
@@ -619,8 +782,8 @@ function AWBRow({
     { key: "wgt" },
     { key: "vol" },
     { key: "lvol" },
-    { key: "shc" },
-    { key: "manDesc" },
+    { key: "shc" }, // End of left section (8 fields)
+    { key: "manDesc" }, // Start of right section
     { key: "pcode" },
     { key: "pc" },
     { key: "thc" },
@@ -633,16 +796,57 @@ function AWBRow({
     { key: "si" },
   ]
 
+  // Split fields into left and right sections
+  const leftFields = awbFields.slice(0, 8) // Up to and including SHC
+  const rightFields = awbFields.slice(8) // After SHC
+
   return (
     <>
       <tr
-        className={`border-b border-gray-100 ${isLoaded ? "bg-gray-200 opacity-60" : isRampTransfer ? "bg-gray-50 hover:bg-gray-50" : "hover:bg-gray-50"} ${isHovered ? "border-l-4 border-l-red-500" : ""} ${isReadOnly ? "cursor-pointer" : ""}`}
-        onClick={onRowClick}
+        className={`border-b border-gray-100 ${isLoaded ? "bg-gray-200 opacity-60" : isRampTransfer ? "bg-gray-50 hover:bg-gray-50" : ""} ${isHovered ? "border-l-4 border-l-red-500" : ""}`}
         onMouseEnter={onMouseEnter}
-        onMouseLeave={onMouseLeave}
+        onMouseLeave={() => {
+          onMouseLeave?.()
+          setHoveredSection(null)
+        }}
       >
-        {awbFields.map(({ key, className }) => (
-          <td key={key} className="px-2 py-1">
+        {/* Left section - Quick Actions (up to and including SHC) */}
+        {leftFields.map(({ key, className }) => (
+          <td
+            key={key}
+            className={`px-2 py-1 ${isReadOnly ? "cursor-pointer" : ""} ${hoveredSection === "left" && isReadOnly ? "bg-blue-50" : ""}`}
+            onMouseEnter={() => isReadOnly && setHoveredSection("left")}
+            onMouseLeave={() => setHoveredSection(null)}
+            onClick={(e) => {
+              if (isReadOnly && onLeftSectionClick) {
+                e.stopPropagation()
+                onLeftSectionClick()
+              }
+            }}
+          >
+            <EditableField
+              value={awb[key] || ""}
+              onChange={(value) => onUpdateField(key, value)}
+              className={`text-xs ${className || ""}`}
+              readOnly={isReadOnly}
+            />
+          </td>
+        ))}
+        
+        {/* Right section - AWB Assignment (after SHC) */}
+        {rightFields.map(({ key, className }) => (
+          <td
+            key={key}
+            className={`px-2 py-1 ${isReadOnly ? "cursor-pointer" : ""} ${hoveredSection === "right" && isReadOnly ? "bg-gray-50" : ""}`}
+            onMouseEnter={() => isReadOnly && setHoveredSection("right")}
+            onMouseLeave={() => setHoveredSection(null)}
+            onClick={(e) => {
+              if (isReadOnly && onRowClick) {
+                e.stopPropagation()
+                onRowClick()
+              }
+            }}
+          >
             <EditableField
               value={awb[key] || ""}
               onChange={(value) => onUpdateField(key, value)}
@@ -721,23 +925,53 @@ interface ULDRowProps {
   uld: string
   sectorIndex: number
   uldSectionIndex: number
+  uldNumbers: string[]
   isReadOnly: boolean
   onUpdate: (value: string) => void
   onAddAWB: () => void
   onDelete: () => void
+  onClick: () => void
   isRampTransfer?: boolean
 }
 
-function ULDRow({ uld, isReadOnly, onUpdate, onAddAWB, onDelete, isRampTransfer }: ULDRowProps) {
+function ULDRow({ uld, uldNumbers, isReadOnly, onUpdate, onAddAWB, onDelete, onClick, isRampTransfer }: ULDRowProps) {
+  const { count, types } = parseULDSection(uld)
+  const hasULDNumbers = uldNumbers.length > 0 && uldNumbers.some(n => n.trim() !== "")
+  const displayNumbers = uldNumbers.filter(n => n.trim() !== "").join(", ")
+  const finalSection = hasULDNumbers ? formatULDSection(uldNumbers, uld) : null
+  
   return (
     <tr className={isRampTransfer ? "bg-gray-50" : ""}>
-      <td colSpan={19} className="px-2 py-1 font-semibold text-gray-900 text-center">
-        <EditableField
-          value={uld}
-          onChange={onUpdate}
-          className="font-semibold text-gray-900 text-center min-w-[200px]"
-          readOnly={isReadOnly}
-        />
+      <td colSpan={19} className="px-2 py-1 font-semibold text-gray-900 text-center relative">
+        <div className="flex items-center justify-center gap-4">
+          {hasULDNumbers && (
+            <div className="group relative flex-shrink-0">
+              <div className="text-xs font-normal text-gray-500 max-w-[200px] truncate pr-3 border-r border-gray-200">
+                {displayNumbers}
+              </div>
+              <div className="absolute left-0 bottom-full mb-1.5 px-2 py-1 bg-gray-800/95 text-white text-xs rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity duration-150 pointer-events-none whitespace-nowrap z-20">
+                {displayNumbers}
+                <div className="absolute top-full left-3 w-0 h-0 border-l-[4px] border-r-[4px] border-t-[4px] border-transparent border-t-gray-800/95"></div>
+              </div>
+            </div>
+          )}
+          <div 
+            className={`flex-1 ${isReadOnly ? "cursor-pointer hover:bg-gray-50 rounded px-2 py-1 transition-colors" : ""}`}
+            onClick={isReadOnly ? onClick : undefined}
+          >
+            <EditableField
+              value={uld}
+              onChange={onUpdate}
+              className="font-semibold text-gray-900 text-center min-w-[200px]"
+              readOnly={isReadOnly}
+            />
+          </div>
+          {finalSection && (
+            <div className="text-xs font-normal text-gray-600 flex-shrink-0 pl-3 border-l border-gray-200">
+              Final: <span className="font-mono font-semibold">{finalSection}</span>
+            </div>
+          )}
+        </div>
       </td>
       <td className="px-2 py-1">
         {!isReadOnly && (
