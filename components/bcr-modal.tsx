@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useRef } from "react"
+import { useState, useRef, useEffect } from "react"
 import { X, Download, FileText, Printer, Plus, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import type { LoadPlanDetail, AWBRow } from "./load-plan-types"
@@ -68,6 +68,13 @@ export default function BCRModal({ isOpen, onClose, loadPlan, bcrData: initialBc
   const [bcrData, setBcrData] = useState<BCRData>(initialBcrData)
   const [showPDFView, setShowPDFView] = useState(false)
   const pdfContentRef = useRef<HTMLDivElement>(null)
+
+  // Update bcrData when initialBcrData changes (e.g., when comments are updated)
+  useEffect(() => {
+    if (isOpen) {
+      setBcrData(initialBcrData)
+    }
+  }, [initialBcrData, isOpen])
 
   if (!isOpen) return null
 
@@ -918,31 +925,50 @@ export function generateBCRData(
   const volumeDifferences: BCRVolumeDifference[] = []
   const unitsUnableToUpdate: BCRUnitUnableToUpdate[] = []
 
-  // Process offload comments to extract shipments
-  if (comments) {
+  // Process all AWBs - if they have remaining pieces, add to shipments
+  // Simple logic: as long as there's a non-null remaining pieces value, it shows up in BCR
+  if (comments && comments.length > 0) {
     comments.forEach((comment) => {
-      if (comment.status === "offloaded" && comment.remarks) {
-        // Parse remarks to extract pieces count
-        // Format: "Remaining X pieces offloaded. [remarks]"
+      // Check if this comment has remaining pieces
+      if (comment && comment.remarks && comment.awbNo) {
+        // Try to extract remaining pieces from remarks - more flexible pattern
+        // Format: "Remaining X pieces offloaded. [optional remarks]"
+        // Also handles variations like "Remaining X pieces offloaded" (no period)
         const piecesMatch = comment.remarks.match(/Remaining\s+(\d+)\s+pieces\s+offloaded/i)
-        const pieces = piecesMatch ? piecesMatch[1] : ""
-        
-        // Extract remarks (everything after "offloaded.")
-        const remarksMatch = comment.remarks.match(/offloaded\.\s*(.+)/i)
-        const remarks = remarksMatch ? remarksMatch[1].trim() : comment.remarks
+        if (piecesMatch && piecesMatch[1]) {
+          // Found remaining pieces - find the AWB and add to shipments
+          const pieces = piecesMatch[1]
+          let remarks = ""
+          
+          // Extract optional remarks (everything after "offloaded" and optional period/space)
+          const remarksMatch = comment.remarks.match(/offloaded[.\s]*\s*(.+)/i)
+          if (remarksMatch && remarksMatch[1] && remarksMatch[1].trim()) {
+            remarks = remarksMatch[1].trim()
+          }
 
-        // Find the AWB to get SER number
-        const awbContext = allAWBsWithContext.find((ctx) => ctx.awb.awbNo === comment.awbNo)
-        if (awbContext) {
-          shipments.push({
-            srNo: awbContext.awb.ser,
-            awb: comment.awbNo,
-            pcs: pieces,
-            location: comment.location || "",
-            reason: comment.reason || "Offloaded",
-            locationChecked: comment.locationChecked || "",
-            remarks: remarks,
+          // Find the AWB to get SER number
+          const awbContext = allAWBsWithContext.find((ctx) => {
+            // Try exact match first
+            if (ctx.awb.awbNo === comment.awbNo) return true
+            // Try string comparison in case of type mismatch
+            return String(ctx.awb.awbNo) === String(comment.awbNo)
           })
+          
+          if (awbContext) {
+            // Check if this AWB is already in shipments (avoid duplicates)
+            const existingIndex = shipments.findIndex((s) => s.awb === comment.awbNo || String(s.awb) === String(comment.awbNo))
+            if (existingIndex === -1) {
+              shipments.push({
+                srNo: awbContext.awb.ser || "",
+                awb: comment.awbNo,
+                pcs: pieces,
+                location: comment.location || "",
+                reason: comment.reason || "Offloaded",
+                locationChecked: comment.locationChecked || "",
+                remarks: remarks,
+              })
+            }
+          }
         }
       }
     })

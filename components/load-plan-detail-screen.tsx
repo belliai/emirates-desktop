@@ -304,6 +304,7 @@ export default function LoadPlanDetailScreen({ loadPlan, onBack, onSave, onNavig
                   hoveredUld={hoveredUld}
                   uldNumbers={mergedUldNumbers}
                   isReadOnly={isReadOnly}
+                  awbComments={awbComments}
                   onAWBRowClick={handleAWBRowClick}
                   onAWBLeftSectionClick={(awb, sectorIndex, uldSectionIndex, awbIndex) => {
                     setSelectedAWBForQuickAction({ awb, sectorIndex, uldSectionIndex, awbIndex })
@@ -461,6 +462,7 @@ interface SectorTableProps {
   hoveredUld: string | null
   uldNumbers: Map<string, string[]>
   isReadOnly: boolean
+  awbComments: AWBComment[]
   onAWBRowClick: (awb: AWBRow, sectorIndex: number, uldSectionIndex: number, awbIndex: number, assignment: AWBAssignment | undefined) => void
   onAWBLeftSectionClick: (awb: AWBRow, sectorIndex: number, uldSectionIndex: number, awbIndex: number) => void
   onHoverUld: (uld: string | null) => void
@@ -486,6 +488,7 @@ function SectorTable({
   hoveredUld,
   uldNumbers,
   isReadOnly,
+  awbComments,
   onAWBRowClick,
   onAWBLeftSectionClick,
   onHoverUld,
@@ -526,7 +529,7 @@ function SectorTable({
                 <th className="px-2 py-2 text-left font-semibold">QNN/AQNN</th>
                 <th className="px-2 py-2 text-left font-semibold">WHS</th>
                 <th className="px-2 py-2 text-left font-semibold">SI</th>
-                <th className="px-2 py-2 text-left font-semibold w-20">Actions</th>
+                <th className="px-2 py-2 text-left font-semibold w-20">Remaining</th>
               </tr>
             </thead>
             <tbody>
@@ -584,6 +587,7 @@ function SectorTable({
                             isHovered={isHovered}
                             splitGroups={splitGroups || []}
                             isReadOnly={isReadOnly}
+                            awbComments={awbComments}
                             onRowClick={() => onAWBRowClick(awb, sectorIndex, actualUldSectionIndex, awbIndex, assignment)}
                             onLeftSectionClick={() => onAWBLeftSectionClick(awb, sectorIndex, actualUldSectionIndex, awbIndex)}
                             onMouseEnter={() => assignmentUld && onHoverUld(assignmentUld)}
@@ -650,6 +654,7 @@ function SectorTable({
                               awbIndex={awbIndex}
                               assignment={assignment}
                               isReadOnly={isReadOnly}
+                              awbComments={awbComments}
                               onRowClick={() => onAWBRowClick(awb, sectorIndex, actualUldSectionIndex, awbIndex, assignment)}
                               onLeftSectionClick={() => onAWBLeftSectionClick(awb, sectorIndex, actualUldSectionIndex, awbIndex)}
                               onUpdateField={(field, value) => onUpdateAWBField(sectorIndex, actualUldSectionIndex, awbIndex, field, value)}
@@ -745,6 +750,7 @@ interface AWBRowProps {
   isHovered?: boolean
   splitGroups?: Array<{ id: string; no: string; pieces: string; uld?: string }>
   isReadOnly: boolean
+  awbComments?: AWBComment[]
   onRowClick?: () => void
   onLeftSectionClick?: () => void
   onMouseEnter?: () => void
@@ -762,6 +768,7 @@ function AWBRow({
   isHovered,
   splitGroups,
   isReadOnly,
+  awbComments,
   onRowClick,
   onLeftSectionClick,
   onMouseEnter,
@@ -773,6 +780,19 @@ function AWBRow({
   hoveredUld,
 }: AWBRowProps) {
   const [hoveredSection, setHoveredSection] = useState<"left" | "right" | null>(null)
+  
+  // Extract remaining pieces from offload comments
+  const getRemainingPieces = (): string | null => {
+    if (!awbComments) return null
+    const comment = awbComments.find((c: AWBComment) => c.awbNo === awb.awbNo && c.status === "offloaded")
+    if (comment?.remarks) {
+      const piecesMatch = comment.remarks.match(/Remaining\s+(\d+)\s+pieces\s+offloaded/i)
+      return piecesMatch ? piecesMatch[1] : null
+    }
+    return null
+  }
+  
+  const remainingPieces = getRemainingPieces()
 
   const awbFields: Array<{ key: keyof AWBRow; className?: string }> = [
     { key: "ser" },
@@ -856,27 +876,31 @@ function AWBRow({
           </td>
         ))}
         <td className="px-2 py-1">
-          {!isReadOnly && (
-            <div className="flex items-center gap-1">
-              {onAddRowAfter && (
-                <button
-                  onClick={onAddRowAfter}
-                  className="p-1 hover:bg-gray-100 rounded text-gray-600"
-                  title="Add Row After"
-                >
-                  <Plus className="w-3 h-3" />
-                </button>
-              )}
-              {onDeleteRow && (
-                <button
-                  onClick={onDeleteRow}
-                  className="p-1 hover:bg-red-100 rounded text-red-600"
-                  title="Delete Row"
-                >
-                  <Trash2 className="w-3 h-3" />
-                </button>
-              )}
-            </div>
+          {remainingPieces ? (
+            <span className="text-xs text-orange-600 font-semibold">{remainingPieces}</span>
+          ) : (
+            !isReadOnly && (
+              <div className="flex items-center gap-1">
+                {onAddRowAfter && (
+                  <button
+                    onClick={onAddRowAfter}
+                    className="p-1 hover:bg-gray-100 rounded text-gray-600"
+                    title="Add Row After"
+                  >
+                    <Plus className="w-3 h-3" />
+                  </button>
+                )}
+                {onDeleteRow && (
+                  <button
+                    onClick={onDeleteRow}
+                    className="p-1 hover:bg-red-100 rounded text-red-600"
+                    title="Delete Row"
+                  >
+                    <Trash2 className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
+            )
           )}
         </td>
       </tr>
