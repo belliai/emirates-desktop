@@ -889,87 +889,70 @@ export default function BCRModal({ isOpen, onClose, loadPlan, bcrData: initialBc
 }
 
 // Helper function to generate BCR data from load plan
-export function generateBCRData(loadPlan: LoadPlanDetail, comments?: AWBComment[]): BCRData {
-  // Extract all AWBs from the load plan
-  const allAWBs: AWBRow[] = []
-  loadPlan.sectors.forEach((sector) => {
-    sector.uldSections.forEach((uldSection) => {
-      allAWBs.push(...uldSection.awbs)
+export function generateBCRData(
+  loadPlan: LoadPlanDetail,
+  comments?: AWBComment[],
+  awbAssignments?: Map<string, { awbNo: string; isLoaded: boolean }>,
+  uldNumbers?: Map<string, string[]>
+): BCRData {
+  // Extract all AWBs from the load plan with their sector/uldSection info
+  const allAWBsWithContext: Array<{
+    awb: AWBRow
+    sectorIndex: number
+    uldSectionIndex: number
+  }> = []
+  loadPlan.sectors.forEach((sector, sectorIndex) => {
+    sector.uldSections.forEach((uldSection, uldSectionIndex) => {
+      uldSection.awbs.forEach((awb) => {
+        allAWBsWithContext.push({
+          awb,
+          sectorIndex,
+          uldSectionIndex,
+        })
+      })
     })
   })
 
-  // Generate dummy BCR shipments based on AWBs
-  // Some AWBs are completed, some have issues (hold, late, offloaded, etc.)
+  // Generate BCR shipments based on actual offload markings
   const shipments: BCRShipment[] = []
   const volumeDifferences: BCRVolumeDifference[] = []
   const unitsUnableToUpdate: BCRUnitUnableToUpdate[] = []
 
-  // Sample reasons from the form
-  const reasons = ["Hold", "Late", "Lake", "WPSL", "CWPB", "Offloaded"]
-  const locations = ["C/O", "37903", "JYZAL", "L07789", "Locked", ""]
+  // Process offload comments to extract shipments
+  if (comments) {
+    comments.forEach((comment) => {
+      if (comment.status === "offloaded" && comment.remarks) {
+        // Parse remarks to extract pieces count
+        // Format: "Remaining X pieces offloaded. [remarks]"
+        const piecesMatch = comment.remarks.match(/Remaining\s+(\d+)\s+pieces\s+offloaded/i)
+        const pieces = piecesMatch ? piecesMatch[1] : ""
+        
+        // Extract remarks (everything after "offloaded.")
+        const remarksMatch = comment.remarks.match(/offloaded\.\s*(.+)/i)
+        const remarks = remarksMatch ? remarksMatch[1].trim() : comment.remarks
 
-  allAWBs.forEach((awb, index) => {
-    // Simulate some AWBs having issues
-    const hasIssue = index % 4 === 0 || index % 7 === 0 // Some AWBs have issues
-    const isOffloaded = index % 5 === 0 // Some AWBs are offloaded
-    const isHold = index % 6 === 0 // Some AWBs are on hold
-    const isLate = index % 8 === 0 // Some AWBs are late
-
-    if (hasIssue || isOffloaded || isHold || isLate) {
-      let reason = ""
-      let remarks = ""
-      let location = locations[index % locations.length] || ""
-
-      if (isHold) {
-        reason = "Hold"
-        remarks = "Hold by FIN Team"
-        location = "C/O"
-      } else if (isLate) {
-        reason = "Late"
-        remarks = "EL11 label is missing"
-        location = "37903"
-      } else if (isOffloaded) {
-        reason = "Offloaded"
-        remarks = "Offloaded due to weight restrictions"
-        location = ""
-      } else {
-        reason = reasons[index % reasons.length]
-        remarks = `Issue with ${reason.toLowerCase()}`
+        // Find the AWB to get SER number
+        const awbContext = allAWBsWithContext.find((ctx) => ctx.awb.awbNo === comment.awbNo)
+        if (awbContext) {
+          shipments.push({
+            srNo: awbContext.awb.ser,
+            awb: comment.awbNo,
+            pcs: pieces,
+            location: comment.location || "",
+            reason: comment.reason || "Offloaded",
+            locationChecked: comment.locationChecked || "",
+            remarks: remarks,
+          })
+        }
       }
-
-      shipments.push({
-        srNo: awb.ser,
-        awb: awb.awbNo,
-        pcs: awb.pcs,
-        location: location,
-        reason: reason,
-        locationChecked: location === "Locked" ? "Locked" : "",
-        remarks: remarks,
-      })
-    }
-
-    // Simulate some volume differences
-    if (index % 9 === 0) {
-      const declaredVol = parseFloat(awb.vol) || 0
-      const loadableVol = declaredVol * 0.85 // Simulate 15% difference
-      if (loadableVol > 0) {
-        volumeDifferences.push({
-          awb: awb.awbNo,
-          declaredVolume: declaredVol.toFixed(2),
-          loadableVolume: loadableVol.toFixed(2),
-          remarks: "Volume exceeds available space",
-        })
-      }
-    }
-  })
-
-  // Simulate some units unable to update
-  if (allAWBs.length > 0) {
-    unitsUnableToUpdate.push({
-      uld: "PMC1234",
-      reason: "HHT connection issue",
     })
   }
+
+  // Volume differences - empty for now (can be added later if needed)
+  // volumeDifferences remains empty array
+
+  // Units unable to update - leave blank by default
+  // unitsUnableToUpdate remains empty array
 
   // Extract destination from PAX field (e.g., "DXB/MXP" -> "MXP")
   const destination = loadPlan.pax.split("/")[1] || loadPlan.pax.split("/")[0] || "N/A"
@@ -982,9 +965,9 @@ export function generateBCRData(loadPlan: LoadPlanDetail, comments?: AWBComment[
     volumeDifferences: volumeDifferences,
     unitsUnableToUpdate: unitsUnableToUpdate,
     flightPartiallyActioned: shipments.length > 0,
-    handoverTakenFrom: "Koji 480370",
-    loadersName: "21142 / 211811",
-    buildupStaff: "Jatin 984858",
-    supervisor: "Ravi 23521",
+    handoverTakenFrom: "",
+    loadersName: "",
+    buildupStaff: "",
+    supervisor: "",
   }
 }

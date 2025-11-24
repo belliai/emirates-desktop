@@ -367,7 +367,7 @@ export default function LoadPlanDetailScreen({ loadPlan, onBack, onSave, onNavig
           isOpen={showBCRModal}
           onClose={() => setShowBCRModal(false)}
           loadPlan={editedPlan}
-          bcrData={generateBCRData(editedPlan, awbComments)}
+          bcrData={generateBCRData(editedPlan, awbComments, awbAssignments, mergedUldNumbers)}
         />
       )}
 
