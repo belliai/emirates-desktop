@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react"
 import { Clock, Plane, ChevronDown, ChevronRight } from "lucide-react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell, LineChart, Line } from "recharts"
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell, LineChart, Line, Rectangle } from "recharts"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { useLoadPlans, type LoadPlan } from "@/lib/load-plan-context"
 
@@ -440,7 +440,8 @@ const uldBreakdownData = calculateULDBreakdown()
 const uldTypeChartData = [
   {
     type: "PMC",
-    count: uldBreakdownData.PMC,
+    pmc: uldBreakdownData.PMC,
+    ake: 0,
     pmcAke: 0,
     bulk: 0,
     total: uldBreakdownData.PMC,
@@ -448,7 +449,8 @@ const uldTypeChartData = [
   },
   {
     type: "AKE",
-    count: uldBreakdownData.AKE,
+    pmc: 0,
+    ake: uldBreakdownData.AKE,
     pmcAke: 0,
     bulk: 0,
     total: uldBreakdownData.AKE,
@@ -456,7 +458,8 @@ const uldTypeChartData = [
   },
   {
     type: "Total",
-    count: 0,
+    pmc: 0,
+    ake: 0,
     pmcAke: uldBreakdownData.PMC + uldBreakdownData.AKE,
     bulk: uldBreakdownData.BULK,
     total: uldBreakdownData.PMC + uldBreakdownData.AKE + uldBreakdownData.BULK,
@@ -532,6 +535,26 @@ type ChartDataPoint = {
   efficiency: number
   staffRequired: number
   shift: "Day" | "Night"
+}
+
+// Custom bar shapes for left/right alignment
+const LeftAlignedBar = (props: any) => {
+  const { fill, x, y, width, height } = props
+  // For PMC and AKE, keep bar at left (x position is already correct for left alignment with smaller barSize)
+  return <Rectangle x={x} y={y} width={width} height={height} fill={fill} radius={[4, 4, 0, 0]} />
+}
+
+const RightAlignedBar = (props: any) => {
+  const { fill, x, y, width, height, payload } = props
+  // For Total bar, shift to the right edge of the category
+  // With barCategoryGap of 35% and 3 categories, the available width is 65%
+  // Each category gets approximately 21.67% of total width
+  // Bars are centered by default at x, so we need to shift right
+  // The shift should be approximately: (categoryWidth - barWidth) / 2 + some adjustment
+  // For a barSize of 50, we need to shift right by about 25-30 pixels to align with right edge
+  const shiftRight = Math.max((width || 0) * 0.5, 25) // Shift by 50% of bar width or minimum 25px
+  const isBulk = payload?.type === "Total" && fill === "#F59E0B"
+  return <Rectangle x={(x || 0) + shiftRight} y={y} width={width} height={height} fill={fill} radius={isBulk ? [4, 4, 0, 0] : [0, 0, 0, 0]} />
 }
 
 export default function SituationalAwarenessScreen() {
@@ -1020,8 +1043,12 @@ export default function SituationalAwarenessScreen() {
                     stroke="#9CA3AF"
                     label={{ value: "PCS", angle: -90, position: "insideLeft", style: { fontSize: "10px", fill: "#6B7280" } }}
                   />
-                  <Tooltip content={<ComplexTooltip />} />
-                  <Legend wrapperStyle={{ fontSize: "10px", paddingTop: "10px" }} iconSize={10} />
+                  <Tooltip 
+                    content={<ComplexTooltip />} 
+                    position={{ x: undefined, y: undefined }}
+                    allowEscapeViewBox={true}
+                  />
+                  <Legend wrapperStyle={{ fontSize: "10px", paddingTop: "10px", pointerEvents: "none" }} iconSize={10} />
                   <Line
                     type="monotone"
                     dataKey="remaining"
@@ -1126,7 +1153,7 @@ export default function SituationalAwarenessScreen() {
             {/* Graph - ULD Type Breakdown */}
             <div className="p-3 h-64 relative">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={uldTypeChartData} margin={{ top: 5, right: 5, left: 0, bottom: 5 }} barCategoryGap="20%" barGap={0}>
+                <BarChart data={uldTypeChartData} margin={{ top: 5, right: 5, left: 0, bottom: 5 }} barCategoryGap="35%" barGap={0}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
                   <XAxis
                     dataKey="type"
@@ -1146,12 +1173,14 @@ export default function SituationalAwarenessScreen() {
                       borderRadius: "4px",
                       fontSize: "11px",
                     }}
+                    position={{ x: undefined, y: undefined }}
+                    allowEscapeViewBox={true}
                     formatter={(value: number, name: string, props: any) => {
                       if (props.payload.type === "Total") {
                         if (name === "pmcAke") {
                           return [`${value} ULDs (PMC + AKE)`, "PMC + AKE"]
                         } else if (name === "bulk") {
-                          return [`${value} ULDs`, "BULK"]
+                          return [`${value} ULDs`, "Bulk"]
                         } else if (name === "total") {
                           return [`${value} ULDs`, "Total"]
                         }
@@ -1169,75 +1198,76 @@ export default function SituationalAwarenessScreen() {
                     }}
                   />
                   <Legend 
-                    wrapperStyle={{ fontSize: "10px", paddingTop: "10px" }} 
+                    wrapperStyle={{ fontSize: "10px", paddingTop: "10px", pointerEvents: "none" }} 
                     iconSize={10}
-                    content={({ payload }) => {
-                      const filteredPayload = payload?.filter(entry => entry.dataKey !== "count") || []
-                      const hasTotal = filteredPayload.some(entry => entry.dataKey === "bulk")
-                      
+                    content={() => {
                       return (
                         <ul className="flex justify-center gap-4 text-[10px]">
-                          {/* PMC + AKE */}
-                          {filteredPayload
-                            .filter(entry => entry.dataKey === "pmcAke")
-                            .map((entry, index) => (
-                              <li key={`item-pmcake-${index}`} className="flex items-center gap-1">
-                                <span 
-                                  style={{ 
-                                    display: "inline-block",
-                                    width: "10px",
-                                    height: "10px",
-                                    backgroundColor: entry.color || "#DC2626",
-                                    borderRadius: "2px"
-                                  }}
-                                />
-                                <span>{entry.value}</span>
-                              </li>
-                            ))}
+                          {/* PMC */}
+                          <li className="flex items-center gap-1">
+                            <span 
+                              style={{ 
+                                display: "inline-block",
+                                width: "10px",
+                                height: "10px",
+                                backgroundColor: "#DC2626",
+                                borderRadius: "2px"
+                              }}
+                            />
+                            <span>PMC</span>
+                          </li>
                           
-                          {/* BULK */}
-                          {filteredPayload
-                            .filter(entry => entry.dataKey === "bulk")
-                            .map((entry, index) => (
-                              <li key={`item-bulk-${index}`} className="flex items-center gap-1">
-                                <span 
-                                  style={{ 
-                                    display: "inline-block",
-                                    width: "10px",
-                                    height: "10px",
-                                    backgroundColor: entry.color || "#F59E0B",
-                                    borderRadius: "2px"
-                                  }}
-                                />
-                                <span>{entry.value}</span>
-                              </li>
-                            ))}
+                          {/* AKE */}
+                          <li className="flex items-center gap-1">
+                            <span 
+                              style={{ 
+                                display: "inline-block",
+                                width: "10px",
+                                height: "10px",
+                                backgroundColor: "#DC2626",
+                                borderRadius: "2px"
+                              }}
+                            />
+                            <span>AKE</span>
+                          </li>
                           
-                          {/* Total with half-black/half-yellow icon */}
-                          {hasTotal && (
-                            <li key="item-total" className="flex items-center gap-1">
-                              <svg width="10" height="10" viewBox="0 0 10 10" className="inline-block" style={{ borderRadius: "2px", overflow: "hidden" }}>
-                                <rect width="5" height="10" fill="#000000" />
-                                <rect x="5" width="5" height="10" fill="#F59E0B" />
-                              </svg>
-                              <span>Total</span>
-                            </li>
-                          )}
+                          {/* Bulk */}
+                          <li className="flex items-center gap-1">
+                            <span 
+                              style={{ 
+                                display: "inline-block",
+                                width: "10px",
+                                height: "10px",
+                                backgroundColor: "#F59E0B",
+                                borderRadius: "2px"
+                              }}
+                            />
+                            <span>Bulk</span>
+                          </li>
                         </ul>
                       )
                     }}
                   />
-                  {/* PMC and AKE bars - using count dataKey, centered on their categories */}
-                  <Bar dataKey="count" fill="#DC2626" name="" radius={[4, 4, 0, 0]}>
+                  {/* PMC bar - left-aligned */}
+                  <Bar dataKey="pmc" fill="#DC2626" name="PMC" shape={LeftAlignedBar} barSize={50}>
                     {uldTypeChartData.map((entry, index) => {
-                      if (entry.type === "Total") {
-                        return <Cell key={`cell-empty-${index}`} fill="transparent" />
+                      if (entry.type === "PMC") {
+                        return <Cell key={`cell-pmc-${index}`} fill="#DC2626" />
                       }
-                      return <Cell key={`cell-${index}`} fill={entry.color} />
+                      return <Cell key={`cell-empty-pmc-${index}`} fill="transparent" />
                     })}
                   </Bar>
-                  {/* Total bar with stacked PMC+AKE (bottom) and BULK (top highlighted) - centered on Total category */}
-                  <Bar dataKey="pmcAke" stackId="total" fill="#DC2626" name="PMC + AKE" radius={[0, 0, 0, 0]}>
+                  {/* AKE bar - left-aligned */}
+                  <Bar dataKey="ake" fill="#DC2626" name="AKE" shape={LeftAlignedBar} barSize={50}>
+                    {uldTypeChartData.map((entry, index) => {
+                      if (entry.type === "AKE") {
+                        return <Cell key={`cell-ake-${index}`} fill="#DC2626" />
+                      }
+                      return <Cell key={`cell-empty-ake-${index}`} fill="transparent" />
+                    })}
+                  </Bar>
+                  {/* Total bar with stacked PMC+AKE (bottom) and BULK (top) - right-aligned */}
+                  <Bar dataKey="pmcAke" stackId="total" fill="#DC2626" name="" shape={RightAlignedBar} barSize={50}>
                     {uldTypeChartData.map((entry, index) => {
                       if (entry.type === "Total") {
                         return <Cell key={`cell-total-pmcake-${index}`} fill="#DC2626" />
@@ -1245,7 +1275,7 @@ export default function SituationalAwarenessScreen() {
                       return <Cell key={`cell-empty-pmcake-${index}`} fill="transparent" />
                     })}
                   </Bar>
-                  <Bar dataKey="bulk" stackId="total" fill="#F59E0B" name="BULK" radius={[4, 4, 0, 0]}>
+                  <Bar dataKey="bulk" stackId="total" fill="#F59E0B" name="Bulk" shape={RightAlignedBar}>
                     {uldTypeChartData.map((entry, index) => {
                       if (entry.type === "Total") {
                         return <Cell key={`cell-total-bulk-${index}`} fill="#F59E0B" />
@@ -1287,7 +1317,11 @@ export default function SituationalAwarenessScreen() {
                   tick={{ fontSize: 10, fill: "#6B7280" }}
                   stroke="#9CA3AF"
                 />
-                <Tooltip content={<CustomTooltip />} />
+                <Tooltip 
+                  content={<CustomTooltip />} 
+                  position={{ x: undefined, y: undefined }}
+                  allowEscapeViewBox={true}
+                />
                 <Legend wrapperStyle={{ fontSize: "10px", paddingTop: "10px" }} iconSize={10} />
                 <Line
                   yAxisId="left"

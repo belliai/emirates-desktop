@@ -82,9 +82,11 @@ export default function AnalyticsCharts({ statusStages }: AnalyticsChartsProps) 
                   fontSize: '12px'
                 }}
                 labelStyle={{ color: '#fff', fontWeight: 'bold' }}
+                position={{ x: undefined, y: undefined }}
+                allowEscapeViewBox={true}
               />
               <Legend 
-                wrapperStyle={{ fontSize: '9px', paddingTop: '8px' }}
+                wrapperStyle={{ fontSize: '9px', paddingTop: '8px', pointerEvents: 'none' }}
                 iconSize={12}
               />
               {statusStages.map((stage, index) => (
@@ -135,6 +137,8 @@ export default function AnalyticsCharts({ statusStages }: AnalyticsChartsProps) 
                 }}
                 labelStyle={{ color: '#fff', fontWeight: 'bold' }}
                 formatter={(value) => [`${value} ULDs`, 'ULDs']}
+                position={{ x: undefined, y: undefined }}
+                allowEscapeViewBox={true}
               />
               <Bar 
                 dataKey="ulds" 

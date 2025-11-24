@@ -361,9 +361,13 @@ export default function BDNDashboardScreen() {
                       tick={{ fontSize: 12, fill: "#6B7280" }}
                       stroke="#9CA3AF"
                     />
-                    <Tooltip content={<CustomTooltip />} />
+                    <Tooltip 
+                      content={<CustomTooltip />} 
+                      position={{ x: undefined, y: undefined }}
+                      allowEscapeViewBox={true}
+                    />
                     <Legend
-                      wrapperStyle={{ fontSize: "12px", paddingTop: "20px" }}
+                      wrapperStyle={{ fontSize: "12px", paddingTop: "20px", pointerEvents: "none" }}
                       iconSize={12}
                     />
                     <Bar
@@ -774,7 +778,11 @@ export default function BDNDashboardScreen() {
                       tick={{ fontSize: 12, fill: "#6B7280" }}
                       stroke="#9CA3AF"
                     />
-                    <Tooltip content={<ScreeningTooltip />} />
+                    <Tooltip 
+                      content={<ScreeningTooltip />} 
+                      position={{ x: undefined, y: undefined }}
+                      allowEscapeViewBox={true}
+                    />
                     <Bar dataKey="value" radius={[4, 4, 0, 0]}>
                       {[
                         { name: "M/A Base", color: "#DC2626" },
