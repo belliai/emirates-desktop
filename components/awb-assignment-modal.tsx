@@ -12,16 +12,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import type { AWBRow } from "./load-plan-detail-screen"
-
-// Client-safe ID generator
-const generateId = () => {
-  if (typeof window !== 'undefined' && window.crypto?.randomUUID) {
-    return window.crypto.randomUUID()
-  }
-  // Fallback for SSR/build time
-  return `${Date.now()}-${Math.random().toString(36).substring(2, 11)}`
-}
+import type { AWBRow } from "./load-plan-types"
 
 export type AWBAssignmentType = "single" | "split" | "existing" | "offload"
 
@@ -38,6 +29,7 @@ export type AWBAssignmentData = {
   existingUld?: string // For existing ULD assignment
   splitGroups?: SplitGroup[] // For split assignment
   isLoaded?: boolean // Whether to mark as loaded (false for splits)
+  remarks?: string // Optional remarks for BCR
 }
 
 interface AWBAssignmentModalProps {
@@ -59,14 +51,15 @@ export default function AWBAssignmentModal({
   const [actionType, setActionType] = useState<"split" | "offload" | null>(null)
   const [uld, setUld] = useState("")
   const [existingUld, setExistingUld] = useState("")
+  const [remarks, setRemarks] = useState("")
   const [splitGroups, setSplitGroups] = useState<SplitGroup[]>([
-    { id: generateId(), no: "", pieces: "", uld: "" },
+    { id: crypto.randomUUID(), no: "", pieces: "", uld: "" },
   ])
 
   if (!isOpen) return null
 
   const handleAddSplitGroup = () => {
-    setSplitGroups([...splitGroups, { id: generateId(), no: "", pieces: "", uld: "" }])
+    setSplitGroups([...splitGroups, { id: crypto.randomUUID(), no: "", pieces: "", uld: "" }])
   }
 
   const handleRemoveSplitGroup = (index: number) => {
@@ -83,11 +76,19 @@ export default function AWBAssignmentModal({
 
   const handleLoadULD = () => {
     if (loadType === "new") {
-      if (!uld.trim()) return
-      onConfirm({ type: "single", uld: uld.trim(), isLoaded: true })
+      onConfirm({ 
+        type: "single", 
+        uld: uld.trim() || undefined, 
+        isLoaded: true,
+        remarks: remarks.trim() || undefined
+      })
     } else if (loadType === "existing") {
-      if (!existingUld.trim()) return
-      onConfirm({ type: "existing", existingUld: existingUld.trim(), isLoaded: true })
+      onConfirm({ 
+        type: "existing", 
+        existingUld: existingUld.trim() || undefined, 
+        isLoaded: true,
+        remarks: remarks.trim() || undefined
+      })
     }
     onClose()
   }
@@ -96,16 +97,25 @@ export default function AWBAssignmentModal({
     // Validate split groups
     const validGroups = splitGroups.filter((g) => g.no.trim() && g.pieces.trim())
     if (validGroups.length === 0) return
-    onConfirm({ type: "split", splitGroups: validGroups, isLoaded: false })
+    onConfirm({ 
+      type: "split", 
+      splitGroups: validGroups, 
+      isLoaded: false,
+      remarks: remarks.trim() || undefined
+    })
     onClose()
   }
 
   const handleOffload = () => {
-    onConfirm({ type: "offload", isLoaded: false })
+    onConfirm({ 
+      type: "offload", 
+      isLoaded: false,
+      remarks: remarks.trim() || undefined
+    })
     onClose()
   }
 
-  const canLoadULD = (loadType === "new" && uld.trim()) || (loadType === "existing" && existingUld.trim())
+  const canLoadULD = loadType === "new" || loadType === "existing"
   const canSplit = actionType === "split" && splitGroups.some((g) => g.no.trim() && g.pieces.trim())
   const canOffload = actionType === "offload"
 
@@ -219,13 +229,13 @@ export default function AWBAssignmentModal({
           {loadType === "new" && (
             <div>
               <Label htmlFor="uld" className="text-sm font-semibold text-gray-900 mb-2 block">
-                ULD Number
+                ULD Number <span className="text-xs text-gray-500 font-normal">(Optional)</span>
               </Label>
               <Input
                 id="uld"
                 value={uld}
                 onChange={(e) => setUld(e.target.value)}
-                placeholder="Enter ULD number"
+                placeholder="Enter ULD number (optional)"
                 className="w-full"
               />
             </div>
@@ -235,7 +245,7 @@ export default function AWBAssignmentModal({
           {loadType === "existing" && (
             <div>
               <Label htmlFor="existing-uld-select" className="text-sm font-semibold text-gray-900 mb-2 block">
-                Select Existing ULD
+                Select Existing ULD <span className="text-xs text-gray-500 font-normal">(Optional)</span>
               </Label>
               {existingUlds.length > 0 ? (
                 <select
@@ -244,7 +254,7 @@ export default function AWBAssignmentModal({
                   onChange={(e) => setExistingUld(e.target.value)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                 >
-                  <option value="">Select ULD...</option>
+                  <option value="">Select ULD... (optional)</option>
                   {existingUlds.map((uldOption) => (
                     <option key={uldOption} value={uldOption}>
                       {uldOption}
@@ -256,7 +266,7 @@ export default function AWBAssignmentModal({
                   id="existing-uld-input"
                   value={existingUld}
                   onChange={(e) => setExistingUld(e.target.value)}
-                  placeholder="Enter existing ULD number"
+                  placeholder="Enter existing ULD number (optional)"
                   className="w-full"
                 />
               )}
@@ -335,6 +345,21 @@ export default function AWBAssignmentModal({
               )}
             </div>
           )}
+
+          {/* Remarks Section - Always visible */}
+          <div>
+            <Label htmlFor="remarks" className="text-sm font-semibold text-gray-900 mb-2 block">
+              Remarks <span className="text-xs text-gray-500 font-normal">(Optional - for BCR)</span>
+            </Label>
+            <textarea
+              id="remarks"
+              value={remarks}
+              onChange={(e) => setRemarks(e.target.value)}
+              placeholder="Enter any remarks or notes for BCR (optional)"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-[#D71A21] focus:border-transparent"
+              rows={3}
+            />
+          </div>
 
         </div>
 

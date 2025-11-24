@@ -1,9 +1,11 @@
 "use client"
 
-import { useState, useRef, useEffect } from "react"
+import { useState, useRef } from "react"
 import { X, Download, FileText, Printer, Plus, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import type { LoadPlanDetail, AWBRow } from "./load-plan-detail-screen"
+import type { LoadPlanDetail, AWBRow } from "./load-plan-types"
+import jsPDF from "jspdf"
+import html2canvas from "html2canvas"
 
 // Infrastructure for future commenting/status tracking
 export type AWBStatus = "completed" | "split" | "offloaded" | "pending" | "hold" | "late"
@@ -66,11 +68,6 @@ export default function BCRModal({ isOpen, onClose, loadPlan, bcrData: initialBc
   const [bcrData, setBcrData] = useState<BCRData>(initialBcrData)
   const [showPDFView, setShowPDFView] = useState(false)
   const pdfContentRef = useRef<HTMLDivElement>(null)
-
-  // Sync state when prop changes
-  useEffect(() => {
-    setBcrData(initialBcrData)
-  }, [initialBcrData])
 
   if (!isOpen) return null
 
@@ -172,12 +169,6 @@ export default function BCRModal({ isOpen, onClose, loadPlan, bcrData: initialBc
     if (!pdfContentRef.current) return
 
     try {
-      // Dynamic import for client-side only
-      const html2canvasModule = await import('html2canvas')
-      const jsPDFModule = await import('jspdf')
-      const html2canvas = html2canvasModule.default
-      const jsPDF = jsPDFModule.default
-
       const canvas = await html2canvas(pdfContentRef.current, {
         scale: 2,
         useCORS: true,
