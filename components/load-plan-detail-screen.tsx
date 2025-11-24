@@ -5,10 +5,12 @@ import React from "react"
 import { Plus, Trash2 } from "lucide-react"
 import BCRModal, { generateBCRData, type AWBComment } from "./bcr-modal"
 import AWBAssignmentModal, { LoadedStatusModal, type AWBAssignmentData } from "./awb-assignment-modal"
+import HandoverModal from "./handover-modal"
 import { LoadPlanHeader } from "./load-plan-header"
 import { FlightHeaderRow } from "./flight-header-row"
 import { EditableField } from "./editable-field"
 import { useLoadPlanState, type AWBAssignment } from "./use-load-plan-state"
+import { useLoadPlans } from "@/lib/load-plan-context"
 import type { LoadPlanDetail, AWBRow } from "./load-plan-types"
 
 // Re-export types for backward compatibility
@@ -18,11 +20,14 @@ interface LoadPlanDetailScreenProps {
   loadPlan: LoadPlanDetail
   onBack: () => void
   onSave?: (updatedPlan: LoadPlanDetail) => void
+  onNavigateToBuildupStaff?: (staffName: string) => void
 }
 
-export default function LoadPlanDetailScreen({ loadPlan, onBack, onSave }: LoadPlanDetailScreenProps) {
+export default function LoadPlanDetailScreen({ loadPlan, onBack, onSave, onNavigateToBuildupStaff }: LoadPlanDetailScreenProps) {
   const [showBCRModal, setShowBCRModal] = useState(false)
+  const [showHandoverModal, setShowHandoverModal] = useState(false)
   const [awbComments, setAwbComments] = useState<AWBComment[]>([])
+  const { sendToFlightAssignment, flightAssignments } = useLoadPlans()
   
   const {
     editedPlan,
@@ -109,12 +114,37 @@ export default function LoadPlanDetailScreen({ loadPlan, onBack, onSave }: LoadP
       .filter((uld): uld is string => uld !== null)
   ))
 
+  const handleHandover = () => {
+    // Get the current staff name from flight assignments
+    const assignment = flightAssignments.find(fa => fa.flight === editedPlan.flight)
+    const staffName = assignment?.name || ""
+    
+    // Send back to flight assignment (clear assignment)
+    sendToFlightAssignment(editedPlan.flight)
+    setShowHandoverModal(false)
+    
+    // Navigate to buildup staff screen with the staff member
+    if (onNavigateToBuildupStaff && staffName) {
+      onNavigateToBuildupStaff(staffName.toLowerCase())
+    } else {
+      // If no staff name, just go back
+      onBack()
+    }
+  }
+
+  const handleHandoverReport = () => {
+    // TODO: Generate/download handover report
+    // For now, just close the modal
+    setShowHandoverModal(false)
+  }
+
   return (
     <div className="min-h-screen bg-white">
       <LoadPlanHeader
         onBack={onBack}
         isReadOnly={isReadOnly}
         onGenerateBCR={isReadOnly ? () => setShowBCRModal(true) : undefined}
+        onHandover={isReadOnly ? () => setShowHandoverModal(true) : undefined}
         onSave={onSave ? handleSave : undefined}
       />
 
@@ -221,6 +251,16 @@ export default function LoadPlanDetailScreen({ loadPlan, onBack, onSave }: LoadP
           onClose={() => setShowBCRModal(false)}
           loadPlan={editedPlan}
           bcrData={generateBCRData(editedPlan, awbComments)}
+        />
+      )}
+
+      {isReadOnly && (
+        <HandoverModal
+          isOpen={showHandoverModal}
+          onClose={() => setShowHandoverModal(false)}
+          loadPlan={editedPlan}
+          onHandover={handleHandover}
+          onHandoverReport={handleHandoverReport}
         />
       )}
 

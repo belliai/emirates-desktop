@@ -45,6 +45,7 @@ function AppContent() {
     | "situational-awareness"
   >("desktop")
   const [selectedULD, setSelectedULD] = useState<(ULD & { flightNumber: string; uldIndex: number }) | null>(null)
+  const [buildupStaffParams, setBuildupStaffParams] = useState<{ staff?: string } | null>(null)
   const { updateULDStatus, addMultipleStatusUpdates } = useFlights()
 
   const handleULDSelect = (uld: ULD, flightNumber: string, uldIndex: number) => {
@@ -64,8 +65,13 @@ function AppContent() {
     }
   }
 
-  const handleNavigate = (screen: string) => {
+  const handleNavigate = (screen: string, params?: any) => {
     setCurrentScreen(screen as any)
+    if (screen === "buildup-staff" && params?.staff) {
+      setBuildupStaffParams({ staff: params.staff })
+    } else {
+      setBuildupStaffParams(null)
+    }
   }
 
   const renderScreen = () => {
@@ -82,7 +88,12 @@ function AppContent() {
 
     switch (currentScreen) {
       case "buildup-staff":
-        return <BuildupStaffScreen />
+        return (
+          <BuildupStaffScreen 
+            initialStaff={buildupStaffParams?.staff as "david" | "harley" | undefined}
+            onNavigate={handleNavigate}
+          />
+        )
       case "desktop":
         return <DesktopScreen onULDSelect={handleULDSelect} />
       case "load-plans":

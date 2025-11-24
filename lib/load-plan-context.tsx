@@ -27,6 +27,7 @@ type LoadPlanContextType = {
   setLoadPlans: (plans: LoadPlan[]) => void
   addLoadPlan: (plan: LoadPlan) => void
   updateFlightAssignment: (flight: string, name: string) => void
+  sendToFlightAssignment: (flight: string) => void
   getFlightsByStaff: (staffName: string) => LoadPlan[]
 }
 
@@ -133,6 +134,15 @@ export function LoadPlanProvider({ children }: { children: ReactNode }) {
     })
   }
 
+  const sendToFlightAssignment = (flight: string) => {
+    // Clear the name assignment to send it back to flight assignment for reassignment
+    setFlightAssignments((prev) => {
+      return prev.map((fa) => 
+        fa.flight === flight ? { ...fa, name: "" } : fa
+      )
+    })
+  }
+
   const getFlightsByStaff = (staffName: string) => {
     const assignedFlights = flightAssignments
       .filter((fa) => fa.name.toLowerCase() === staffName.toLowerCase())
@@ -149,6 +159,7 @@ export function LoadPlanProvider({ children }: { children: ReactNode }) {
         setLoadPlans,
         addLoadPlan,
         updateFlightAssignment,
+        sendToFlightAssignment,
         getFlightsByStaff,
       }}
     >

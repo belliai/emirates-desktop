@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import React, { useState } from "react"
 import { ChevronRight, Plane, Calendar, Package, Users, Clock, FileText } from "lucide-react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useLoadPlans, type LoadPlan } from "@/lib/load-plan-context"
@@ -591,10 +591,22 @@ const getLoadPlanDetail = (flight: string): LoadPlanDetail | null => {
   return null
 }
 
-export default function BuildupStaffScreen() {
+interface BuildupStaffScreenProps {
+  initialStaff?: "david" | "harley"
+  onNavigate?: (screen: string, params?: any) => void
+}
+
+export default function BuildupStaffScreen({ initialStaff, onNavigate }: BuildupStaffScreenProps = {}) {
   const { loadPlans, getFlightsByStaff } = useLoadPlans()
-  const [selectedStaff, setSelectedStaff] = useState<"david" | "harley">("david")
+  const [selectedStaff, setSelectedStaff] = useState<"david" | "harley">(initialStaff || "david")
   const [selectedLoadPlan, setSelectedLoadPlan] = useState<LoadPlanDetail | null>(null)
+  
+  // Update selectedStaff if initialStaff prop changes
+  React.useEffect(() => {
+    if (initialStaff) {
+      setSelectedStaff(initialStaff)
+    }
+  }, [initialStaff])
 
   const getInitials = (staff: "david" | "harley") => {
     return staff === "david" ? "D" : "H"
@@ -614,11 +626,19 @@ export default function BuildupStaffScreen() {
     }
   }
 
+  const handleNavigateToBuildupStaff = (staffName: string) => {
+    setSelectedLoadPlan(null)
+    if (onNavigate) {
+      onNavigate("buildup-staff", { staff: staffName })
+    }
+  }
+
   if (selectedLoadPlan) {
     return (
       <LoadPlanDetailScreen
         loadPlan={selectedLoadPlan}
         onBack={() => setSelectedLoadPlan(null)}
+        onNavigateToBuildupStaff={handleNavigateToBuildupStaff}
       />
     )
   }

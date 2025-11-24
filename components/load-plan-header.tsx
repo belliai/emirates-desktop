@@ -1,15 +1,16 @@
 "use client"
 
-import { ArrowLeft, FileCheck } from "lucide-react"
+import { ArrowLeft, FileCheck, Send } from "lucide-react"
 
 interface LoadPlanHeaderProps {
   onBack: () => void
   isReadOnly: boolean
   onGenerateBCR?: () => void
+  onHandover?: () => void
   onSave?: () => void
 }
 
-export function LoadPlanHeader({ onBack, isReadOnly, onGenerateBCR, onSave }: LoadPlanHeaderProps) {
+export function LoadPlanHeader({ onBack, isReadOnly, onGenerateBCR, onHandover, onSave }: LoadPlanHeaderProps) {
   return (
     <header className="sticky top-0 z-50 border-b border-gray-200 bg-white">
       <div className="flex items-center justify-between px-4 py-3">
@@ -20,6 +21,15 @@ export function LoadPlanHeader({ onBack, isReadOnly, onGenerateBCR, onSave }: Lo
           <h1 className="text-lg font-semibold text-gray-900">Load Plan Detail</h1>
         </div>
         <div className="flex items-center gap-3">
+          {isReadOnly && onHandover && (
+            <button
+              onClick={onHandover}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium flex items-center gap-2"
+            >
+              <Send className="w-4 h-4" />
+              Handover
+            </button>
+          )}
           {isReadOnly && onGenerateBCR && (
             <button
               onClick={onGenerateBCR}
