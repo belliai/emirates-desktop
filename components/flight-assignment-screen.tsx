@@ -375,7 +375,15 @@ function FlightAssignmentRow({ assignment, onNameChange, onSectorChange }: Fligh
         {assignment.originDestination}
       </td>
       <td className="px-2 py-1 text-gray-900 text-xs whitespace-nowrap">
-        <Popover open={nameOpen} onOpenChange={setNameOpen}>
+        <Popover 
+          open={nameOpen} 
+          onOpenChange={(open) => {
+            setNameOpen(open)
+            if (!open) {
+              setNameSearch("")
+            }
+          }}
+        >
           <PopoverTrigger asChild>
             <Button
               variant="outline"
@@ -388,7 +396,7 @@ function FlightAssignmentRow({ assignment, onNameChange, onSectorChange }: Fligh
             </Button>
           </PopoverTrigger>
           <PopoverContent className="w-[200px] p-0" align="start">
-            <Command>
+            <Command shouldFilter={false}>
               <CommandInput
                 placeholder="Search name..."
                 value={nameSearch}
