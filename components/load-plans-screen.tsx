@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useRef } from "react"
+import { useState, useRef, useEffect } from "react"
 import { ChevronRight, Plane, Calendar, Package, Users, Clock, FileText, Upload } from "lucide-react"
 import LoadPlanDetailScreen from "./load-plan-detail-screen"
 import type { LoadPlanDetail } from "./load-plan-types"
@@ -8,10 +8,15 @@ import { extractTextFromFile } from "@/lib/lists/file-extractors"
 import { UploadModal } from "./lists/upload-modal"
 import { Button } from "@/components/ui/button"
 import { useLoadPlans, type LoadPlan } from "@/lib/load-plan-context"
+import { getLoadPlansFromSupabase, getLoadPlanDetailFromSupabase } from "@/lib/load-plans-supabase"
+import { parseHeader, parseShipments } from "@/lib/lists/parser"
+import { saveListsDataToSupabase } from "@/lib/lists/supabase-save"
+import type { ListsResults } from "@/lib/lists/types"
+import { generateSpecialCargoReport, generateVUNList, generateQRTList } from "@/lib/lists/report-generators"
 
 
-// Sample detail data - in production, this would come from an API
-const getLoadPlanDetail = (flight: string): LoadPlanDetail | null => {
+// Sample detail data - fallback when Supabase data is not available
+const getLoadPlanDetailFallback = (flight: string): LoadPlanDetail | null => {
   if (flight === "EK0205") {
     return {
       flight: "EK0205",
@@ -596,7 +601,7 @@ const getLoadPlanDetail = (flight: string): LoadPlanDetail | null => {
 }
 
 export default function LoadPlansScreen({ onLoadPlanSelect }: { onLoadPlanSelect?: (loadPlan: LoadPlan) => void }) {
-  const { loadPlans, addLoadPlan } = useLoadPlans()
+  const { loadPlans, addLoadPlan, setLoadPlans } = useLoadPlans()
   const [selectedLoadPlan, setSelectedLoadPlan] = useState<LoadPlanDetail | null>(null)
   const [savedDetails, setSavedDetails] = useState<Map<string, LoadPlanDetail>>(new Map())
   const [showUploadModal, setShowUploadModal] = useState(false)
@@ -605,14 +610,64 @@ export default function LoadPlansScreen({ onLoadPlanSelect }: { onLoadPlanSelect
   const [uploadedFile, setUploadedFile] = useState<File | null>(null)
   const [progress, setProgress] = useState(0)
   const [error, setError] = useState<string | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const handleRowClick = (loadPlan: LoadPlan) => {
-    // Check if we have a saved version, otherwise use the default
+  // Fetch load plans from Supabase on mount
+  useEffect(() => {
+    const fetchLoadPlans = async () => {
+      setIsLoading(true)
+      try {
+        const supabaseLoadPlans = await getLoadPlansFromSupabase()
+        if (supabaseLoadPlans.length > 0) {
+          setLoadPlans(supabaseLoadPlans)
+          console.log(`[LoadPlansScreen] Loaded ${supabaseLoadPlans.length} load plans from Supabase`)
+        } else {
+          console.log("[LoadPlansScreen] No load plans from Supabase, using context data")
+        }
+      } catch (err) {
+        console.error("[LoadPlansScreen] Error fetching load plans:", err)
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    fetchLoadPlans()
+  }, [setLoadPlans])
+
+  const handleRowClick = async (loadPlan: LoadPlan) => {
+    // Check if we have a saved version first
     const savedDetail = savedDetails.get(loadPlan.flight)
-    const detail = savedDetail || getLoadPlanDetail(loadPlan.flight)
-    if (detail) {
-      setSelectedLoadPlan(detail)
+    if (savedDetail) {
+      console.log(`[LoadPlansScreen] Using saved detail for ${loadPlan.flight}`)
+      setSelectedLoadPlan(savedDetail)
+      return
+    }
+
+    // Try to fetch from Supabase
+    try {
+      console.log(`[LoadPlansScreen] Fetching load plan detail from Supabase for ${loadPlan.flight}`)
+      const supabaseDetail = await getLoadPlanDetailFromSupabase(loadPlan.flight)
+      if (supabaseDetail) {
+        console.log(`[LoadPlansScreen] Successfully loaded detail from Supabase:`, {
+          flight: supabaseDetail.flight,
+          sectors: supabaseDetail.sectors.length,
+          totalItems: supabaseDetail.sectors.reduce((sum, s) => sum + s.uldSections.reduce((sum2, u) => sum2 + u.awbs.length, 0), 0)
+        })
+        setSelectedLoadPlan(supabaseDetail)
+        return
+      } else {
+        console.log(`[LoadPlansScreen] No data found in Supabase for ${loadPlan.flight}`)
+      }
+    } catch (err) {
+      console.error("[LoadPlansScreen] Error fetching load plan detail:", err)
+    }
+
+    // Fallback to dummy data if Supabase doesn't have it
+    const fallbackDetail = getLoadPlanDetailFallback(loadPlan.flight)
+    if (fallbackDetail) {
+      console.log(`[LoadPlansScreen] Using fallback dummy data for ${loadPlan.flight}`)
+      setSelectedLoadPlan(fallbackDetail)
     } else if (onLoadPlanSelect) {
       onLoadPlanSelect(loadPlan)
     }
@@ -626,124 +681,25 @@ export default function LoadPlansScreen({ onLoadPlanSelect }: { onLoadPlanSelect
     })
   }
 
-  const parseLoadPlanFile = async (file: File): Promise<LoadPlan[]> => {
-    try {
-      const text = await extractTextFromFile(file)
-      const loadPlans: LoadPlan[] = []
-
-      const cleanValue = (value: string): string => {
-        if (!value) return ""
-        let cleaned = value.split(/PREPARED BY/i)[0]
-        cleaned = cleaned.split(/PREPARED ON/i)[0]
-        return cleaned.trim()
-      }
-
-      // Try CSV format
-      if (file.name.endsWith(".csv") || (text.includes(",") && text.split("\n").length > 2)) {
-        const lines = text.split("\n").filter((line) => line.trim())
-        const rows = lines.map((line) => line.split(",").map((cell) => cell.trim()))
-        const dataRows = rows.filter((row) => {
-          const firstCell = row[0]?.toLowerCase()
-          return firstCell && firstCell !== "flight" && !firstCell.includes("header") && firstCell.match(/^ek\d+/i)
-        })
-
-        dataRows.forEach((row) => {
-          if (row.length >= 8) {
-            const loadPlan: LoadPlan = {
-              flight: cleanValue(row[0] || ""),
-              date: cleanValue(row[1] || ""),
-              acftType: cleanValue(row[2] || ""),
-              acftReg: cleanValue(row[3] || ""),
-              pax: cleanValue(row[4] || ""),
-              std: cleanValue(row[5] || ""),
-              ttlPlnUld: cleanValue(row[6] || ""),
-              uldVersion: cleanValue(row[7] || ""),
-            }
-            if (loadPlan.flight) {
-              loadPlans.push(loadPlan)
-            }
-          }
-        })
-
-        return loadPlans
-      }
-
-      // Try text format - look for multiple load plans
-      const planSeparators = [/EMIRATES LOAD PLAN/gi, /(?=EK\d+\s*\/)/g]
-      let sections: string[] = []
-
-      if (text.match(/EMIRATES LOAD PLAN/gi)) {
-        sections = text.split(/EMIRATES LOAD PLAN/gi).filter((s) => s.trim())
-      } else {
-        const flightPattern = /(EK\d+\s*\/\s*\w+)/gi
-        const matches = [...text.matchAll(flightPattern)]
-
-        if (matches.length > 1) {
-          for (let i = 0; i < matches.length; i++) {
-            const start = matches[i].index || 0
-            const end = i < matches.length - 1 ? (matches[i + 1].index || text.length) : text.length
-            sections.push(text.substring(start, end))
-          }
-        } else {
-          sections = [text]
-        }
-      }
-
-      sections.forEach((section) => {
-        const flightMatch = section.match(/(EK\d+)\s*\/\s*(\w+)/i)
-        if (flightMatch) {
-          const flight = flightMatch[1]
-          const date = flightMatch[2]
-
-          const acftTypeMatch = section.match(/ACFT TYPE:\s*(\S+)/i)
-          const acftRegMatch = section.match(/ACFT REG:\s*(\S+)/i)
-          const paxMatch = section.match(/PAX:\s*([^\n]*?)(?:\s+STD:|PREPARED BY|$)/i)
-          const stdMatch = section.match(/STD:\s*([^\n]*?)(?:\s+PREPARED BY|$)/i)
-          const ttlPlnUldMatch = section.match(/TTL PLN ULD:\s*([^\n]*?)(?:\s+ULD VERSION|PREPARED|$)/i)
-          const uldVersionMatch = section.match(/ULD VERSION:\s*([^\n]*?)(?:\s+PREPARED|$)/i)
-
-          const loadPlan: LoadPlan = {
-            flight: flight || "",
-            date: date || "",
-            acftType: cleanValue(acftTypeMatch?.[1] || ""),
-            acftReg: cleanValue(acftRegMatch?.[1] || ""),
-            pax: cleanValue(paxMatch?.[1] || ""),
-            std: cleanValue(stdMatch?.[1] || ""),
-            ttlPlnUld: cleanValue(ttlPlnUldMatch?.[1] || ""),
-            uldVersion: cleanValue(uldVersionMatch?.[1] || ""),
-          }
-
-          if (loadPlan.flight) {
-            loadPlans.push(loadPlan)
-          }
-        }
-      })
-
-      return loadPlans.length > 0 ? loadPlans : []
-    } catch (error) {
-      console.error("Error parsing load plan file:", error)
-      return []
-    }
-  }
-
   const handleFileUpload = async (files: File | File[]) => {
     setError(null)
     setIsProcessing(true)
     setProgress(0)
-
+    
     const fileArray = Array.isArray(files) ? files : [files]
     setUploadedFile(fileArray[0])
 
     try {
-      const validExtensions = [".md", ".txt", ".rtf", ".docx", ".doc", ".pdf", ".csv"]
-
-      for (const file of fileArray) {
-        const hasValidExtension = validExtensions.some((ext) => file.name.toLowerCase().endsWith(ext))
+      const validExtensions = [".md", ".txt", ".rtf", ".docx", ".doc", ".pdf"]
+      
+      // Validate all files
+      for (const f of fileArray) {
+        const hasValidExtension = validExtensions.some((ext) => f.name.toLowerCase().endsWith(ext))
         if (!hasValidExtension) {
-          throw new Error(`Invalid file type: ${file.name}. Please upload MD, DOCX, DOC, PDF, or CSV files.`)
+          throw new Error(`Invalid file type: ${f.name}. Please upload MD, DOCX, DOC, or PDF files.`)
         }
-        if (file.size > 10 * 1024 * 1024) {
-          throw new Error(`File size exceeds 10MB: ${file.name}`)
+        if (f.size > 10 * 1024 * 1024) {
+          throw new Error(`File size exceeds 10MB: ${f.name}`)
         }
       }
 
@@ -752,34 +708,78 @@ export default function LoadPlansScreen({ onLoadPlanSelect }: { onLoadPlanSelect
       const skippedFlights: string[] = []
       const failedFiles: string[] = []
 
+      // Process each file and save to Supabase
       for (let i = 0; i < fileArray.length; i++) {
-        const file = fileArray[i]
+        const f = fileArray[i]
         const fileProgress = Math.floor((i / fileArray.length) * 80) + 10
         setProgress(fileProgress)
 
         try {
-          const parsedLoadPlans = await parseLoadPlanFile(file)
+          const content = await extractTextFromFile(f)
+          console.log('[LoadPlansScreen] Extracted content length:', content.length)
 
-          if (parsedLoadPlans && parsedLoadPlans.length > 0) {
-            parsedLoadPlans.forEach((loadPlan) => {
-              const exists = loadPlans.some((lp) => lp.flight === loadPlan.flight)
-              if (exists) {
-                totalSkippedCount++
-                skippedFlights.push(loadPlan.flight)
-                // Update existing plan
-                addLoadPlan(loadPlan)
-              } else {
-                addLoadPlan(loadPlan)
-                totalAddedCount++
-              }
-            })
+          const header = parseHeader(content)
+          if (!header.flightNumber) {
+            console.error('[LoadPlansScreen] Could not parse flight number from file:', f.name)
+            failedFiles.push(f.name)
+            continue
+          }
+
+          const shipments = parseShipments(content, header)
+          console.log('[LoadPlansScreen] Parsed shipments from', f.name, ':', shipments.length)
+
+          // Generate reports (required for saveListsDataToSupabase)
+          const specialCargo = generateSpecialCargoReport(header, shipments)
+          const vunList = generateVUNList(header, shipments)
+          const qrtList = generateQRTList(header, shipments)
+
+          const results: ListsResults = { 
+            specialCargo, 
+            vunList, 
+            qrtList, 
+            header, 
+            shipments 
+          }
+
+          // Save to Supabase
+          const saveResult = await saveListsDataToSupabase({
+            results,
+            shipments,
+            fileName: f.name,
+            fileSize: f.size,
+          })
+
+          if (saveResult.success) {
+            console.log('[LoadPlansScreen] Data saved to Supabase successfully for', f.name, ', load_plan_id:', saveResult.loadPlanId)
+            
+            // Check if flight already exists in current list
+            const exists = loadPlans.some((lp) => lp.flight === header.flightNumber)
+            if (exists) {
+              totalSkippedCount++
+              skippedFlights.push(header.flightNumber)
+            } else {
+              totalAddedCount++
+            }
           } else {
-            failedFiles.push(file.name)
+            console.error('[LoadPlansScreen] Failed to save data to Supabase for', f.name, ':', saveResult.error)
+            failedFiles.push(f.name)
           }
         } catch (fileError) {
-          console.error(`Error processing file ${file.name}:`, fileError)
-          failedFiles.push(file.name)
+          console.error(`[LoadPlansScreen] Error processing file ${f.name}:`, fileError)
+          failedFiles.push(f.name)
         }
+      }
+
+      setProgress(90)
+
+      // Refresh load plans from Supabase after processing all files
+      try {
+        const supabaseLoadPlans = await getLoadPlansFromSupabase()
+        if (supabaseLoadPlans.length > 0) {
+          setLoadPlans(supabaseLoadPlans)
+        }
+      } catch (refreshError) {
+        console.error("[LoadPlansScreen] Error refreshing load plans:", refreshError)
       }
 
       setProgress(100)
@@ -790,23 +790,23 @@ export default function LoadPlansScreen({ onLoadPlanSelect }: { onLoadPlanSelect
           message += `Successfully added ${totalAddedCount} load plan${totalAddedCount > 1 ? "s" : ""}. `
         }
         if (totalSkippedCount > 0) {
-          message += `${totalSkippedCount} flight${totalSkippedCount > 1 ? "s" : ""} already exist${totalSkippedCount > 1 ? "" : "s"} (${skippedFlights.slice(0, 5).join(", ")}${skippedFlights.length > 5 ? `, and ${skippedFlights.length - 5} more` : ""}) and ${totalSkippedCount > 1 ? "were" : "was"} skipped. `
+          message += `${totalSkippedCount} flight${totalSkippedCount > 1 ? "s" : ""} already exist${totalSkippedCount > 1 ? "" : "s"} (${skippedFlights.slice(0, 5).join(", ")}${skippedFlights.length > 5 ? `, and ${skippedFlights.length - 5} more` : ""}) and ${totalSkippedCount > 1 ? "were" : "was"} updated. `
         }
         if (failedFiles.length > 0) {
-          message += `${failedFiles.length} file${failedFiles.length > 1 ? "s" : ""} could not be parsed (${failedFiles.slice(0, 3).join(", ")}${failedFiles.length > 3 ? "..." : ""}).`
+          message += `${failedFiles.length} file${failedFiles.length > 1 ? "s" : ""} could not be processed (${failedFiles.slice(0, 3).join(", ")}${failedFiles.length > 3 ? "..." : ""}).`
         }
 
         setTimeout(() => {
           alert(message)
         }, 100)
-      } else {
-        throw new Error(`Could not parse any load plans from ${fileArray.length} file${fileArray.length > 1 ? "s" : ""}. Please check the file format${fileArray.length > 1 ? "s" : ""}.`)
+      } else if (failedFiles.length === fileArray.length) {
+        throw new Error(`Could not process any files. Please check the file format${fileArray.length > 1 ? "s" : ""}.`)
       }
 
       setShowUploadModal(false)
     } catch (err) {
-      console.error("Error uploading files:", err)
-      setError(err instanceof Error ? err.message : "Error processing files. Please try again.")
+      console.error("[LoadPlansScreen] File upload error:", err)
+      setError(err instanceof Error ? err.message : "An error occurred while processing the file")
       setProgress(0)
     } finally {
       setIsProcessing(false)
@@ -920,7 +920,13 @@ export default function LoadPlansScreen({ onLoadPlanSelect }: { onLoadPlanSelect
                 </tr>
               </thead>
               <tbody>
-                {loadPlans.length === 0 ? (
+                {isLoading ? (
+                  <tr>
+                    <td colSpan={9} className="px-3 py-2 text-center text-gray-500 text-sm">
+                      Loading load plans...
+                    </td>
+                  </tr>
+                ) : loadPlans.length === 0 ? (
                   <tr>
                     <td colSpan={9} className="px-3 py-2 text-center text-gray-500 text-sm">
                       No load plans available
