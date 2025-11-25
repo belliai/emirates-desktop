@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Plane, Clock, MapPin, Users, FileText, Check, ChevronsUpDown } from "lucide-react"
 import { useLoadPlans } from "@/lib/load-plan-context"
 import { Button } from "@/components/ui/button"
@@ -22,15 +22,15 @@ const sampleFlightAssignments: FlightAssignment[] = [
     flight: "EK0205",
     std: "09:35",
     originDestination: "DXB-JFK",
-    name: "",
-    sector: "",
+    name: "david",
+    sector: "E75",
   },
   {
     flight: "EK0544",
     std: "02:50",
     originDestination: "DXB-MAA",
-    name: "",
-    sector: "",
+    name: "david",
+    sector: "E75",
   },
   {
     flight: "EK0123",
@@ -207,6 +207,15 @@ const getDestinationCategory = (destination: string): { category: string; color:
 export default function FlightAssignmentScreen() {
   const { updateFlightAssignment } = useLoadPlans()
   const [flightAssignments, setFlightAssignments] = useState<FlightAssignment[]>(sampleFlightAssignments)
+
+  // Sync initial assignments to context (for demo - first 2 assigned to David)
+  useEffect(() => {
+    sampleFlightAssignments.slice(0, 2).forEach((assignment) => {
+      if (assignment.name && assignment.flight) {
+        updateFlightAssignment(assignment.flight, assignment.name)
+      }
+    })
+  }, [updateFlightAssignment])
 
   const handleNameChange = (index: number, name: string) => {
     const assignment = flightAssignments[index]
