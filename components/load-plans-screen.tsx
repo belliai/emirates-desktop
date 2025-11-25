@@ -727,6 +727,21 @@ export default function LoadPlansScreen({ onLoadPlanSelect }: { onLoadPlanSelect
 
           const shipments = parseShipments(content, header)
           console.log('[LoadPlansScreen] Parsed shipments from', f.name, ':', shipments.length)
+          
+          // Log ramp transfer detection
+          const rampTransferShipments = shipments.filter(s => s.isRampTransfer)
+          const regularShipments = shipments.filter(s => !s.isRampTransfer)
+          console.log('[LoadPlansScreen] Ramp transfer shipments:', rampTransferShipments.length)
+          console.log('[LoadPlansScreen] Regular shipments:', regularShipments.length)
+          if (rampTransferShipments.length > 0) {
+            console.log('[LoadPlansScreen] Sample ramp transfer shipments:', 
+              rampTransferShipments.slice(0, 3).map(s => ({
+                serialNo: s.serialNo,
+                awbNo: s.awbNo,
+                isRampTransfer: s.isRampTransfer
+              }))
+            )
+          }
 
           // Generate reports (required for saveListsDataToSupabase)
           const specialCargo = generateSpecialCargoReport(header, shipments)

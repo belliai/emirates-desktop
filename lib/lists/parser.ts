@@ -34,12 +34,21 @@ export function parseShipments(content: string, header: LoadPlanHeader): Shipmen
   let currentShipment: Partial<Shipment> | null = null
   let inShipmentSection = false
   let currentULD = ""
+  let isRampTransfer = false
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim()
 
     if (line.includes("SER.") && line.includes("AWB NO")) {
       inShipmentSection = true
+      isRampTransfer = false // Reset ramp transfer flag when new section starts
+      continue
+    }
+
+    // Check for RAMP TRANSFER marker
+    if (line.match(/\*\*\*\*\*\s*RAMP\s+TRANSFER\s*\*\*\*\*\*/i)) {
+      isRampTransfer = true
+      console.log("[v0] ✅ RAMP TRANSFER marker detected, setting isRampTransfer = true for subsequent shipments")
       continue
     }
 
@@ -48,6 +57,7 @@ export function parseShipments(content: string, header: LoadPlanHeader): Shipmen
         shipments.push(currentShipment as Shipment)
       }
       inShipmentSection = false
+      isRampTransfer = false
       continue
     }
 
@@ -164,6 +174,18 @@ export function parseShipments(content: string, header: LoadPlanHeader): Shipmen
           si: si || "N",
           uld: currentULD,
           specialNotes: [],
+          isRampTransfer: isRampTransfer,
+        }
+        
+        // Log ramp transfer shipments for debugging
+        if (isRampTransfer) {
+          console.log("[v0] ✅ Ramp transfer shipment detected:", {
+            serialNo: serial,
+            awbNo: awb,
+            origin,
+            destination,
+            isRampTransfer: true,
+          })
         }
       } else if ((line.startsWith("[") || line.startsWith("**[")) && currentShipment) {
         const note = line.replace(/\*\*/g, "").replace(/[[\]]/g, "").trim()

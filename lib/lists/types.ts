@@ -32,6 +32,7 @@ export interface Shipment {
   si: string
   uld: string
   specialNotes: string[]
+  isRampTransfer?: boolean
 }
 
 export interface SpecialCargoReportRow {

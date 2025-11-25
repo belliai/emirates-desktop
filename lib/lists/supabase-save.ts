@@ -255,13 +255,82 @@ export async function saveListsDataToSupabase({
         warehouse_code: shipment.whs || null,
         special_instructions: shipment.si || null,
         uld_allocation: shipment.uld || null,
+        is_ramp_transfer: shipment.isRampTransfer === true || shipment.isRampTransfer === 1,
+        // Note: special notes are not stored as there's no remarks field in the database schema
+        // If needed, they could be stored in manual_description or a separate field
       }))
+      
+      // Log ramp transfer items being saved
+      const rampTransferItems = loadPlanItems.filter(item => item.is_ramp_transfer)
+      if (rampTransferItems.length > 0) {
+        console.log(`[v0] Saving ${rampTransferItems.length} ramp transfer items to database:`, 
+          rampTransferItems.slice(0, 3).map(item => ({
+            serial_number: item.serial_number,
+            awb_number: item.awb_number,
+            is_ramp_transfer: item.is_ramp_transfer
+          }))
+        )
+      }
+      
+      // Log sample item structure for debugging
+      if (loadPlanItems.length > 0) {
+        console.log("[v0] Sample load_plan_item structure:", {
+          keys: Object.keys(loadPlanItems[0]),
+          has_is_ramp_transfer: 'is_ramp_transfer' in loadPlanItems[0],
+          sample_item: {
+            serial_number: loadPlanItems[0].serial_number,
+            awb_number: loadPlanItems[0].awb_number,
+            is_ramp_transfer: loadPlanItems[0].is_ramp_transfer,
+          }
+        })
+      }
 
-      const { error: itemsError } = await supabase.from("load_plan_items").insert(loadPlanItems)
+      // Try to insert with is_ramp_transfer field first
+      let { error: itemsError } = await supabase.from("load_plan_items").insert(loadPlanItems)
 
+      // If error occurs, it might be because is_ramp_transfer field doesn't exist yet
+      // Try without is_ramp_transfer field as fallback
       if (itemsError) {
-        console.error("[v0] Error inserting load_plan_items:", itemsError)
-        // Continue even if this fails
+        console.error("[v0] Error inserting load_plan_items with is_ramp_transfer:", {
+          message: itemsError.message,
+          details: itemsError.details,
+          hint: itemsError.hint,
+          code: itemsError.code,
+        })
+        
+        // Check if error is related to is_ramp_transfer field
+        const errorMessage = itemsError.message || JSON.stringify(itemsError)
+        if (errorMessage.includes('is_ramp_transfer') || errorMessage.includes('column') || errorMessage.includes('does not exist')) {
+          console.warn("[v0] is_ramp_transfer field may not exist. Retrying without is_ramp_transfer field...")
+          
+          // Remove is_ramp_transfer field and try again
+          const loadPlanItemsWithoutRampTransfer = loadPlanItems.map(({ is_ramp_transfer, ...item }) => item)
+          
+          const { error: retryError } = await supabase.from("load_plan_items").insert(loadPlanItemsWithoutRampTransfer)
+          
+          if (retryError) {
+            console.error("[v0] Error inserting load_plan_items (retry without is_ramp_transfer):", {
+              message: retryError.message,
+              details: retryError.details,
+              hint: retryError.hint,
+              code: retryError.code,
+            })
+            // Return error instead of continuing silently
+            return { 
+              success: false, 
+              error: `Failed to insert load_plan_items: ${retryError.message || JSON.stringify(retryError)}. Please run migration script 003_add_ramp_transfer_flag.sql to add is_ramp_transfer field.` 
+            }
+          } else {
+            console.log(`[v0] Successfully inserted ${loadPlanItems.length} load_plan_items (without is_ramp_transfer field)`)
+            console.warn("[v0] ⚠️ is_ramp_transfer field is missing. Please run migration script 003_add_ramp_transfer_flag.sql")
+          }
+        } else {
+          // Different error, return it
+          return { 
+            success: false, 
+            error: `Failed to insert load_plan_items: ${itemsError.message || JSON.stringify(itemsError)}` 
+          }
+        }
       } else {
         console.log(`[v0] Successfully inserted ${loadPlanItems.length} load_plan_items`)
       }
