@@ -170,7 +170,7 @@ export async function getLoadPlanDetailFromSupabase(flightNumber: string): Promi
       return null
     }
 
-    // Group items by sector and ULD
+    // Group items by sector and ULD, and separate by ramp transfer
     const items = loadPlan.load_plan_items || []
     
     // Sort items by serial_number first
@@ -180,12 +180,14 @@ export async function getLoadPlanDetailFromSupabase(flightNumber: string): Promi
       return aSer - bSer
     })
     
-    // Group by origin_destination (sector)
-    const sectorMap = new Map<string, Map<string, any[]>>()
+    // Group by origin_destination (sector) and ramp transfer status
+    const sectorMap = new Map<string, Map<string, Map<boolean, any[]>>>()
     
     sortedItems.forEach((item: any) => {
       const sector = item.origin_destination || "UNKNOWN"
       const uld = item.uld_allocation || ""
+      // Check if item is ramp transfer from is_ramp_transfer field
+      const isRampTransfer = item.is_ramp_transfer === true || item.is_ramp_transfer === 1
       
       if (!sectorMap.has(sector)) {
         sectorMap.set(sector, new Map())
@@ -193,99 +195,158 @@ export async function getLoadPlanDetailFromSupabase(flightNumber: string): Promi
       
       const uldMap = sectorMap.get(sector)!
       if (!uldMap.has(uld)) {
-        uldMap.set(uld, [])
+        uldMap.set(uld, new Map())
       }
       
-      uldMap.get(uld)!.push(item)
+      const rampTransferMap = uldMap.get(uld)!
+      if (!rampTransferMap.has(isRampTransfer)) {
+        rampTransferMap.set(isRampTransfer, [])
+      }
+      
+      rampTransferMap.get(isRampTransfer)!.push(item)
     })
 
-    // Transform to LoadPlanDetail format
-    const sectors = Array.from(sectorMap.entries()).map(([sector, uldMap]) => {
-      // Collect all items for totals calculation
-      const allItems: any[] = []
-      
-      // Sort ULD sections to maintain order (empty ULD first, then by ULD name)
-      const sortedUldEntries = Array.from(uldMap.entries()).sort(([uldA], [uldB]) => {
+    // Transform to LoadPlanDetail format - combine all sectors into one
+    // Separate only by ramp transfer, not by sector
+    const allRegularItems: any[] = []
+    const allRampTransferItems: any[] = []
+    
+    // Collect all items and separate by ramp transfer status
+    Array.from(sectorMap.entries()).forEach(([sector, sectorUldMap]) => {
+      Array.from(sectorUldMap.entries()).forEach(([uld, rampTransferMap]) => {
+        Array.from(rampTransferMap.entries()).forEach(([isRamp, items]) => {
+          if (isRamp) {
+            allRampTransferItems.push(...items)
+          } else {
+            allRegularItems.push(...items)
+          }
+        })
+      })
+    })
+    
+    // Create ULD sections - regular first, then ramp transfer
+    const regularUldSections: any[] = []
+    const rampTransferUldSections: any[] = []
+    
+    // Process regular items
+    const regularUldMap = new Map<string, any[]>()
+    allRegularItems.forEach((item: any) => {
+      const uld = item.uld_allocation || ""
+      if (!regularUldMap.has(uld)) {
+        regularUldMap.set(uld, [])
+      }
+      regularUldMap.get(uld)!.push(item)
+    })
+    
+    Array.from(regularUldMap.entries())
+      .sort(([uldA], [uldB]) => {
         if (!uldA && !uldB) return 0
         if (!uldA) return -1
         if (!uldB) return 1
         return uldA.localeCompare(uldB)
       })
-      
-      const uldSections = sortedUldEntries.map(([uld, awbs]) => {
-        // Sort AWBs by serial number
+      .forEach(([uld, awbs]) => {
         const sortedAwbs = [...awbs].sort((a: any, b: any) => {
           const aSer = parseInt(a.serial_number) || 0
           const bSer = parseInt(b.serial_number) || 0
           return aSer - bSer
         })
         
-        // Add items to allItems for totals
-        allItems.push(...sortedAwbs)
-        
-        return {
+        regularUldSections.push({
           uld: uld || "",
           awbs: sortedAwbs.map((item: any) => ({
-            ser: item.serial_number?.toString().padStart(3, "0") || "",
-            awbNo: item.awb_number || "",
-            orgDes: item.origin_destination || "",
-            pcs: item.pieces?.toString() || "",
-            wgt: item.weight?.toString() || "",
-            vol: item.volume?.toString() || "",
-            lvol: item.load_volume?.toString() || "",
-            shc: item.special_handling_code || "",
-            manDesc: item.manual_description || "",
-            pcode: item.product_code_pc || "",
-            pc: "", // Not stored in database - can be derived from pcode if needed
-            thc: item.total_handling_charge ? item.total_handling_charge.toString() : "",
-            bs: item.booking_status || "",
-            pi: item.priority_indicator || "",
-            fltin: item.flight_in || "",
-            arrdtTime: item.arrival_date_time ? formatArrivalDateTime(item.arrival_date_time) : "",
-            qnnAqnn: item.quantity_aqnn || "",
-            whs: item.warehouse_code || "",
-            si: item.special_instructions || "",
-            remarks: item.remarks || undefined,
-          })),
-          isRampTransfer: false, // Could be determined from item data if needed
-        }
+              ser: item.serial_number?.toString().padStart(3, "0") || "",
+              awbNo: item.awb_number || "",
+              orgDes: item.origin_destination || "",
+              pcs: item.pieces?.toString() || "",
+              wgt: item.weight?.toString() || "",
+              vol: item.volume?.toString() || "",
+              lvol: item.load_volume?.toString() || "",
+              shc: item.special_handling_code || "",
+              manDesc: item.manual_description || "",
+              pcode: item.product_code_pc || "",
+              pc: "",
+              thc: item.total_handling_charge ? item.total_handling_charge.toString() : "",
+              bs: item.booking_status || "",
+              pi: item.priority_indicator || "",
+              fltin: item.flight_in || "",
+              arrdtTime: item.arrival_date_time ? formatArrivalDateTime(item.arrival_date_time) : "",
+              qnnAqnn: item.quantity_aqnn || "",
+              whs: item.warehouse_code || "",
+              si: item.special_instructions || "",
+              // remarks field not available in database schema
+            })),
+          isRampTransfer: false,
+        })
       })
-
-      // Calculate totals from all items in this sector
-      const totals = {
-        pcs: allItems.reduce((sum, item: any) => sum + (parseFloat(item.pieces) || 0), 0).toString(),
-        wgt: allItems.reduce((sum, item: any) => sum + (parseFloat(item.weight) || 0), 0).toFixed(2),
-        vol: allItems.reduce((sum, item: any) => sum + (parseFloat(item.volume) || 0), 0).toFixed(2),
-        lvol: allItems.reduce((sum, item: any) => sum + (parseFloat(item.load_volume) || 0), 0).toFixed(2),
+    
+    // Process ramp transfer items
+    const rampTransferUldMap = new Map<string, any[]>()
+    allRampTransferItems.forEach((item: any) => {
+      const uld = item.uld_allocation || ""
+      if (!rampTransferUldMap.has(uld)) {
+        rampTransferUldMap.set(uld, [])
       }
-
-      return {
-        sector,
-        uldSections,
-        totals,
-      }
+      rampTransferUldMap.get(uld)!.push(item)
     })
     
-    // If no sectors found, create at least one empty sector based on route
-    if (sectors.length === 0) {
-      let defaultSector = "UNKNOWN"
-      if (loadPlan.route_full) {
-        defaultSector = loadPlan.route_full
-      } else if (loadPlan.route_origin && loadPlan.route_destination) {
-        defaultSector = `${loadPlan.route_origin}${loadPlan.route_destination}`
-      }
-      
-      sectors.push({
-        sector: defaultSector,
-        uldSections: [],
-        totals: {
-          pcs: "0",
-          wgt: "0.00",
-          vol: "0.00",
-          lvol: "0.00",
-        },
+    Array.from(rampTransferUldMap.entries())
+      .sort(([uldA], [uldB]) => {
+        if (!uldA && !uldB) return 0
+        if (!uldA) return -1
+        if (!uldB) return 1
+        return uldA.localeCompare(uldB)
       })
+      .forEach(([uld, awbs]) => {
+        const sortedAwbs = [...awbs].sort((a: any, b: any) => {
+          const aSer = parseInt(a.serial_number) || 0
+          const bSer = parseInt(b.serial_number) || 0
+          return aSer - bSer
+        })
+        
+        rampTransferUldSections.push({
+          uld: uld || "",
+          awbs: sortedAwbs.map((item: any) => ({
+              ser: item.serial_number?.toString().padStart(3, "0") || "",
+              awbNo: item.awb_number || "",
+              orgDes: item.origin_destination || "",
+              pcs: item.pieces?.toString() || "",
+              wgt: item.weight?.toString() || "",
+              vol: item.volume?.toString() || "",
+              lvol: item.load_volume?.toString() || "",
+              shc: item.special_handling_code || "",
+              manDesc: item.manual_description || "",
+              pcode: item.product_code_pc || "",
+              pc: "",
+              thc: item.total_handling_charge ? item.total_handling_charge.toString() : "",
+              bs: item.booking_status || "",
+              pi: item.priority_indicator || "",
+              fltin: item.flight_in || "",
+              arrdtTime: item.arrival_date_time ? formatArrivalDateTime(item.arrival_date_time) : "",
+              qnnAqnn: item.quantity_aqnn || "",
+              whs: item.warehouse_code || "",
+              si: item.special_instructions || "",
+              // remarks field not available in database schema
+            })),
+          isRampTransfer: true,
+        })
+      })
+    
+    // Combine all items for totals
+    const allItems = [...allRegularItems, ...allRampTransferItems]
+    const totals = {
+      pcs: allItems.reduce((sum, item: any) => sum + (parseFloat(item.pieces) || 0), 0).toString(),
+      wgt: allItems.reduce((sum, item: any) => sum + (parseFloat(item.weight) || 0), 0).toFixed(2),
+      vol: allItems.reduce((sum, item: any) => sum + (parseFloat(item.volume) || 0), 0).toFixed(2),
+      lvol: allItems.reduce((sum, item: any) => sum + (parseFloat(item.load_volume) || 0), 0).toFixed(2),
     }
+    
+    // Create single sector with all ULD sections (regular + ramp transfer)
+    const sectors = [{
+      sector: loadPlan.route_full || (loadPlan.route_origin && loadPlan.route_destination ? `${loadPlan.route_origin}${loadPlan.route_destination}` : "UNKNOWN"),
+      uldSections: [...regularUldSections, ...rampTransferUldSections],
+      totals,
+    }]
 
     const detail: LoadPlanDetail = {
       flight: loadPlan.flight_number || "",

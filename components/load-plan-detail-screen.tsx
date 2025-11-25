@@ -264,81 +264,34 @@ export default function LoadPlanDetailScreen({ loadPlan, onBack, onSave, onNavig
         />
 
         <div className="p-4 space-y-6">
-          {/* Sectors */}
-          {editedPlan.sectors.map((sector, sectorIndex) => {
-            const regularSections = sector.uldSections.filter((s) => !s.isRampTransfer)
-            const rampTransferSections = sector.uldSections.filter((s) => s.isRampTransfer)
-
-            return (
-              <div key={sectorIndex} className="space-y-4">
-                {/* Sector Header */}
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="text-lg font-semibold text-gray-900">SECTOR:</span>
-                    <EditableField
-                      value={sector.sector}
-                      onChange={(value) => updateSectorField(sectorIndex, "sector", value)}
-                      className="text-lg font-semibold text-gray-900 min-w-[100px]"
-                      readOnly={isReadOnly}
-                    />
-                  </div>
-                  {!isReadOnly && (
-                    <button
-                      onClick={() => deleteSector(sectorIndex)}
-                      className="p-2 hover:bg-red-50 rounded-lg transition-colors text-red-600"
-                      title="Delete Sector"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  )}
-                </div>
-
-                {/* Sector Table - Keeping inline for now due to complexity */}
-                <SectorTable
-                  sector={sector}
-                  sectorIndex={sectorIndex}
-                  regularSections={regularSections}
-                  rampTransferSections={rampTransferSections}
-                  editedPlan={editedPlan}
-                  awbAssignments={awbAssignments}
-                  hoveredUld={hoveredUld}
-                  uldNumbers={mergedUldNumbers}
-                  isReadOnly={isReadOnly}
-                  awbComments={awbComments}
-                  onAWBRowClick={handleAWBRowClick}
-                  onAWBLeftSectionClick={(awb, sectorIndex, uldSectionIndex, awbIndex) => {
-                    setSelectedAWBForQuickAction({ awb, sectorIndex, uldSectionIndex, awbIndex })
-                    setShowQuickActionModal(true)
-                  }}
-                  onHoverUld={setHoveredUld}
-                  onULDSectionClick={(sectorIndex, uldSectionIndex, uld) => {
-                    setSelectedULDSection({ sectorIndex, uldSectionIndex, uld })
-                    setShowULDModal(true)
-                  }}
-                  onUpdateAWBField={updateAWBField}
-                  onUpdateULDField={updateULDField}
-                  onAddNewAWBRow={addNewAWBRow}
-                  onDeleteAWBRow={deleteAWBRow}
-                  onAddNewULDSection={addNewULDSection}
-                  onDeleteULDSection={deleteULDSection}
-                  onUpdateSectorField={updateSectorField}
-                  onUpdateSectorTotals={updateSectorTotals}
-                  setEditedPlan={setEditedPlan}
-                />
-              </div>
-            )
-          })}
-
-          {/* Add New Sector Button */}
-          {!isReadOnly && (
-            <button
-              onClick={addNewSector}
-              className="flex items-center gap-2 px-4 py-3 bg-white border-2 border-dashed border-gray-300 rounded-lg hover:border-[#D71A21] hover:bg-red-50 transition-colors w-full"
-            >
-              <Plus className="w-5 h-5 text-gray-600" />
-              <span className="font-medium text-gray-700">Add New Sector</span>
-            </button>
-          )}
+          {/* Single Combined Table for All Sectors */}
+          <CombinedTable
+            editedPlan={editedPlan}
+            awbAssignments={awbAssignments}
+            hoveredUld={hoveredUld}
+            uldNumbers={mergedUldNumbers}
+            isReadOnly={isReadOnly}
+            awbComments={awbComments}
+            onAWBRowClick={handleAWBRowClick}
+            onAWBLeftSectionClick={(awb, sectorIndex, uldSectionIndex, awbIndex) => {
+              setSelectedAWBForQuickAction({ awb, sectorIndex, uldSectionIndex, awbIndex })
+              setShowQuickActionModal(true)
+            }}
+            onHoverUld={setHoveredUld}
+            onULDSectionClick={(sectorIndex, uldSectionIndex, uld) => {
+              setSelectedULDSection({ sectorIndex, uldSectionIndex, uld })
+              setShowULDModal(true)
+            }}
+            onUpdateAWBField={updateAWBField}
+            onUpdateULDField={updateULDField}
+            onAddNewAWBRow={addNewAWBRow}
+            onDeleteAWBRow={deleteAWBRow}
+            onAddNewULDSection={addNewULDSection}
+            onDeleteULDSection={deleteULDSection}
+            onUpdateSectorField={updateSectorField}
+            onUpdateSectorTotals={updateSectorTotals}
+            setEditedPlan={setEditedPlan}
+          />
 
           {/* Bottom Footer */}
           <div className="bg-white border border-gray-200 rounded-lg p-4">
@@ -451,12 +404,8 @@ export default function LoadPlanDetailScreen({ loadPlan, onBack, onSave, onNavig
   )
 }
 
-// Sector Table Component - Extracted but kept in same file for now
-interface SectorTableProps {
-  sector: LoadPlanDetail["sectors"][0]
-  sectorIndex: number
-  regularSections: typeof sector.uldSections
-  rampTransferSections: typeof sector.uldSections
+// Combined Table Component - All sectors in one table
+interface CombinedTableProps {
   editedPlan: LoadPlanDetail
   awbAssignments: Map<string, AWBAssignment>
   hoveredUld: string | null
@@ -478,11 +427,7 @@ interface SectorTableProps {
   setEditedPlan: (updater: (prev: LoadPlanDetail) => LoadPlanDetail) => void
 }
 
-function SectorTable({
-  sector,
-  sectorIndex,
-  regularSections,
-  rampTransferSections,
+function CombinedTable({
   editedPlan,
   awbAssignments,
   hoveredUld,
@@ -502,7 +447,31 @@ function SectorTable({
   onUpdateSectorField,
   onUpdateSectorTotals,
   setEditedPlan,
-}: SectorTableProps) {
+}: CombinedTableProps) {
+  // Collect all ULD sections from all sectors and flatten
+  const allSections: Array<{
+    sectorIndex: number
+    uldSectionIndex: number
+    uldSection: LoadPlanDetail["sectors"][0]["uldSections"][0]
+    sector: LoadPlanDetail["sectors"][0]
+    isRampTransfer: boolean
+  }> = []
+
+  editedPlan.sectors.forEach((sector, sectorIndex) => {
+    sector.uldSections.forEach((uldSection, uldSectionIndex) => {
+      allSections.push({
+        sectorIndex,
+        uldSectionIndex,
+        uldSection,
+        sector,
+        isRampTransfer: uldSection.isRampTransfer || false,
+      })
+    })
+  })
+
+  // Separate ONLY by ramp transfer - not by sector
+  const regularSections = allSections.filter((s) => !s.isRampTransfer)
+  const rampTransferSections = allSections.filter((s) => s.isRampTransfer)
   return (
     <>
       <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
@@ -557,13 +526,13 @@ function SectorTable({
                   </td>
                 </tr>
               )}
-              {/* Regular Sections - Render AWB rows */}
-              {regularSections.map((uldSection, uldSectionIndex) => {
-                const actualUldSectionIndex = sector.uldSections.indexOf(uldSection)
+              {/* Regular Sections - Render AWB rows from all sectors */}
+              {regularSections.map((section) => {
+                const { sectorIndex, uldSectionIndex, uldSection } = section
                 return (
-                  <React.Fragment key={uldSectionIndex}>
+                  <React.Fragment key={`${sectorIndex}-${uldSectionIndex}`}>
                     {uldSection.awbs.map((awb, awbIndex) => {
-                      const assignmentKey = `${awb.awbNo}-${sectorIndex}-${actualUldSectionIndex}-${awbIndex}`
+                      const assignmentKey = `${awb.awbNo}-${sectorIndex}-${uldSectionIndex}-${awbIndex}`
                       const assignment = awbAssignments.get(assignmentKey)
                       const isLoaded = assignment?.isLoaded || false
                       const assignmentUld = assignment?.assignmentData.type === "single" 
@@ -579,7 +548,7 @@ function SectorTable({
                           <AWBRow
                             awb={awb}
                             sectorIndex={sectorIndex}
-                            uldSectionIndex={actualUldSectionIndex}
+                            uldSectionIndex={uldSectionIndex}
                             awbIndex={awbIndex}
                             assignment={assignment}
                             isLoaded={isLoaded}
@@ -588,13 +557,13 @@ function SectorTable({
                             splitGroups={splitGroups || []}
                             isReadOnly={isReadOnly}
                             awbComments={awbComments}
-                            onRowClick={() => onAWBRowClick(awb, sectorIndex, actualUldSectionIndex, awbIndex, assignment)}
-                            onLeftSectionClick={() => onAWBLeftSectionClick(awb, sectorIndex, actualUldSectionIndex, awbIndex)}
+                            onRowClick={() => onAWBRowClick(awb, sectorIndex, uldSectionIndex, awbIndex, assignment)}
+                            onLeftSectionClick={() => onAWBLeftSectionClick(awb, sectorIndex, uldSectionIndex, awbIndex)}
                             onMouseEnter={() => assignmentUld && onHoverUld(assignmentUld)}
                             onMouseLeave={() => onHoverUld(null)}
-                            onUpdateField={(field, value) => onUpdateAWBField(sectorIndex, actualUldSectionIndex, awbIndex, field, value)}
-                            onAddRowAfter={() => onAddNewAWBRow(sectorIndex, actualUldSectionIndex, awbIndex)}
-                            onDeleteRow={() => onDeleteAWBRow(sectorIndex, actualUldSectionIndex, awbIndex)}
+                            onUpdateField={(field, value) => onUpdateAWBField(sectorIndex, uldSectionIndex, awbIndex, field, value)}
+                            onAddRowAfter={() => onAddNewAWBRow(sectorIndex, uldSectionIndex, awbIndex)}
+                            onDeleteRow={() => onDeleteAWBRow(sectorIndex, uldSectionIndex, awbIndex)}
                             hoveredUld={hoveredUld}
                           />
                         </React.Fragment>
@@ -604,13 +573,13 @@ function SectorTable({
                       <ULDRow
                         uld={uldSection.uld}
                         sectorIndex={sectorIndex}
-                        uldSectionIndex={actualUldSectionIndex}
-                        uldNumbers={uldNumbers.get(`${sectorIndex}-${actualUldSectionIndex}`) || []}
+                        uldSectionIndex={uldSectionIndex}
+                        uldNumbers={uldNumbers.get(`${sectorIndex}-${uldSectionIndex}`) || []}
                         isReadOnly={isReadOnly}
-                        onUpdate={(value) => onUpdateULDField(sectorIndex, actualUldSectionIndex, value)}
-                        onAddAWB={() => onAddNewAWBRow(sectorIndex, actualUldSectionIndex)}
-                        onDelete={() => onDeleteULDSection(sectorIndex, actualUldSectionIndex)}
-                        onClick={() => onULDSectionClick(sectorIndex, actualUldSectionIndex, uldSection.uld)}
+                        onUpdate={(value) => onUpdateULDField(sectorIndex, uldSectionIndex, value)}
+                        onAddAWB={() => onAddNewAWBRow(sectorIndex, uldSectionIndex)}
+                        onDelete={() => onDeleteULDSection(sectorIndex, uldSectionIndex)}
+                        onClick={() => onULDSectionClick(sectorIndex, uldSectionIndex, uldSection.uld)}
                       />
                     )}
                   </React.Fragment>
@@ -624,42 +593,42 @@ function SectorTable({
                       ***** RAMP TRANSFER *****
                     </td>
                   </tr>
-                  {rampTransferSections.map((uldSection, uldSectionIndex) => {
-                    const actualUldSectionIndex = sector.uldSections.indexOf(uldSection)
+                  {rampTransferSections.map((section) => {
+                    const { sectorIndex, uldSectionIndex, uldSection } = section
                     return (
-                      <React.Fragment key={uldSectionIndex}>
+                      <React.Fragment key={`${sectorIndex}-${uldSectionIndex}`}>
                         {uldSection.uld && (
                           <ULDRow
                             uld={uldSection.uld}
                             sectorIndex={sectorIndex}
-                            uldSectionIndex={actualUldSectionIndex}
-                            uldNumbers={uldNumbers.get(`${sectorIndex}-${actualUldSectionIndex}`) || []}
+                            uldSectionIndex={uldSectionIndex}
+                            uldNumbers={uldNumbers.get(`${sectorIndex}-${uldSectionIndex}`) || []}
                             isReadOnly={isReadOnly}
-                            onUpdate={(value) => onUpdateULDField(sectorIndex, actualUldSectionIndex, value)}
-                            onAddAWB={() => onAddNewAWBRow(sectorIndex, actualUldSectionIndex)}
-                            onDelete={() => onDeleteULDSection(sectorIndex, actualUldSectionIndex)}
-                            onClick={() => onULDSectionClick(sectorIndex, actualUldSectionIndex, uldSection.uld)}
+                            onUpdate={(value) => onUpdateULDField(sectorIndex, uldSectionIndex, value)}
+                            onAddAWB={() => onAddNewAWBRow(sectorIndex, uldSectionIndex)}
+                            onDelete={() => onDeleteULDSection(sectorIndex, uldSectionIndex)}
+                            onClick={() => onULDSectionClick(sectorIndex, uldSectionIndex, uldSection.uld)}
                             isRampTransfer
                           />
                         )}
                         {uldSection.awbs.map((awb, awbIndex) => {
-                          const assignmentKey = `${awb.awbNo}-${sectorIndex}-${actualUldSectionIndex}-${awbIndex}`
+                          const assignmentKey = `${awb.awbNo}-${sectorIndex}-${uldSectionIndex}-${awbIndex}`
                           const assignment = awbAssignments.get(assignmentKey)
                           return (
                             <AWBRow
                               key={awbIndex}
                               awb={awb}
                               sectorIndex={sectorIndex}
-                              uldSectionIndex={actualUldSectionIndex}
+                              uldSectionIndex={uldSectionIndex}
                               awbIndex={awbIndex}
                               assignment={assignment}
                               isReadOnly={isReadOnly}
                               awbComments={awbComments}
-                              onRowClick={() => onAWBRowClick(awb, sectorIndex, actualUldSectionIndex, awbIndex, assignment)}
-                              onLeftSectionClick={() => onAWBLeftSectionClick(awb, sectorIndex, actualUldSectionIndex, awbIndex)}
-                              onUpdateField={(field, value) => onUpdateAWBField(sectorIndex, actualUldSectionIndex, awbIndex, field, value)}
-                              onAddRowAfter={() => onAddNewAWBRow(sectorIndex, actualUldSectionIndex, awbIndex)}
-                              onDeleteRow={() => onDeleteAWBRow(sectorIndex, actualUldSectionIndex, awbIndex)}
+                              onRowClick={() => onAWBRowClick(awb, sectorIndex, uldSectionIndex, awbIndex, assignment)}
+                              onLeftSectionClick={() => onAWBLeftSectionClick(awb, sectorIndex, uldSectionIndex, awbIndex)}
+                              onUpdateField={(field, value) => onUpdateAWBField(sectorIndex, uldSectionIndex, awbIndex, field, value)}
+                              onAddRowAfter={() => onAddNewAWBRow(sectorIndex, uldSectionIndex, awbIndex)}
+                              onDeleteRow={() => onDeleteAWBRow(sectorIndex, uldSectionIndex, awbIndex)}
                               isRampTransfer
                               hoveredUld={hoveredUld}
                             />
@@ -673,10 +642,10 @@ function SectorTable({
             </tbody>
           </table>
         </div>
-        {!isReadOnly && (
+        {!isReadOnly && editedPlan.sectors.length > 0 && (
           <div className="p-2 border-t border-gray-200">
             <button
-              onClick={() => onAddNewULDSection(sectorIndex)}
+              onClick={() => onAddNewULDSection(editedPlan.sectors.length - 1)}
               className="flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded-lg transition-colors w-full"
             >
               <Plus className="w-4 h-4" />
@@ -686,53 +655,71 @@ function SectorTable({
         )}
       </div>
 
-      {/* Footer Info */}
+      {/* Footer Info - Combined totals from all sectors */}
       <div className="bg-white border border-gray-200 rounded-lg p-4 space-y-2">
-        <div className="text-sm text-gray-900">
-          <span className="font-semibold">BAGG</span>{" "}
-          <EditableField
-            value={sector.bagg || ""}
-            onChange={(value) => onUpdateSectorField(sectorIndex, "bagg", value)}
-            className="inline-block min-w-[200px]"
-            readOnly={isReadOnly}
-          />
-        </div>
-        <div className="text-sm text-gray-900">
-          <span className="font-semibold">COU</span>{" "}
-          <EditableField
-            value={sector.cou || ""}
-            onChange={(value) => onUpdateSectorField(sectorIndex, "cou", value)}
-            className="inline-block min-w-[200px]"
-            readOnly={isReadOnly}
-          />
-        </div>
-        <div className="text-sm text-gray-900 mt-4">
-          <span className="font-semibold">TOTALS:</span>{" "}
-          <EditableField
-            value={sector.totals.pcs}
-            onChange={(value) => onUpdateSectorTotals(sectorIndex, "pcs", value)}
-            className="inline-block min-w-[50px]"
-            readOnly={isReadOnly}
-          />{" "}
-          <EditableField
-            value={sector.totals.wgt}
-            onChange={(value) => onUpdateSectorTotals(sectorIndex, "wgt", value)}
-            className="inline-block min-w-[80px]"
-            readOnly={isReadOnly}
-          />{" "}
-          <EditableField
-            value={sector.totals.vol}
-            onChange={(value) => onUpdateSectorTotals(sectorIndex, "vol", value)}
-            className="inline-block min-w-[80px]"
-            readOnly={isReadOnly}
-          />{" "}
-          <EditableField
-            value={sector.totals.lvol}
-            onChange={(value) => onUpdateSectorTotals(sectorIndex, "lvol", value)}
-            className="inline-block min-w-[80px]"
-            readOnly={isReadOnly}
-          />
-        </div>
+        {editedPlan.sectors.length > 0 && (
+          <>
+            {/* Show all sectors info */}
+            {editedPlan.sectors.map((sector, sectorIndex) => (
+              <div key={sectorIndex} className="border-b border-gray-200 pb-2 mb-2 last:border-b-0 last:pb-0 last:mb-0">
+                <div className="text-sm text-gray-900 mb-2">
+                  <span className="font-semibold">SECTOR:</span>{" "}
+                  <EditableField
+                    value={sector.sector}
+                    onChange={(value) => onUpdateSectorField(sectorIndex, "sector", value)}
+                    className="inline-block min-w-[100px]"
+                    readOnly={isReadOnly}
+                  />
+                </div>
+                <div className="text-sm text-gray-900">
+                  <span className="font-semibold">BAGG</span>{" "}
+                  <EditableField
+                    value={sector.bagg || ""}
+                    onChange={(value) => onUpdateSectorField(sectorIndex, "bagg", value)}
+                    className="inline-block min-w-[200px]"
+                    readOnly={isReadOnly}
+                  />
+                </div>
+                <div className="text-sm text-gray-900">
+                  <span className="font-semibold">COU</span>{" "}
+                  <EditableField
+                    value={sector.cou || ""}
+                    onChange={(value) => onUpdateSectorField(sectorIndex, "cou", value)}
+                    className="inline-block min-w-[200px]"
+                    readOnly={isReadOnly}
+                  />
+                </div>
+                <div className="text-sm text-gray-900 mt-2">
+                  <span className="font-semibold">TOTALS:</span>{" "}
+                  <EditableField
+                    value={sector.totals.pcs}
+                    onChange={(value) => onUpdateSectorTotals(sectorIndex, "pcs", value)}
+                    className="inline-block min-w-[50px]"
+                    readOnly={isReadOnly}
+                  />{" "}
+                  <EditableField
+                    value={sector.totals.wgt}
+                    onChange={(value) => onUpdateSectorTotals(sectorIndex, "wgt", value)}
+                    className="inline-block min-w-[80px]"
+                    readOnly={isReadOnly}
+                  />{" "}
+                  <EditableField
+                    value={sector.totals.vol}
+                    onChange={(value) => onUpdateSectorTotals(sectorIndex, "vol", value)}
+                    className="inline-block min-w-[80px]"
+                    readOnly={isReadOnly}
+                  />{" "}
+                  <EditableField
+                    value={sector.totals.lvol}
+                    onChange={(value) => onUpdateSectorTotals(sectorIndex, "lvol", value)}
+                    className="inline-block min-w-[80px]"
+                    readOnly={isReadOnly}
+                  />
+                </div>
+              </div>
+            ))}
+          </>
+        )}
       </div>
     </>
   )
