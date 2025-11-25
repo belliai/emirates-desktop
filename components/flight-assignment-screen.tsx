@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { Plane, Clock, MapPin, Users, FileText, Check, ChevronsUpDown } from "lucide-react"
 import { useLoadPlans } from "@/lib/load-plan-context"
 import { Button } from "@/components/ui/button"
@@ -16,51 +16,6 @@ type FlightAssignment = {
   name: string
   sector: string
 }
-
-const sampleFlightAssignments: FlightAssignment[] = [
-  {
-    flight: "EK0205",
-    std: "09:35",
-    originDestination: "DXB-JFK",
-    name: "david",
-    sector: "E75",
-  },
-  {
-    flight: "EK0544",
-    std: "02:50",
-    originDestination: "DXB-MAA",
-    name: "david",
-    sector: "E75",
-  },
-  {
-    flight: "EK0123",
-    std: "14:20",
-    originDestination: "DXB-LHR",
-    name: "",
-    sector: "",
-  },
-  {
-    flight: "EK0456",
-    std: "18:45",
-    originDestination: "DXB-SIN",
-    name: "",
-    sector: "",
-  },
-  {
-    flight: "EK0789",
-    std: "22:10",
-    originDestination: "DXB-BKK",
-    name: "",
-    sector: "",
-  },
-  {
-    flight: "EK0345",
-    std: "11:15",
-    originDestination: "DXB-CDG",
-    name: "",
-    sector: "",
-  },
-]
 
 const nameOptions = ["david", "harley"]
 
@@ -205,37 +160,57 @@ const getDestinationCategory = (destination: string): { category: string; color:
 }
 
 export default function FlightAssignmentScreen() {
-  const { updateFlightAssignment } = useLoadPlans()
-  const [flightAssignments, setFlightAssignments] = useState<FlightAssignment[]>(sampleFlightAssignments)
+  const { loadPlans, flightAssignments: contextAssignments, updateFlightAssignment, updateFlightAssignmentSector } = useLoadPlans()
+  const [isLoading, setIsLoading] = useState(true)
 
-  // Sync initial assignments to context (for demo - first 2 assigned to David)
-  useEffect(() => {
-    sampleFlightAssignments.slice(0, 2).forEach((assignment) => {
-      if (assignment.name && assignment.flight) {
-        updateFlightAssignment(assignment.flight, assignment.name)
+  // Create flight assignments from load plans and merge with context assignments
+  const flightAssignments = useMemo(() => {
+    // Start with assignments from context (which may have name/sector already set)
+    const assignmentsMap = new Map<string, FlightAssignment>()
+    
+    // First, add all context assignments
+    contextAssignments.forEach((fa) => {
+      assignmentsMap.set(fa.flight, { ...fa })
+    })
+    
+    // Then, create assignments from load plans for flights not in context
+    loadPlans.forEach((plan) => {
+      if (!assignmentsMap.has(plan.flight)) {
+        // Parse origin and destination from pax field
+        const originMatch = plan.pax.match(/^([A-Z]{3})/)
+        const origin = originMatch ? originMatch[1] : "DXB"
+        const destinations = plan.pax.split("/").filter((part) => part.length === 3 && part !== origin)
+        const destination = destinations[0] || "JFK"
+        const originDestination = `${origin}-${destination}`
+        
+        assignmentsMap.set(plan.flight, {
+          flight: plan.flight,
+          std: plan.std,
+          originDestination,
+          name: "",
+          sector: plan.acftType || "",
+        })
       }
     })
-  }, [updateFlightAssignment])
+    
+    // Convert map to array and sort by flight number
+    return Array.from(assignmentsMap.values()).sort((a, b) => 
+      a.flight.localeCompare(b.flight)
+    )
+  }, [loadPlans, contextAssignments])
 
-  const handleNameChange = (index: number, name: string) => {
-    const assignment = flightAssignments[index]
-    setFlightAssignments((prev) => {
-      const updated = [...prev]
-      updated[index] = { ...updated[index], name }
-      return updated
-    })
+  useEffect(() => {
+    setIsLoading(false)
+  }, [])
+
+  const handleNameChange = (flight: string, name: string) => {
     // Update the context so Buildup Staff can filter
-    if (assignment.flight) {
-      updateFlightAssignment(assignment.flight, name)
-    }
+    updateFlightAssignment(flight, name)
   }
 
-  const handleSectorChange = (index: number, sector: string) => {
-    setFlightAssignments((prev) => {
-      const updated = [...prev]
-      updated[index] = { ...updated[index], sector }
-      return updated
-    })
+  const handleSectorChange = (flight: string, sector: string) => {
+    // Update sector in context assignments
+    updateFlightAssignmentSector(flight, sector)
   }
 
   // Calculate pending flights by category
@@ -320,19 +295,25 @@ export default function FlightAssignmentScreen() {
                 </tr>
               </thead>
               <tbody>
-                {flightAssignments.length === 0 ? (
+                {isLoading ? (
+                  <tr>
+                    <td colSpan={5} className="px-3 py-2 text-center text-gray-500 text-sm">
+                      Loading flight assignments...
+                    </td>
+                  </tr>
+                ) : flightAssignments.length === 0 ? (
                   <tr>
                     <td colSpan={5} className="px-3 py-2 text-center text-gray-500 text-sm">
                       No flight assignments available
                     </td>
                   </tr>
                 ) : (
-                  flightAssignments.map((assignment, index) => (
+                  flightAssignments.map((assignment) => (
                     <FlightAssignmentRow
-                      key={index}
+                      key={assignment.flight}
                       assignment={assignment}
-                      onNameChange={(name) => handleNameChange(index, name)}
-                      onSectorChange={(sector) => handleSectorChange(index, sector)}
+                      onNameChange={(name) => handleNameChange(assignment.flight, name)}
+                      onSectorChange={(sector) => handleSectorChange(assignment.flight, sector)}
                     />
                   ))
                 )}

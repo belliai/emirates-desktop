@@ -27,6 +27,7 @@ type LoadPlanContextType = {
   setLoadPlans: (plans: LoadPlan[]) => void
   addLoadPlan: (plan: LoadPlan) => void
   updateFlightAssignment: (flight: string, name: string) => void
+  updateFlightAssignmentSector: (flight: string, sector: string) => void
   sendToFlightAssignment: (flight: string) => void
   getFlightsByStaff: (staffName: string) => LoadPlan[]
 }
@@ -134,6 +135,46 @@ export function LoadPlanProvider({ children }: { children: ReactNode }) {
     })
   }
 
+  const updateFlightAssignmentSector = (flight: string, sector: string) => {
+    setFlightAssignments((prev) => {
+      const exists = prev.some((fa) => fa.flight === flight)
+      if (exists) {
+        return prev.map((fa) => (fa.flight === flight ? { ...fa, sector } : fa))
+      }
+      // If assignment doesn't exist, find the load plan and create assignment
+      const plan = loadPlans.find((p) => p.flight === flight)
+      if (plan) {
+        const originMatch = plan.pax.match(/^([A-Z]{3})/)
+        const origin = originMatch ? originMatch[1] : "DXB"
+        const destinations = plan.pax.split("/").filter((part) => part.length === 3 && part !== origin)
+        const destination = destinations[0] || "JFK"
+        const originDestination = `${origin}-${destination}`
+
+        return [
+          ...prev,
+          {
+            flight: plan.flight,
+            std: plan.std,
+            originDestination,
+            name: "",
+            sector: sector || plan.acftType || "E75",
+          },
+        ]
+      }
+      // Even if load plan doesn't exist in context, create assignment
+      return [
+        ...prev,
+        {
+          flight,
+          std: "",
+          originDestination: "DXB-JFK",
+          name: "",
+          sector: sector || "E75",
+        },
+      ]
+    })
+  }
+
   const sendToFlightAssignment = (flight: string) => {
     // Clear the name assignment to send it back to flight assignment for reassignment
     setFlightAssignments((prev) => {
@@ -159,6 +200,7 @@ export function LoadPlanProvider({ children }: { children: ReactNode }) {
         setLoadPlans,
         addLoadPlan,
         updateFlightAssignment,
+        updateFlightAssignmentSector,
         sendToFlightAssignment,
         getFlightsByStaff,
       }}
