@@ -19,6 +19,7 @@ import BuildupStaffScreen from "@/components/buildup-staff-screen"
 import FlightAssignmentScreen from "@/components/flight-assignment-screen"
 import SituationalAwarenessScreen from "@/components/situational-awareness-screen"
 import WorkAreaScreen from "@/components/work-area-screen"
+import FlightsViewScreen from "@/components/flights-view-screen"
 import SideNavigation from "@/components/side-navigation"
 import { FlightProvider, useFlights } from "@/lib/flight-context"
 import { LoadPlanProvider } from "@/lib/load-plan-context"
@@ -44,6 +45,7 @@ function AppContent() {
     | "buildup-staff"
     | "flight-assignment"
     | "situational-awareness"
+    | "flights-view"
     | "work-area-gcr"
     | "work-area-per"
     | "work-area-pil"
@@ -112,6 +114,8 @@ function AppContent() {
         return <BDNDashboardScreen onNavigate={handleNavigate} />
       case "situational-awareness":
         return <SituationalAwarenessScreen onNavigate={handleNavigate} />
+      case "flights-view":
+        return <FlightsViewScreen />
       case "work-area-gcr":
         return <WorkAreaScreen workArea="GCR" onBack={() => setCurrentScreen("desktop")} />
       case "work-area-per":

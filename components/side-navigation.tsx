@@ -51,6 +51,7 @@ export default function SideNavigation({ currentScreen, onNavigate }: SideNaviga
       icon: LayoutDashboard,
       defaultOpen: true,
       items: [
+        { id: "flights-view", label: "Flights View", icon: Plane },
         { id: "bdn-dashboard", label: "Workload Visibility", icon: ClipboardList },
         { id: "situational-awareness", label: "Situational Awareness", icon: Activity },
       ],
