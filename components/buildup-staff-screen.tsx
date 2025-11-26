@@ -90,6 +90,7 @@ export default function BuildupStaffScreen({ initialStaff, onNavigate }: Buildup
         onBack={() => setSelectedLoadPlan(null)}
         onSave={handleSave}
         onNavigateToBuildupStaff={handleNavigateToBuildupStaff}
+        enableBulkCheckboxes={true}
       />
     )
   }
