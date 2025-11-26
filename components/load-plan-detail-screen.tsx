@@ -170,6 +170,14 @@ export default function LoadPlanDetailScreen({ loadPlan, onBack, onSave, onNavig
   ) => {
     if (!isReadOnly) return
     
+    // For Buildup Staff (with bulk checkboxes), show Quick Actions modal instead of assignment modal
+    if (enableBulkCheckboxes) {
+      setSelectedAWBForQuickAction({ awb, sectorIndex, uldSectionIndex, awbIndex })
+      setShowQuickActionModal(true)
+      return
+    }
+    
+    // For regular Load Plans, use assignment modal
     if (assignment?.isLoaded) {
       setLoadedAWBNo(awb.awbNo)
       setShowLoadedModal(true)
