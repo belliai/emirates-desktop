@@ -38,10 +38,14 @@ export default function LoadPlansScreen({ onLoadPlanSelect }: { onLoadPlanSelect
           setLoadPlans(supabaseLoadPlans)
           console.log(`[LoadPlansScreen] Loaded ${supabaseLoadPlans.length} load plans from Supabase`)
         } else {
-          console.log("[LoadPlansScreen] No load plans from Supabase, using context data")
+          // Clear load plans if no data from Supabase
+          setLoadPlans([])
+          console.log("[LoadPlansScreen] No load plans from Supabase, clearing load plans")
         }
       } catch (err) {
         console.error("[LoadPlansScreen] Error fetching load plans:", err)
+        // Clear load plans on error too
+        setLoadPlans([])
       } finally {
         setIsLoading(false)
       }

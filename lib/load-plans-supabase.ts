@@ -153,13 +153,10 @@ export async function getLoadPlanDetailFromSupabase(flightNumber: string): Promi
 
     const supabase = createClient()
 
-    // Fetch load plan with items
+    // Fetch load plan first
     const { data: loadPlan, error: loadPlanError } = await supabase
       .from("load_plans")
-      .select(`
-        *,
-        load_plan_items (*)
-      `)
+      .select("*")
       .eq("flight_number", flightNumber)
       .order("flight_date", { ascending: false })
       .limit(1)
@@ -170,15 +167,20 @@ export async function getLoadPlanDetailFromSupabase(flightNumber: string): Promi
       return null
     }
 
+    // Fetch load plan items with order by serial_number ascending
+    const { data: items, error: itemsError } = await supabase
+      .from("load_plan_items")
+      .select("*")
+      .eq("load_plan_id", loadPlan.id)
+      .order("serial_number", { ascending: true })
+
+    if (itemsError) {
+      console.error("[LoadPlans] Error fetching load plan items:", itemsError)
+      return null
+    }
+
     // Group items by sector and ULD, and separate by ramp transfer
-    const items = loadPlan.load_plan_items || []
-    
-    // Sort items by serial_number first
-    const sortedItems = [...items].sort((a: any, b: any) => {
-      const aSer = parseInt(a.serial_number) || 0
-      const bSer = parseInt(b.serial_number) || 0
-      return aSer - bSer
-    })
+    const sortedItems = items || []
     
     // Group by origin_destination (sector) and ramp transfer status
     const sectorMap = new Map<string, Map<string, Map<boolean, any[]>>>()
@@ -224,11 +226,25 @@ export async function getLoadPlanDetailFromSupabase(flightNumber: string): Promi
       })
     })
     
+    // Sort items by serial_number to maintain global order
+    allRegularItems.sort((a: any, b: any) => {
+      const aSer = parseInt(a.serial_number) || 0
+      const bSer = parseInt(b.serial_number) || 0
+      return aSer - bSer
+    })
+    
+    allRampTransferItems.sort((a: any, b: any) => {
+      const aSer = parseInt(a.serial_number) || 0
+      const bSer = parseInt(b.serial_number) || 0
+      return aSer - bSer
+    })
+    
     // Create ULD sections - regular first, then ramp transfer
+    // Maintain order by serial_number, not by ULD name
     const regularUldSections: any[] = []
     const rampTransferUldSections: any[] = []
     
-    // Process regular items
+    // Process regular items - group by ULD but maintain serial number order
     const regularUldMap = new Map<string, any[]>()
     allRegularItems.forEach((item: any) => {
       const uld = item.uld_allocation || ""
@@ -238,23 +254,28 @@ export async function getLoadPlanDetailFromSupabase(flightNumber: string): Promi
       regularUldMap.get(uld)!.push(item)
     })
     
+    // Sort ULD sections by the first serial_number in each section to maintain global order
     Array.from(regularUldMap.entries())
-      .sort(([uldA], [uldB]) => {
-        if (!uldA && !uldB) return 0
-        if (!uldA) return -1
-        if (!uldB) return 1
-        return uldA.localeCompare(uldB)
-      })
-      .forEach(([uld, awbs]) => {
+      .map(([uld, awbs]) => {
+        // Sort awbs within ULD section by serial_number
         const sortedAwbs = [...awbs].sort((a: any, b: any) => {
           const aSer = parseInt(a.serial_number) || 0
           const bSer = parseInt(b.serial_number) || 0
           return aSer - bSer
         })
+        return { uld, awbs: sortedAwbs }
+      })
+      .sort((a, b) => {
+        // Sort ULD sections by first serial_number to maintain global order
+        const aFirstSer = a.awbs.length > 0 ? (parseInt(a.awbs[0].serial_number) || 0) : 0
+        const bFirstSer = b.awbs.length > 0 ? (parseInt(b.awbs[0].serial_number) || 0) : 0
+        return aFirstSer - bFirstSer
+      })
+      .forEach(({ uld, awbs }) => {
         
         regularUldSections.push({
           uld: uld || "",
-          awbs: sortedAwbs.map((item: any) => ({
+          awbs: awbs.map((item: any) => ({
               ser: item.serial_number?.toString().padStart(3, "0") || "",
               awbNo: (item.awb_number || "").replace(/\s+/g, ""), // Remove whitespace from AWB number
               orgDes: item.origin_destination || "",
@@ -280,7 +301,7 @@ export async function getLoadPlanDetailFromSupabase(flightNumber: string): Promi
         })
       })
     
-    // Process ramp transfer items
+    // Process ramp transfer items - group by ULD but maintain serial number order
     const rampTransferUldMap = new Map<string, any[]>()
     allRampTransferItems.forEach((item: any) => {
       const uld = item.uld_allocation || ""
@@ -290,23 +311,28 @@ export async function getLoadPlanDetailFromSupabase(flightNumber: string): Promi
       rampTransferUldMap.get(uld)!.push(item)
     })
     
+    // Sort ULD sections by the first serial_number in each section to maintain global order
     Array.from(rampTransferUldMap.entries())
-      .sort(([uldA], [uldB]) => {
-        if (!uldA && !uldB) return 0
-        if (!uldA) return -1
-        if (!uldB) return 1
-        return uldA.localeCompare(uldB)
-      })
-      .forEach(([uld, awbs]) => {
+      .map(([uld, awbs]) => {
+        // Sort awbs within ULD section by serial_number
         const sortedAwbs = [...awbs].sort((a: any, b: any) => {
           const aSer = parseInt(a.serial_number) || 0
           const bSer = parseInt(b.serial_number) || 0
           return aSer - bSer
         })
+        return { uld, awbs: sortedAwbs }
+      })
+      .sort((a, b) => {
+        // Sort ULD sections by first serial_number to maintain global order
+        const aFirstSer = a.awbs.length > 0 ? (parseInt(a.awbs[0].serial_number) || 0) : 0
+        const bFirstSer = b.awbs.length > 0 ? (parseInt(b.awbs[0].serial_number) || 0) : 0
+        return aFirstSer - bFirstSer
+      })
+      .forEach(({ uld, awbs }) => {
         
         rampTransferUldSections.push({
           uld: uld || "",
-          awbs: sortedAwbs.map((item: any) => ({
+          awbs: awbs.map((item: any) => ({
               ser: item.serial_number?.toString().padStart(3, "0") || "",
               awbNo: (item.awb_number || "").replace(/\s+/g, ""), // Remove whitespace from AWB number
               orgDes: item.origin_destination || "",
@@ -360,6 +386,7 @@ export async function getLoadPlanDetailFromSupabase(flightNumber: string): Promi
       ttlPlnUld: loadPlan.total_planned_uld || "",
       uldVersion: loadPlan.uld_version || "",
       preparedOn: formatDateTime(loadPlan.prepared_on),
+      headerWarning: loadPlan.header_warning || undefined,
       sectors,
     }
 
