@@ -14,7 +14,22 @@ export type AWBAssignment = {
 }
 
 export function useLoadPlanState(initialPlan: LoadPlanDetail) {
-  const [editedPlan, setEditedPlan] = useState<LoadPlanDetail>(initialPlan)
+  // Clean AWB numbers from whitespace when initializing
+  const cleanedPlan: LoadPlanDetail = {
+    ...initialPlan,
+    sectors: initialPlan.sectors.map((sector) => ({
+      ...sector,
+      uldSections: sector.uldSections.map((uldSection) => ({
+        ...uldSection,
+        awbs: uldSection.awbs.map((awb) => ({
+          ...awb,
+          awbNo: (awb.awbNo || "").replace(/\s+/g, ""), // Remove whitespace from AWB number
+        })),
+      })),
+    })),
+  }
+  
+  const [editedPlan, setEditedPlan] = useState<LoadPlanDetail>(cleanedPlan)
   const [selectedAWB, setSelectedAWB] = useState<{
     awb: AWBRow
     sectorIndex: number

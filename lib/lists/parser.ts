@@ -207,7 +207,7 @@ export function parseShipments(content: string, header: LoadPlanHeader): Shipmen
 
         currentShipment = {
           serialNo: serial,
-          awbNo: awb,
+          awbNo: awb.replace(/\s+/g, ""), // Remove whitespace from AWB number
           origin: origin,
           destination: destination,
           pieces: Number.parseInt(pcs),
