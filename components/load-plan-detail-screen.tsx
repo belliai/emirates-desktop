@@ -517,47 +517,78 @@ function CombinedTable({
   onUpdateSectorTotals,
   setEditedPlan,
 }: CombinedTableProps) {
-  // Flatten all AWBs from all sectors and ULD sections
-  // Don't group by ULD, just show all AWBs ordered by serial number ascending
-  const allAwbs: Array<{
-    awb: AWBRow
-    sectorIndex: number
-    uldSectionIndex: number
-    awbIndex: number
-    isRampTransfer: boolean
-    uld: string
-  }> = []
+  // Group AWBs by sector first, then flatten within each sector
+  // Structure: Map<sectorName, { regular: [], rampTransfer: [] }>
+  const sectorGroups = new Map<string, {
+    regular: Array<{
+      awb: AWBRow
+      sectorIndex: number
+      uldSectionIndex: number
+      awbIndex: number
+      uld: string
+    }>
+    rampTransfer: Array<{
+      awb: AWBRow
+      sectorIndex: number
+      uldSectionIndex: number
+      awbIndex: number
+      uld: string
+    }>
+  }>()
 
   editedPlan.sectors.forEach((sector, sectorIndex) => {
+    const sectorName = sector.sector || "UNKNOWN"
+    
+    if (!sectorGroups.has(sectorName)) {
+      sectorGroups.set(sectorName, { regular: [], rampTransfer: [] })
+    }
+    
+    const group = sectorGroups.get(sectorName)!
+    
     sector.uldSections.forEach((uldSection, uldSectionIndex) => {
       uldSection.awbs.forEach((awb, awbIndex) => {
-        allAwbs.push({
+        const item = {
           awb,
           sectorIndex,
           uldSectionIndex,
           awbIndex,
-          isRampTransfer: uldSection.isRampTransfer || false,
           uld: uldSection.uld || "",
-        })
+        }
+        
+        if (uldSection.isRampTransfer) {
+          group.rampTransfer.push(item)
+        } else {
+          group.regular.push(item)
+        }
       })
     })
   })
 
-  // Separate by ramp transfer status
-  const regularAwbs = allAwbs.filter((item) => !item.isRampTransfer)
-  const rampTransferAwbs = allAwbs.filter((item) => item.isRampTransfer)
-
-  // Sort all AWBs by serial number ascending
-  regularAwbs.sort((a, b) => {
-    const aSer = parseInt(a.awb.ser) || 0
-    const bSer = parseInt(b.awb.ser) || 0
-    return aSer - bSer
+  // Sort AWBs within each sector by serial number ascending
+  sectorGroups.forEach((group) => {
+    group.regular.sort((a, b) => {
+      const aSer = parseInt(a.awb.ser) || 0
+      const bSer = parseInt(b.awb.ser) || 0
+      return aSer - bSer
+    })
+    
+    group.rampTransfer.sort((a, b) => {
+      const aSer = parseInt(a.awb.ser) || 0
+      const bSer = parseInt(b.awb.ser) || 0
+      return aSer - bSer
+    })
   })
-
-  rampTransferAwbs.sort((a, b) => {
-    const aSer = parseInt(a.awb.ser) || 0
-    const bSer = parseInt(b.awb.ser) || 0
-    return aSer - bSer
+  
+  // Convert to array for rendering - preserve sector order from editedPlan.sectors
+  const sectorOrder = editedPlan.sectors.map(s => s.sector || "UNKNOWN")
+  const sortedSectors = Array.from(sectorGroups.entries()).sort((a, b) => {
+    const aIndex = sectorOrder.indexOf(a[0])
+    const bIndex = sectorOrder.indexOf(b[0])
+    // If sector not found in order, put at end
+    if (aIndex === -1 && bIndex === -1) return 0
+    if (aIndex === -1) return 1
+    if (bIndex === -1) return -1
+    return aIndex - bIndex
   })
   
   return (
@@ -614,131 +645,145 @@ function CombinedTable({
                   </td>
                 </tr>
               )}
-              {/* Regular AWBs - Show all AWBs ordered by serial number ascending, with ULD rows */}
-              {regularAwbs.map((item, index) => {
-                const { awb, sectorIndex, uldSectionIndex, awbIndex, uld } = item
-                const assignmentKey = `${awb.awbNo}-${sectorIndex}-${uldSectionIndex}-${awbIndex}`
-                const assignment = awbAssignments.get(assignmentKey)
-                const isLoaded = assignment?.isLoaded || false
-                const assignmentUld = assignment?.assignmentData.type === "single" 
-                  ? assignment.assignmentData.uld 
-                  : assignment?.assignmentData.type === "existing"
-                  ? assignment.assignmentData.existingUld
-                  : null
-                const isHovered = !!(hoveredUld && assignmentUld && hoveredUld === assignmentUld)
-                const splitGroups = assignment?.assignmentData.type === "split" ? assignment.assignmentData.splitGroups : []
-                
-                // Check if we need to show ULD row after this AWB
-                // Show ULD row only if:
-                // 1. Current item has a ULD
-                // 2. Next item has different ULD (or is the last item)
-                // This ensures we only show ULD row once at the end of each ULD group
-                const nextItem = regularAwbs[index + 1]
-                const shouldShowULD = uld && uld.trim() !== "" && (
-                  !nextItem || 
-                  nextItem.uld !== uld
-                )
+              {/* Group by Sector - Show AWBs grouped by sector */}
+              {sortedSectors.map(([sectorName, group], sectorGroupIndex) => {
+                const hasMultipleSectors = sortedSectors.length > 1
                 
                 return (
-                  <React.Fragment key={`${awb.ser}-${awb.awbNo}-${sectorIndex}-${uldSectionIndex}-${awbIndex}`}>
-                    <AWBRow
-                      awb={awb}
-                      sectorIndex={sectorIndex}
-                      uldSectionIndex={uldSectionIndex}
-                      awbIndex={awbIndex}
-                      assignment={assignment}
-                      isLoaded={isLoaded}
-                      assignmentUld={assignmentUld}
-                      isHovered={isHovered}
-                      splitGroups={splitGroups || []}
-                      isReadOnly={isReadOnly}
-                      awbComments={awbComments}
-                      onRowClick={() => onAWBRowClick(awb, sectorIndex, uldSectionIndex, awbIndex, assignment)}
-                      onLeftSectionClick={() => onAWBLeftSectionClick(awb, sectorIndex, uldSectionIndex, awbIndex)}
-                      onMouseEnter={() => assignmentUld && onHoverUld(assignmentUld)}
-                      onMouseLeave={() => onHoverUld(null)}
-                      onUpdateField={(field, value) => onUpdateAWBField(sectorIndex, uldSectionIndex, awbIndex, field, value)}
-                      onAddRowAfter={() => onAddNewAWBRow(sectorIndex, uldSectionIndex, awbIndex)}
-                      onDeleteRow={() => onDeleteAWBRow(sectorIndex, uldSectionIndex, awbIndex)}
-                      hoveredUld={hoveredUld}
-                    />
-                    {shouldShowULD && (
-                      <ULDRow
-                        uld={uld}
-                        sectorIndex={sectorIndex}
-                        uldSectionIndex={uldSectionIndex}
-                        uldNumbers={uldNumbers.get(`${sectorIndex}-${uldSectionIndex}`) || []}
-                        isReadOnly={isReadOnly}
-                        onUpdate={(value) => onUpdateULDField(sectorIndex, uldSectionIndex, value)}
-                        onAddAWB={() => onAddNewAWBRow(sectorIndex, uldSectionIndex)}
-                        onDelete={() => onDeleteULDSection(sectorIndex, uldSectionIndex)}
-                        onClick={() => onULDSectionClick(sectorIndex, uldSectionIndex, uld)}
-                      />
+                  <React.Fragment key={sectorName}>
+                    {/* Sector Header - only show if multiple sectors */}
+                    {hasMultipleSectors && (
+                      <tr className="bg-blue-50 border-t-2 border-blue-200">
+                        <td colSpan={20} className="px-2 py-2 font-bold text-blue-900 text-center">
+                          SECTOR: {sectorName}
+                        </td>
+                      </tr>
+                    )}
+                    
+                    {/* Regular AWBs for this sector */}
+                    {group.regular.map((item, index) => {
+                      const { awb, sectorIndex, uldSectionIndex, awbIndex, uld } = item
+                      const assignmentKey = `${awb.awbNo}-${sectorIndex}-${uldSectionIndex}-${awbIndex}`
+                      const assignment = awbAssignments.get(assignmentKey)
+                      const isLoaded = assignment?.isLoaded || false
+                      const assignmentUld = assignment?.assignmentData.type === "single" 
+                        ? assignment.assignmentData.uld 
+                        : assignment?.assignmentData.type === "existing"
+                        ? assignment.assignmentData.existingUld
+                        : null
+                      const isHovered = !!(hoveredUld && assignmentUld && hoveredUld === assignmentUld)
+                      const splitGroups = assignment?.assignmentData.type === "split" ? assignment.assignmentData.splitGroups : []
+                      
+                      // Check if we need to show ULD row after this AWB
+                      // Show ULD row only if:
+                      // 1. Current item has a ULD
+                      // 2. Next item has different ULD (or is the last item in this sector)
+                      const nextItem = group.regular[index + 1]
+                      const shouldShowULD = uld && uld.trim() !== "" && (
+                        !nextItem || 
+                        nextItem.uld !== uld
+                      )
+                      
+                      return (
+                        <React.Fragment key={`${awb.ser}-${awb.awbNo}-${sectorIndex}-${uldSectionIndex}-${awbIndex}`}>
+                          <AWBRow
+                            awb={awb}
+                            sectorIndex={sectorIndex}
+                            uldSectionIndex={uldSectionIndex}
+                            awbIndex={awbIndex}
+                            assignment={assignment}
+                            isLoaded={isLoaded}
+                            assignmentUld={assignmentUld}
+                            isHovered={isHovered}
+                            splitGroups={splitGroups || []}
+                            isReadOnly={isReadOnly}
+                            awbComments={awbComments}
+                            onRowClick={() => onAWBRowClick(awb, sectorIndex, uldSectionIndex, awbIndex, assignment)}
+                            onLeftSectionClick={() => onAWBLeftSectionClick(awb, sectorIndex, uldSectionIndex, awbIndex)}
+                            onMouseEnter={() => assignmentUld && onHoverUld(assignmentUld)}
+                            onMouseLeave={() => onHoverUld(null)}
+                            onUpdateField={(field, value) => onUpdateAWBField(sectorIndex, uldSectionIndex, awbIndex, field, value)}
+                            onAddRowAfter={() => onAddNewAWBRow(sectorIndex, uldSectionIndex, awbIndex)}
+                            onDeleteRow={() => onDeleteAWBRow(sectorIndex, uldSectionIndex, awbIndex)}
+                            hoveredUld={hoveredUld}
+                          />
+                          {shouldShowULD && (
+                            <ULDRow
+                              uld={uld}
+                              sectorIndex={sectorIndex}
+                              uldSectionIndex={uldSectionIndex}
+                              uldNumbers={uldNumbers.get(`${sectorIndex}-${uldSectionIndex}`) || []}
+                              isReadOnly={isReadOnly}
+                              onUpdate={(value) => onUpdateULDField(sectorIndex, uldSectionIndex, value)}
+                              onAddAWB={() => onAddNewAWBRow(sectorIndex, uldSectionIndex)}
+                              onDelete={() => onDeleteULDSection(sectorIndex, uldSectionIndex)}
+                              onClick={() => onULDSectionClick(sectorIndex, uldSectionIndex, uld)}
+                            />
+                          )}
+                        </React.Fragment>
+                      )
+                    })}
+                    
+                    {/* Ramp Transfer AWBs for this sector */}
+                    {group.rampTransfer.length > 0 && (
+                      <>
+                        <tr className="bg-gray-50">
+                          <td colSpan={20} className="px-2 py-1 font-semibold text-gray-900 text-center">
+                            ***** RAMP TRANSFER *****
+                          </td>
+                        </tr>
+                        {group.rampTransfer.map((item, index) => {
+                          const { awb, sectorIndex, uldSectionIndex, awbIndex, uld } = item
+                          const assignmentKey = `${awb.awbNo}-${sectorIndex}-${uldSectionIndex}-${awbIndex}`
+                          const assignment = awbAssignments.get(assignmentKey)
+                          
+                          // Check if we need to show ULD row after this AWB
+                          const nextItem = group.rampTransfer[index + 1]
+                          const shouldShowULD = uld && uld.trim() !== "" && (
+                            !nextItem || 
+                            nextItem.uld !== uld
+                          )
+                          
+                          return (
+                            <React.Fragment key={`${awb.ser}-${awb.awbNo}-${sectorIndex}-${uldSectionIndex}-${awbIndex}`}>
+                              <AWBRow
+                                awb={awb}
+                                sectorIndex={sectorIndex}
+                                uldSectionIndex={uldSectionIndex}
+                                awbIndex={awbIndex}
+                                assignment={assignment}
+                                isReadOnly={isReadOnly}
+                                awbComments={awbComments}
+                                onRowClick={() => onAWBRowClick(awb, sectorIndex, uldSectionIndex, awbIndex, assignment)}
+                                onLeftSectionClick={() => onAWBLeftSectionClick(awb, sectorIndex, uldSectionIndex, awbIndex)}
+                                onUpdateField={(field, value) => onUpdateAWBField(sectorIndex, uldSectionIndex, awbIndex, field, value)}
+                                onAddRowAfter={() => onAddNewAWBRow(sectorIndex, uldSectionIndex, awbIndex)}
+                                onDeleteRow={() => onDeleteAWBRow(sectorIndex, uldSectionIndex, awbIndex)}
+                                isRampTransfer
+                                hoveredUld={hoveredUld}
+                              />
+                              {shouldShowULD && (
+                                <ULDRow
+                                  uld={uld}
+                                  sectorIndex={sectorIndex}
+                                  uldSectionIndex={uldSectionIndex}
+                                  uldNumbers={uldNumbers.get(`${sectorIndex}-${uldSectionIndex}`) || []}
+                                  isReadOnly={isReadOnly}
+                                  onUpdate={(value) => onUpdateULDField(sectorIndex, uldSectionIndex, value)}
+                                  onAddAWB={() => onAddNewAWBRow(sectorIndex, uldSectionIndex)}
+                                  onDelete={() => onDeleteULDSection(sectorIndex, uldSectionIndex)}
+                                  onClick={() => onULDSectionClick(sectorIndex, uldSectionIndex, uld)}
+                                  isRampTransfer
+                                />
+                              )}
+                            </React.Fragment>
+                          )
+                        })}
+                      </>
                     )}
                   </React.Fragment>
                 )
               })}
-              {/* Ramp Transfer AWBs - Show all ramp transfer AWBs ordered by serial number ascending, with ULD rows */}
-              {rampTransferAwbs.length > 0 && (
-                <>
-                  <tr className="bg-gray-50">
-                    <td colSpan={20} className="px-2 py-1 font-semibold text-gray-900 text-center">
-                      ***** RAMP TRANSFER *****
-                    </td>
-                  </tr>
-                  {rampTransferAwbs.map((item, index) => {
-                    const { awb, sectorIndex, uldSectionIndex, awbIndex, uld } = item
-                    const assignmentKey = `${awb.awbNo}-${sectorIndex}-${uldSectionIndex}-${awbIndex}`
-                    const assignment = awbAssignments.get(assignmentKey)
-                    
-                    // Check if we need to show ULD row after this AWB
-                    // Show ULD row only if:
-                    // 1. Current item has a ULD
-                    // 2. Next item has different ULD (or is the last item)
-                    // This ensures we only show ULD row once at the end of each ULD group
-                    const nextItem = rampTransferAwbs[index + 1]
-                    const shouldShowULD = uld && uld.trim() !== "" && (
-                      !nextItem || 
-                      nextItem.uld !== uld
-                    )
-                    
-                    return (
-                      <React.Fragment key={`${awb.ser}-${awb.awbNo}-${sectorIndex}-${uldSectionIndex}-${awbIndex}`}>
-                        <AWBRow
-                          awb={awb}
-                          sectorIndex={sectorIndex}
-                          uldSectionIndex={uldSectionIndex}
-                          awbIndex={awbIndex}
-                          assignment={assignment}
-                          isReadOnly={isReadOnly}
-                          awbComments={awbComments}
-                          onRowClick={() => onAWBRowClick(awb, sectorIndex, uldSectionIndex, awbIndex, assignment)}
-                          onLeftSectionClick={() => onAWBLeftSectionClick(awb, sectorIndex, uldSectionIndex, awbIndex)}
-                          onUpdateField={(field, value) => onUpdateAWBField(sectorIndex, uldSectionIndex, awbIndex, field, value)}
-                          onAddRowAfter={() => onAddNewAWBRow(sectorIndex, uldSectionIndex, awbIndex)}
-                          onDeleteRow={() => onDeleteAWBRow(sectorIndex, uldSectionIndex, awbIndex)}
-                          isRampTransfer
-                          hoveredUld={hoveredUld}
-                        />
-                        {shouldShowULD && (
-                          <ULDRow
-                            uld={uld}
-                            sectorIndex={sectorIndex}
-                            uldSectionIndex={uldSectionIndex}
-                            uldNumbers={uldNumbers.get(`${sectorIndex}-${uldSectionIndex}`) || []}
-                            isReadOnly={isReadOnly}
-                            onUpdate={(value) => onUpdateULDField(sectorIndex, uldSectionIndex, value)}
-                            onAddAWB={() => onAddNewAWBRow(sectorIndex, uldSectionIndex)}
-                            onDelete={() => onDeleteULDSection(sectorIndex, uldSectionIndex)}
-                            onClick={() => onULDSectionClick(sectorIndex, uldSectionIndex, uld)}
-                            isRampTransfer
-                          />
-                        )}
-                      </React.Fragment>
-                    )
-                  })}
-                </>
-              )}
             </tbody>
           </table>
         </div>
