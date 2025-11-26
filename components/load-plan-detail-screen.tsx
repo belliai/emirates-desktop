@@ -1174,21 +1174,30 @@ function AWBRow({
             className="px-2 py-1 text-center"
             onClick={(e) => {
               e.stopPropagation()
-              onToggleSelect()
             }}
           >
-            <input
-              type="checkbox"
-              checked={isSelected}
-              onChange={(e) => {
+            <label
+              className="cursor-pointer flex items-center justify-center"
+              onClick={(e) => {
                 e.stopPropagation()
-                onToggleSelect()
               }}
-              className="w-4 h-4 text-green-600 border-gray-300 rounded focus:ring-green-500 cursor-pointer"
-            />
+            >
+              <input
+                type="checkbox"
+                checked={isSelected}
+                onChange={(e) => {
+                  e.stopPropagation()
+                  onToggleSelect()
+                }}
+                onClick={(e) => {
+                  e.stopPropagation()
+                }}
+                className="w-4 h-4 text-green-600 border-gray-300 rounded focus:ring-green-500 cursor-pointer accent-green-600"
+              />
+            </label>
           </td>
         )}
-        {/* Left section - Quick Actions (up to and including SHC) */}
+        {/* Left section - Quick Actions (SER onwards, up to and including SHC) */}
         {leftFields.map(({ key, className }) => {
           // Remove whitespace from AWB number
           const displayValue = key === "awbNo" 
@@ -1198,11 +1207,11 @@ function AWBRow({
           return (
             <td
               key={key}
-              className={`px-2 py-1 ${isReadOnly ? "cursor-pointer" : ""} ${hoveredSection === "left" && isReadOnly ? "bg-blue-50" : ""}`}
-              onMouseEnter={() => isReadOnly && setHoveredSection("left")}
+              className={`px-2 py-1 ${isReadOnly && enableBulkCheckboxes ? "cursor-pointer" : ""} ${hoveredSection === "left" && isReadOnly && enableBulkCheckboxes ? "bg-blue-50" : ""}`}
+              onMouseEnter={() => isReadOnly && enableBulkCheckboxes && setHoveredSection("left")}
               onMouseLeave={() => setHoveredSection(null)}
               onClick={(e) => {
-                if (isReadOnly && onLeftSectionClick) {
+                if (isReadOnly && enableBulkCheckboxes && onLeftSectionClick) {
                   e.stopPropagation()
                   onLeftSectionClick()
                 }
@@ -1232,11 +1241,11 @@ function AWBRow({
           return (
             <td
               key={key}
-              className={`px-2 py-1 ${isReadOnly ? "cursor-pointer" : ""} ${hoveredSection === "right" && isReadOnly ? "bg-gray-50" : ""}`}
-              onMouseEnter={() => isReadOnly && setHoveredSection("right")}
+              className={`px-2 py-1 ${isReadOnly && enableBulkCheckboxes ? "cursor-pointer" : ""} ${hoveredSection === "right" && isReadOnly && enableBulkCheckboxes ? "bg-gray-50" : ""}`}
+              onMouseEnter={() => isReadOnly && enableBulkCheckboxes && setHoveredSection("right")}
               onMouseLeave={() => setHoveredSection(null)}
               onClick={(e) => {
-                if (isReadOnly && onRowClick) {
+                if (isReadOnly && enableBulkCheckboxes && onRowClick) {
                   e.stopPropagation()
                   onRowClick()
                 }
