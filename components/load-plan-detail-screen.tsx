@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import React from "react"
-import { Plus, Trash2 } from "lucide-react"
+import { Plus, Trash2, CheckCircle } from "lucide-react"
 import BCRModal, { generateBCRData } from "./bcr-modal"
 import type { AWBComment } from "./bcr-modal"
 import AWBAssignmentModal, { LoadedStatusModal, type AWBAssignmentData } from "./awb-assignment-modal"
@@ -78,6 +78,7 @@ export default function LoadPlanDetailScreen({ loadPlan, onBack, onSave, onNavig
     uldSectionIndex: number
     awbIndex: number
   } | null>(null)
+  const [selectedAWBKeys, setSelectedAWBKeys] = useState<Set<string>>(new Set())
   const { sendToFlightAssignment, flightAssignments } = useLoadPlans()
   
   // Load ULD numbers from localStorage on mount
@@ -280,6 +281,121 @@ export default function LoadPlanDetailScreen({ loadPlan, onBack, onSave, onNavig
     })
   }
 
+  // Helper functions for bulk selection
+  const getAllAWBKeys = (): Set<string> => {
+    const keys = new Set<string>()
+    editedPlan.sectors.forEach((sector, sectorIndex) => {
+      sector.uldSections.forEach((uldSection, uldSectionIndex) => {
+        uldSection.awbs.forEach((awb, awbIndex) => {
+          const key = `${awb.awbNo}-${sectorIndex}-${uldSectionIndex}-${awbIndex}`
+          keys.add(key)
+        })
+      })
+    })
+    return keys
+  }
+
+  const getULDSectionAWBKeys = (sectorIndex: number, uldSectionIndex: number): Set<string> => {
+    const keys = new Set<string>()
+    const sector = editedPlan.sectors[sectorIndex]
+    if (sector && sector.uldSections[uldSectionIndex]) {
+      const uldSection = sector.uldSections[uldSectionIndex]
+      uldSection.awbs.forEach((awb, awbIndex) => {
+        const key = `${awb.awbNo}-${sectorIndex}-${uldSectionIndex}-${awbIndex}`
+        keys.add(key)
+      })
+    }
+    return keys
+  }
+
+  const isAllSelected = (keys: Set<string>): boolean => {
+    if (keys.size === 0) return false
+    return Array.from(keys).every(key => selectedAWBKeys.has(key))
+  }
+
+  const isSomeSelected = (keys: Set<string>): boolean => {
+    const selectedCount = Array.from(keys).filter(key => selectedAWBKeys.has(key)).length
+    return selectedCount > 0 && selectedCount < keys.size
+  }
+
+  const handleBulkMarkLoaded = () => {
+    if (selectedAWBKeys.size === 0) return
+
+    setAwbAssignments((prev) => {
+      const updated = new Map(prev)
+      // Iterate through all AWBs to find matching keys
+      editedPlan.sectors.forEach((sector, sectorIndex) => {
+        sector.uldSections.forEach((uldSection, uldSectionIndex) => {
+          uldSection.awbs.forEach((awb, awbIndex) => {
+            const assignmentKey = `${awb.awbNo}-${sectorIndex}-${uldSectionIndex}-${awbIndex}`
+            if (selectedAWBKeys.has(assignmentKey)) {
+              const existing = updated.get(assignmentKey)
+              if (existing) {
+                updated.set(assignmentKey, {
+                  ...existing,
+                  isLoaded: true,
+                })
+              } else {
+                updated.set(assignmentKey, {
+                  awbNo: awb.awbNo,
+                  sectorIndex,
+                  uldSectionIndex,
+                  awbIndex,
+                  assignmentData: { type: "single", isLoaded: true },
+                  isLoaded: true,
+                })
+              }
+            }
+          })
+        })
+      })
+      return updated
+    })
+    
+    // Clear selection
+    setSelectedAWBKeys(new Set())
+  }
+
+  const handleToggleSelectAll = () => {
+    const allKeys = getAllAWBKeys()
+    if (isAllSelected(allKeys)) {
+      setSelectedAWBKeys(new Set())
+    } else {
+      setSelectedAWBKeys(new Set(allKeys))
+    }
+  }
+
+  const handleToggleULDSection = (sectorIndex: number, uldSectionIndex: number) => {
+    const sectionKeys = getULDSectionAWBKeys(sectorIndex, uldSectionIndex)
+    if (isAllSelected(sectionKeys)) {
+      // Deselect all in this section
+      setSelectedAWBKeys((prev) => {
+        const updated = new Set(prev)
+        sectionKeys.forEach(key => updated.delete(key))
+        return updated
+      })
+    } else {
+      // Select all in this section
+      setSelectedAWBKeys((prev) => {
+        const updated = new Set(prev)
+        sectionKeys.forEach(key => updated.add(key))
+        return updated
+      })
+    }
+  }
+
+  const handleToggleAWB = (assignmentKey: string) => {
+    setSelectedAWBKeys((prev) => {
+      const updated = new Set(prev)
+      if (updated.has(assignmentKey)) {
+        updated.delete(assignmentKey)
+      } else {
+        updated.add(assignmentKey)
+      }
+      return updated
+    })
+  }
+
   return (
     <div className="min-h-screen bg-white">
       <LoadPlanHeader
@@ -341,6 +457,14 @@ export default function LoadPlanDetailScreen({ loadPlan, onBack, onSave, onNavig
             uldNumbers={mergedUldNumbers}
             isReadOnly={isReadOnly}
             awbComments={awbComments}
+            selectedAWBKeys={selectedAWBKeys}
+            getAllAWBKeys={getAllAWBKeys}
+            getULDSectionAWBKeys={getULDSectionAWBKeys}
+            isAllSelected={isAllSelected}
+            isSomeSelected={isSomeSelected}
+            onToggleSelectAll={handleToggleSelectAll}
+            onToggleULDSection={handleToggleULDSection}
+            onToggleAWB={handleToggleAWB}
             onAWBRowClick={handleAWBRowClick}
             onAWBLeftSectionClick={(awb, sectorIndex, uldSectionIndex, awbIndex) => {
               setSelectedAWBForQuickAction({ awb, sectorIndex, uldSectionIndex, awbIndex })
@@ -469,6 +593,19 @@ export default function LoadPlanDetailScreen({ loadPlan, onBack, onSave, onNavig
           onMarkOffload={handleMarkAWBOffload}
         />
       )}
+
+      {/* Bulk Action Button */}
+      {selectedAWBKeys.size > 0 && (
+        <div className="fixed bottom-4 right-4 z-50">
+          <button
+            onClick={handleBulkMarkLoaded}
+            className="flex items-center gap-2 px-4 py-3 bg-green-600 hover:bg-green-700 text-white font-medium rounded-lg shadow-lg transition-colors"
+          >
+            <CheckCircle className="w-5 h-5" />
+            <span>Mark {selectedAWBKeys.size} Selected as Fully Loaded</span>
+          </button>
+        </div>
+      )}
     </div>
   )
 }
@@ -481,6 +618,14 @@ interface CombinedTableProps {
   uldNumbers: Map<string, string[]>
   isReadOnly: boolean
   awbComments: AWBComment[]
+  selectedAWBKeys: Set<string>
+  getAllAWBKeys: () => Set<string>
+  getULDSectionAWBKeys: (sectorIndex: number, uldSectionIndex: number) => Set<string>
+  isAllSelected: (keys: Set<string>) => boolean
+  isSomeSelected: (keys: Set<string>) => boolean
+  onToggleSelectAll: () => void
+  onToggleULDSection: (sectorIndex: number, uldSectionIndex: number) => void
+  onToggleAWB: (assignmentKey: string) => void
   onAWBRowClick: (awb: AWBRow, sectorIndex: number, uldSectionIndex: number, awbIndex: number, assignment: AWBAssignment | undefined) => void
   onAWBLeftSectionClick: (awb: AWBRow, sectorIndex: number, uldSectionIndex: number, awbIndex: number) => void
   onHoverUld: (uld: string | null) => void
@@ -503,6 +648,14 @@ function CombinedTable({
   uldNumbers,
   isReadOnly,
   awbComments,
+  selectedAWBKeys,
+  getAllAWBKeys,
+  getULDSectionAWBKeys,
+  isAllSelected,
+  isSomeSelected,
+  onToggleSelectAll,
+  onToggleULDSection,
+  onToggleAWB,
   onAWBRowClick,
   onAWBLeftSectionClick,
   onHoverUld,
@@ -598,6 +751,19 @@ function CombinedTable({
           <table className="w-full text-xs font-mono">
             <thead>
               <tr className="border-b-2 border-gray-300">
+                <th className="px-2 py-2 text-center font-semibold w-10">
+                  <input
+                    type="checkbox"
+                    checked={isAllSelected(getAllAWBKeys())}
+                    ref={(input) => {
+                      if (input) {
+                        input.indeterminate = isSomeSelected(getAllAWBKeys())
+                      }
+                    }}
+                    onChange={onToggleSelectAll}
+                    className="w-4 h-4 text-green-600 border-gray-300 rounded focus:ring-green-500 cursor-pointer"
+                  />
+                </th>
                 <th className="px-2 py-2 text-left font-semibold">SER.</th>
                 <th className="px-2 py-2 text-left font-semibold">AWB NO</th>
                 <th className="px-2 py-2 text-left font-semibold">ORG/DES</th>
@@ -624,7 +790,7 @@ function CombinedTable({
               {/* Special Instructions - Note: Remarks update needs setEditedPlan, keeping simple for now */}
               {editedPlan.remarks && editedPlan.remarks.length > 0 && (
                 <tr>
-                  <td colSpan={20} className="px-2 py-2 bg-gray-100 border-b border-gray-200">
+                  <td colSpan={21} className="px-2 py-2 bg-gray-100 border-b border-gray-200">
                     <div className="space-y-1">
                       {editedPlan.remarks.map((remark, index) => (
                         <EditableField
@@ -654,7 +820,7 @@ function CombinedTable({
                     {/* Sector Header - only show if multiple sectors */}
                     {hasMultipleSectors && (
                       <tr className="bg-blue-50 border-t-2 border-blue-200">
-                        <td colSpan={20} className="px-2 py-2 font-bold text-blue-900 text-center">
+                        <td colSpan={21} className="px-2 py-2 font-bold text-blue-900 text-center">
                           SECTOR: {sectorName}
                         </td>
                       </tr>
@@ -692,6 +858,9 @@ function CombinedTable({
                             uldSectionIndex={uldSectionIndex}
                             awbIndex={awbIndex}
                             assignment={assignment}
+                            assignmentKey={assignmentKey}
+                            isSelected={selectedAWBKeys.has(assignmentKey)}
+                            onToggleSelect={() => onToggleAWB(assignmentKey)}
                             isLoaded={isLoaded}
                             assignmentUld={assignmentUld}
                             isHovered={isHovered}
@@ -714,6 +883,10 @@ function CombinedTable({
                               uldSectionIndex={uldSectionIndex}
                               uldNumbers={uldNumbers.get(`${sectorIndex}-${uldSectionIndex}`) || []}
                               isReadOnly={isReadOnly}
+                              sectionKeys={getULDSectionAWBKeys(sectorIndex, uldSectionIndex)}
+                              isAllSelected={isAllSelected(getULDSectionAWBKeys(sectorIndex, uldSectionIndex))}
+                              isSomeSelected={isSomeSelected(getULDSectionAWBKeys(sectorIndex, uldSectionIndex))}
+                              onToggleSection={() => onToggleULDSection(sectorIndex, uldSectionIndex)}
                               onUpdate={(value) => onUpdateULDField(sectorIndex, uldSectionIndex, value)}
                               onAddAWB={() => onAddNewAWBRow(sectorIndex, uldSectionIndex)}
                               onDelete={() => onDeleteULDSection(sectorIndex, uldSectionIndex)}
@@ -728,7 +901,7 @@ function CombinedTable({
                     {group.rampTransfer.length > 0 && (
                       <>
                         <tr className="bg-gray-50">
-                          <td colSpan={20} className="px-2 py-1 font-semibold text-gray-900 text-center">
+                          <td colSpan={21} className="px-2 py-1 font-semibold text-gray-900 text-center">
                             ***** RAMP TRANSFER *****
                           </td>
                         </tr>
@@ -752,6 +925,9 @@ function CombinedTable({
                                 uldSectionIndex={uldSectionIndex}
                                 awbIndex={awbIndex}
                                 assignment={assignment}
+                                assignmentKey={assignmentKey}
+                                isSelected={selectedAWBKeys.has(assignmentKey)}
+                                onToggleSelect={() => onToggleAWB(assignmentKey)}
                                 isReadOnly={isReadOnly}
                                 awbComments={awbComments}
                                 onRowClick={() => onAWBRowClick(awb, sectorIndex, uldSectionIndex, awbIndex, assignment)}
@@ -769,6 +945,10 @@ function CombinedTable({
                                   uldSectionIndex={uldSectionIndex}
                                   uldNumbers={uldNumbers.get(`${sectorIndex}-${uldSectionIndex}`) || []}
                                   isReadOnly={isReadOnly}
+                                  sectionKeys={getULDSectionAWBKeys(sectorIndex, uldSectionIndex)}
+                                  isAllSelected={isAllSelected(getULDSectionAWBKeys(sectorIndex, uldSectionIndex))}
+                                  isSomeSelected={isSomeSelected(getULDSectionAWBKeys(sectorIndex, uldSectionIndex))}
+                                  onToggleSection={() => onToggleULDSection(sectorIndex, uldSectionIndex)}
                                   onUpdate={(value) => onUpdateULDField(sectorIndex, uldSectionIndex, value)}
                                   onAddAWB={() => onAddNewAWBRow(sectorIndex, uldSectionIndex)}
                                   onDelete={() => onDeleteULDSection(sectorIndex, uldSectionIndex)}
@@ -877,6 +1057,9 @@ interface AWBRowProps {
   uldSectionIndex: number
   awbIndex: number
   assignment?: AWBAssignment
+  assignmentKey: string
+  isSelected: boolean
+  onToggleSelect: () => void
   isLoaded?: boolean
   assignmentUld?: string | null
   isHovered?: boolean
@@ -896,6 +1079,9 @@ interface AWBRowProps {
 
 function AWBRow({
   awb,
+  assignmentKey,
+  isSelected,
+  onToggleSelect,
   isLoaded,
   isHovered,
   splitGroups,
@@ -962,6 +1148,24 @@ function AWBRow({
           setHoveredSection(null)
         }}
       >
+        {/* Checkbox column */}
+        <td
+          className="px-2 py-1 text-center"
+          onClick={(e) => {
+            e.stopPropagation()
+            onToggleSelect()
+          }}
+        >
+          <input
+            type="checkbox"
+            checked={isSelected}
+            onChange={(e) => {
+              e.stopPropagation()
+              onToggleSelect()
+            }}
+            className="w-4 h-4 text-green-600 border-gray-300 rounded focus:ring-green-500 cursor-pointer"
+          />
+        </td>
         {/* Left section - Quick Actions (up to and including SHC) */}
         {leftFields.map(({ key, className }) => {
           // Remove whitespace from AWB number
@@ -1082,6 +1286,7 @@ function AWBRow({
             onMouseEnter={() => groupUld && onMouseEnter?.()}
             onMouseLeave={onMouseLeave}
           >
+            <td className="px-2 py-1"></td>
             <td className="px-2 py-1 pl-8 text-xs text-gray-500">
               <span className="text-gray-400">└─</span>
             </td>
@@ -1105,6 +1310,10 @@ interface ULDRowProps {
   uldSectionIndex: number
   uldNumbers: string[]
   isReadOnly: boolean
+  sectionKeys: Set<string>
+  isAllSelected: boolean
+  isSomeSelected: boolean
+  onToggleSection: () => void
   onUpdate: (value: string) => void
   onAddAWB: () => void
   onDelete: () => void
@@ -1112,7 +1321,7 @@ interface ULDRowProps {
   isRampTransfer?: boolean
 }
 
-function ULDRow({ uld, uldNumbers, isReadOnly, onUpdate, onAddAWB, onDelete, onClick, isRampTransfer }: ULDRowProps) {
+function ULDRow({ uld, uldNumbers, isReadOnly, sectionKeys, isAllSelected, isSomeSelected, onToggleSection, onUpdate, onAddAWB, onDelete, onClick, isRampTransfer }: ULDRowProps) {
   const { count, types } = parseULDSection(uld)
   const hasULDNumbers = uldNumbers.length > 0 && uldNumbers.some(n => n.trim() !== "")
   const displayNumbers = uldNumbers.filter(n => n.trim() !== "").join(", ")
@@ -1120,6 +1329,29 @@ function ULDRow({ uld, uldNumbers, isReadOnly, onUpdate, onAddAWB, onDelete, onC
   
   return (
     <tr className={isRampTransfer ? "bg-gray-50" : ""}>
+      {/* Checkbox column */}
+      <td
+        className="px-2 py-1 text-center"
+        onClick={(e) => {
+          e.stopPropagation()
+          onToggleSection()
+        }}
+      >
+        <input
+          type="checkbox"
+          checked={isAllSelected}
+          ref={(input) => {
+            if (input) {
+              input.indeterminate = isSomeSelected
+            }
+          }}
+          onChange={(e) => {
+            e.stopPropagation()
+            onToggleSection()
+          }}
+          className="w-4 h-4 text-green-600 border-gray-300 rounded focus:ring-green-500 cursor-pointer"
+        />
+      </td>
       <td colSpan={19} className="px-2 py-1 font-semibold text-gray-900 text-center relative">
         <div className="flex items-center justify-center gap-4">
           {hasULDNumbers && (
