@@ -186,7 +186,9 @@ export async function getLoadPlanDetailFromSupabase(flightNumber: string): Promi
     const sectorMap = new Map<string, Map<string, Map<boolean, any[]>>>()
     
     sortedItems.forEach((item: any) => {
-      const sector = item.origin_destination || "UNKNOWN"
+      // Use sector column - if null, use "NULL_SECTOR" as temporary key
+      // All null sectors will be grouped into 1 sector later
+      const sector = item.sector || "NULL_SECTOR"
       const uld = item.uld_allocation || ""
       // Check if item is ramp transfer from is_ramp_transfer field
       const isRampTransfer = item.is_ramp_transfer === true || item.is_ramp_transfer === 1
@@ -207,77 +209,104 @@ export async function getLoadPlanDetailFromSupabase(flightNumber: string): Promi
       
       rampTransferMap.get(isRampTransfer)!.push(item)
     })
-
-    // Transform to LoadPlanDetail format - combine all sectors into one
-    // Separate only by ramp transfer, not by sector
-    const allRegularItems: any[] = []
-    const allRampTransferItems: any[] = []
     
-    // Collect all items and separate by ramp transfer status
-    Array.from(sectorMap.entries()).forEach(([sector, sectorUldMap]) => {
+    // If there's a "NULL_SECTOR" (items with null sector), rename it to header sector or "UNKNOWN"
+    // All null sectors should be in 1 sector together
+    if (sectorMap.has("NULL_SECTOR")) {
+      const nullSectorItems = sectorMap.get("NULL_SECTOR")!
+      sectorMap.delete("NULL_SECTOR")
+      // Use header sector name for items without sector, or "UNKNOWN" if not available
+      const headerSector = loadPlan.sector || "UNKNOWN"
+      if (!sectorMap.has(headerSector)) {
+        sectorMap.set(headerSector, nullSectorItems)
+      } else {
+        // Merge with existing sector if it exists
+        const existingSector = sectorMap.get(headerSector)!
+        nullSectorItems.forEach((uldMap, uld) => {
+          if (!existingSector.has(uld)) {
+            existingSector.set(uld, new Map())
+          }
+          const existingRampMap = existingSector.get(uld)!
+          uldMap.forEach((items, isRamp) => {
+            if (!existingRampMap.has(isRamp)) {
+              existingRampMap.set(isRamp, [])
+            }
+            existingRampMap.get(isRamp)!.push(...items)
+          })
+        })
+      }
+    }
+
+    // Transform to LoadPlanDetail format - GROUP BY SECTOR
+    // Each sector should have its own ULD sections
+    const sectors: any[] = []
+    
+    // Process each sector separately
+    Array.from(sectorMap.entries()).forEach(([sectorName, sectorUldMap]) => {
+      // Separate items by ramp transfer status for this sector
+      const sectorRegularItems: any[] = []
+      const sectorRampTransferItems: any[] = []
+      
       Array.from(sectorUldMap.entries()).forEach(([uld, rampTransferMap]) => {
         Array.from(rampTransferMap.entries()).forEach(([isRamp, items]) => {
           if (isRamp) {
-            allRampTransferItems.push(...items)
+            sectorRampTransferItems.push(...items)
           } else {
-            allRegularItems.push(...items)
+            sectorRegularItems.push(...items)
           }
         })
       })
-    })
-    
-    // Sort items by serial_number to maintain global order
-    allRegularItems.sort((a: any, b: any) => {
-      const aSer = parseInt(a.serial_number) || 0
-      const bSer = parseInt(b.serial_number) || 0
-      return aSer - bSer
-    })
-    
-    allRampTransferItems.sort((a: any, b: any) => {
-      const aSer = parseInt(a.serial_number) || 0
-      const bSer = parseInt(b.serial_number) || 0
-      return aSer - bSer
-    })
-    
-    // Create ULD sections - regular first, then ramp transfer
-    // Maintain order by serial_number, not by ULD name
-    const regularUldSections: any[] = []
-    const rampTransferUldSections: any[] = []
-    
-    // Process regular items - group by ULD but maintain serial number order
-    const regularUldMap = new Map<string, any[]>()
-    allRegularItems.forEach((item: any) => {
-      const uld = item.uld_allocation || ""
-      if (!regularUldMap.has(uld)) {
-        regularUldMap.set(uld, [])
-      }
-      regularUldMap.get(uld)!.push(item)
-    })
-    
-    // Sort ULD sections by the first serial_number in each section to maintain global order
-    Array.from(regularUldMap.entries())
-      .map(([uld, awbs]) => {
-        // Sort awbs within ULD section by serial_number
-        const sortedAwbs = [...awbs].sort((a: any, b: any) => {
-          const aSer = parseInt(a.serial_number) || 0
-          const bSer = parseInt(b.serial_number) || 0
-          return aSer - bSer
+      
+      // Sort items by serial_number to maintain order within sector
+      sectorRegularItems.sort((a: any, b: any) => {
+        const aSer = parseInt(a.serial_number) || 0
+        const bSer = parseInt(b.serial_number) || 0
+        return aSer - bSer
+      })
+      
+      sectorRampTransferItems.sort((a: any, b: any) => {
+        const aSer = parseInt(a.serial_number) || 0
+        const bSer = parseInt(b.serial_number) || 0
+        return aSer - bSer
+      })
+      
+      // Create ULD sections for this sector - regular first, then ramp transfer
+      const sectorRegularUldSections: any[] = []
+      const sectorRampTransferUldSections: any[] = []
+      
+      // Process regular items for this sector - group by ULD but maintain serial number order
+      const sectorRegularUldMap = new Map<string, any[]>()
+      sectorRegularItems.forEach((item: any) => {
+        const uld = item.uld_allocation || ""
+        if (!sectorRegularUldMap.has(uld)) {
+          sectorRegularUldMap.set(uld, [])
+        }
+        sectorRegularUldMap.get(uld)!.push(item)
+      })
+      
+      // Sort ULD sections by the first serial_number in each section
+      Array.from(sectorRegularUldMap.entries())
+        .map(([uld, awbs]) => {
+          // Sort awbs within ULD section by serial_number
+          const sortedAwbs = [...awbs].sort((a: any, b: any) => {
+            const aSer = parseInt(a.serial_number) || 0
+            const bSer = parseInt(b.serial_number) || 0
+            return aSer - bSer
+          })
+          return { uld, awbs: sortedAwbs }
         })
-        return { uld, awbs: sortedAwbs }
-      })
-      .sort((a, b) => {
-        // Sort ULD sections by first serial_number to maintain global order
-        const aFirstSer = a.awbs.length > 0 ? (parseInt(a.awbs[0].serial_number) || 0) : 0
-        const bFirstSer = b.awbs.length > 0 ? (parseInt(b.awbs[0].serial_number) || 0) : 0
-        return aFirstSer - bFirstSer
-      })
-      .forEach(({ uld, awbs }) => {
-        
-        regularUldSections.push({
-          uld: uld || "",
-          awbs: awbs.map((item: any) => ({
+        .sort((a, b) => {
+          // Sort ULD sections by first serial_number
+          const aFirstSer = a.awbs.length > 0 ? (parseInt(a.awbs[0].serial_number) || 0) : 0
+          const bFirstSer = b.awbs.length > 0 ? (parseInt(b.awbs[0].serial_number) || 0) : 0
+          return aFirstSer - bFirstSer
+        })
+        .forEach(({ uld, awbs }) => {
+          sectorRegularUldSections.push({
+            uld: uld || "",
+            awbs: awbs.map((item: any) => ({
               ser: item.serial_number?.toString().padStart(3, "0") || "",
-              awbNo: (item.awb_number || "").replace(/\s+/g, ""), // Remove whitespace from AWB number
+              awbNo: (item.awb_number || "").replace(/\s+/g, ""),
               orgDes: item.origin_destination || "",
               pcs: item.pieces?.toString() || "",
               wgt: item.weight?.toString() || "",
@@ -295,46 +324,45 @@ export async function getLoadPlanDetailFromSupabase(flightNumber: string): Promi
               qnnAqnn: item.quantity_aqnn || "",
               whs: item.warehouse_code || "",
               si: item.special_instructions || "",
-              // remarks field not available in database schema
+              remarks: item.special_notes || undefined,
             })),
-          isRampTransfer: false,
+            isRampTransfer: false,
+          })
         })
+      
+      // Process ramp transfer items for this sector - group by ULD but maintain serial number order
+      const sectorRampTransferUldMap = new Map<string, any[]>()
+      sectorRampTransferItems.forEach((item: any) => {
+        const uld = item.uld_allocation || ""
+        if (!sectorRampTransferUldMap.has(uld)) {
+          sectorRampTransferUldMap.set(uld, [])
+        }
+        sectorRampTransferUldMap.get(uld)!.push(item)
       })
-    
-    // Process ramp transfer items - group by ULD but maintain serial number order
-    const rampTransferUldMap = new Map<string, any[]>()
-    allRampTransferItems.forEach((item: any) => {
-      const uld = item.uld_allocation || ""
-      if (!rampTransferUldMap.has(uld)) {
-        rampTransferUldMap.set(uld, [])
-      }
-      rampTransferUldMap.get(uld)!.push(item)
-    })
-    
-    // Sort ULD sections by the first serial_number in each section to maintain global order
-    Array.from(rampTransferUldMap.entries())
-      .map(([uld, awbs]) => {
-        // Sort awbs within ULD section by serial_number
-        const sortedAwbs = [...awbs].sort((a: any, b: any) => {
-          const aSer = parseInt(a.serial_number) || 0
-          const bSer = parseInt(b.serial_number) || 0
-          return aSer - bSer
+      
+      // Sort ULD sections by the first serial_number in each section
+      Array.from(sectorRampTransferUldMap.entries())
+        .map(([uld, awbs]) => {
+          // Sort awbs within ULD section by serial_number
+          const sortedAwbs = [...awbs].sort((a: any, b: any) => {
+            const aSer = parseInt(a.serial_number) || 0
+            const bSer = parseInt(b.serial_number) || 0
+            return aSer - bSer
+          })
+          return { uld, awbs: sortedAwbs }
         })
-        return { uld, awbs: sortedAwbs }
-      })
-      .sort((a, b) => {
-        // Sort ULD sections by first serial_number to maintain global order
-        const aFirstSer = a.awbs.length > 0 ? (parseInt(a.awbs[0].serial_number) || 0) : 0
-        const bFirstSer = b.awbs.length > 0 ? (parseInt(b.awbs[0].serial_number) || 0) : 0
-        return aFirstSer - bFirstSer
-      })
-      .forEach(({ uld, awbs }) => {
-        
-        rampTransferUldSections.push({
-          uld: uld || "",
-          awbs: awbs.map((item: any) => ({
+        .sort((a, b) => {
+          // Sort ULD sections by first serial_number
+          const aFirstSer = a.awbs.length > 0 ? (parseInt(a.awbs[0].serial_number) || 0) : 0
+          const bFirstSer = b.awbs.length > 0 ? (parseInt(b.awbs[0].serial_number) || 0) : 0
+          return aFirstSer - bFirstSer
+        })
+        .forEach(({ uld, awbs }) => {
+          sectorRampTransferUldSections.push({
+            uld: uld || "",
+            awbs: awbs.map((item: any) => ({
               ser: item.serial_number?.toString().padStart(3, "0") || "",
-              awbNo: (item.awb_number || "").replace(/\s+/g, ""), // Remove whitespace from AWB number
+              awbNo: (item.awb_number || "").replace(/\s+/g, ""),
               orgDes: item.origin_destination || "",
               pcs: item.pieces?.toString() || "",
               wgt: item.weight?.toString() || "",
@@ -352,27 +380,35 @@ export async function getLoadPlanDetailFromSupabase(flightNumber: string): Promi
               qnnAqnn: item.quantity_aqnn || "",
               whs: item.warehouse_code || "",
               si: item.special_instructions || "",
-              // remarks field not available in database schema
+              remarks: item.special_notes || undefined,
             })),
-          isRampTransfer: true,
+            isRampTransfer: true,
+          })
         })
+      
+      // Calculate totals for this sector
+      const sectorAllItems = [...sectorRegularItems, ...sectorRampTransferItems]
+      const sectorTotals = {
+        pcs: sectorAllItems.reduce((sum, item: any) => sum + (parseFloat(item.pieces) || 0), 0).toString(),
+        wgt: sectorAllItems.reduce((sum, item: any) => sum + (parseFloat(item.weight) || 0), 0).toFixed(2),
+        vol: sectorAllItems.reduce((sum, item: any) => sum + (parseFloat(item.volume) || 0), 0).toFixed(2),
+        lvol: sectorAllItems.reduce((sum, item: any) => sum + (parseFloat(item.load_volume) || 0), 0).toFixed(2),
+      }
+      
+      // Add this sector to sectors array
+      sectors.push({
+        sector: sectorName,
+        uldSections: [...sectorRegularUldSections, ...sectorRampTransferUldSections],
+        totals: sectorTotals,
       })
+    })
     
-    // Combine all items for totals
-    const allItems = [...allRegularItems, ...allRampTransferItems]
-    const totals = {
-      pcs: allItems.reduce((sum, item: any) => sum + (parseFloat(item.pieces) || 0), 0).toString(),
-      wgt: allItems.reduce((sum, item: any) => sum + (parseFloat(item.weight) || 0), 0).toFixed(2),
-      vol: allItems.reduce((sum, item: any) => sum + (parseFloat(item.volume) || 0), 0).toFixed(2),
-      lvol: allItems.reduce((sum, item: any) => sum + (parseFloat(item.load_volume) || 0), 0).toFixed(2),
-    }
-    
-    // Create single sector with all ULD sections (regular + ramp transfer)
-    const sectors = [{
-      sector: loadPlan.route_full || (loadPlan.route_origin && loadPlan.route_destination ? `${loadPlan.route_origin}${loadPlan.route_destination}` : "UNKNOWN"),
-      uldSections: [...regularUldSections, ...rampTransferUldSections],
-      totals,
-    }]
+    // Log sectors for debugging
+    console.log(`[LoadPlans] Grouped into ${sectors.length} sector(s):`, sectors.map(s => ({
+      sector: s.sector,
+      uldSections: s.uldSections.length,
+      totalItems: s.uldSections.reduce((sum: number, u: any) => sum + (u.awbs?.length || 0), 0)
+    })))
 
     const detail: LoadPlanDetail = {
       flight: loadPlan.flight_number || "",

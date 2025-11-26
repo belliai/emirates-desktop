@@ -231,36 +231,48 @@ export async function saveListsDataToSupabase({
         )
       }
       
+      // Helper function to truncate string to max length
+      const truncate = (str: string | null | undefined, maxLength: number): string | null => {
+        if (!str) return null
+        return str.length > maxLength ? str.substring(0, maxLength) : str
+      }
+
       const loadPlanItems = shipments.map((shipment) => ({
         load_plan_id: loadPlanId,
         serial_number: shipment.serialNo ? parseInt(shipment.serialNo, 10) : null,
-        awb_number: shipment.awbNo || null,
+        awb_number: truncate(shipment.awbNo, 50),
         origin_destination: shipment.origin && shipment.destination 
-          ? `${shipment.origin}${shipment.destination}` 
+          ? truncate(`${shipment.origin}${shipment.destination}`, 50)
           : null,
         pieces: shipment.pieces || null,
         weight: shipment.weight || null,
         volume: shipment.volume || null,
         load_volume: shipment.lvol || null,
-        special_handling_code: shipment.shc || null,
+        special_handling_code: truncate(shipment.shc, 50),
         // Manual description - DO NOT include special notes here
         // Special notes like "[Must be load in Fire containment equipment]" should be stored separately
-        manual_description: shipment.manDesc || null,
-        product_code_pc: shipment.pcode || null,
+        manual_description: shipment.manDesc || null, // This is TEXT, no limit
+        product_code_pc: truncate(shipment.pcode, 50),
         total_handling_charge: shipment.thc && !isNaN(parseFloat(shipment.thc)) ? parseFloat(shipment.thc) : null,
         additional_total_handling_charge: null, // Not available in parsed data
-        booking_status: shipment.bs || null,
-        priority_indicator: shipment.pi || null,
-        flight_in: shipment.fltIn || null,
+        booking_status: truncate(shipment.bs, 50),
+        priority_indicator: truncate(shipment.pi, 50),
+        flight_in: truncate(shipment.fltIn, 50),
         arrival_date_time: shipment.arrDtTime ? parseDateTimeString(shipment.arrDtTime) : null,
-        quantity_aqnn: shipment.qnnAqnn || null,
+        quantity_aqnn: truncate(shipment.qnnAqnn, 50),
         payment_terms: null, // Not available in parsed data
-        warehouse_code: shipment.whs || null,
+        warehouse_code: truncate(shipment.whs, 50),
         // SI field - only store original SI value, NOT special notes
-        // Special notes like "[Must be load in Fire containment equipment]" are stored in ULD field
-        special_instructions: shipment.si || null,
-        // ULD allocation - special notes are appended to ULD field (e.g., "XX 01AKE XX | Must be load in Fire containment equipment")
-        uld_allocation: shipment.uld || null,
+        special_instructions: truncate(shipment.si, 50),
+        // ULD allocation - store only ULD, special notes are stored separately
+        uld_allocation: truncate(shipment.uld, 50),
+        // Special notes - store in separate column (e.g., "[Must be load in Fire containment equipment]")
+        // Join multiple special notes with newline
+        special_notes: shipment.specialNotes && shipment.specialNotes.length > 0
+          ? shipment.specialNotes.join("\n")
+          : null,
+        // Sector information for grouping items by sector
+        sector: truncate(shipment.sector, 50),
         is_ramp_transfer: shipment.isRampTransfer === true,
       }))
       
@@ -286,6 +298,23 @@ export async function saveListsDataToSupabase({
             awb_number: loadPlanItems[0].awb_number,
             uld_allocation: loadPlanItems[0].uld_allocation,
             is_ramp_transfer: loadPlanItems[0].is_ramp_transfer,
+          }
+        })
+        
+        // Check for fields that might exceed 50 characters
+        const sampleItem = loadPlanItems[0] as any
+        const fieldsToCheck = [
+          'awb_number', 'origin_destination', 'special_handling_code', 
+          'product_code_pc', 'booking_status', 'priority_indicator', 
+          'flight_in', 'quantity_aqnn', 'warehouse_code', 
+          'special_instructions', 'uld_allocation'
+        ]
+        fieldsToCheck.forEach(field => {
+          if (sampleItem[field] && sampleItem[field].length > 50) {
+            console.log(`[v0] ⚠️ Field ${field} exceeds 50 characters:`, {
+              length: sampleItem[field].length,
+              value: sampleItem[field].substring(0, 100)
+            })
           }
         })
         

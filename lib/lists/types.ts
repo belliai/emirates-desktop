@@ -36,6 +36,7 @@ export interface Shipment {
   uld: string
   specialNotes: string[]
   isRampTransfer?: boolean
+  sector?: string // Sector information (e.g., "DXBMXP", "DXBJFK")
 }
 
 export interface SpecialCargoReportRow {

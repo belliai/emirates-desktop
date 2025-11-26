@@ -119,18 +119,46 @@ export function parseShipments(content: string, header: LoadPlanHeader): Shipmen
   let inShipmentSection = false
   let currentULD = ""
   let isRampTransfer = false
+  // Track current sector - starts with header sector, updates when new SECTOR: found
+  let currentSector = header.sector || ""
   // Buffer untuk menyimpan AWB rows yang belum memiliki ULD
   const awbBuffer: Partial<Shipment>[] = []
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim()
 
+    // Check for new SECTOR marker - this indicates a new sector section
+    // When we find "SECTOR: ...", update current sector
+    const sectorMatch = line.match(/^SECTOR:\s*([A-Z]{6})/i)
+    if (sectorMatch) {
+      currentSector = sectorMatch[1]
+      console.log("[v0] ✅ New SECTOR detected:", currentSector)
+      // Don't reset buffer here - wait for table header to ensure we don't lose pending shipments
+      continue
+    }
+
     if (line.includes("SER.") && line.includes("AWB NO")) {
       inShipmentSection = true
       isRampTransfer = false // Reset ramp transfer flag when new section starts
-      // Clear buffer ketika masuk section baru
-      awbBuffer.length = 0
+      // Clear buffer ketika masuk section baru (new table header = new sector section)
+      // This means previous sector's shipments should have been processed
+      if (awbBuffer.length > 0) {
+        console.log("[v0] ⚠️ New table header found with", awbBuffer.length, "items in buffer - flushing buffer for sector:", currentSector)
+        awbBuffer.forEach(shipment => {
+          const s = shipment as Partial<Shipment> & { sector?: string }
+          s.sector = currentSector // Ensure sector is set before flushing
+          shipments.push(shipment as Shipment)
+        })
+        awbBuffer.length = 0
+      }
+      if (currentShipment) {
+        const s = currentShipment as Partial<Shipment> & { sector?: string }
+        s.sector = currentSector // Ensure sector is set
+        shipments.push(currentShipment as Shipment)
+        currentShipment = null
+      }
       currentULD = ""
+      console.log("[v0] ✅ New shipment table header detected - starting new sector section:", currentSector)
       continue
     }
 
@@ -145,17 +173,24 @@ export function parseShipments(content: string, header: LoadPlanHeader): Shipmen
 
     if (line.match(/^TOTALS\s*:/i)) {
       // Flush buffer dan current shipment sebelum keluar dari section
+      // But don't set inShipmentSection = false yet - there might be another sector
       awbBuffer.forEach(shipment => {
+        const s = shipment as Partial<Shipment> & { sector?: string }
+        s.sector = currentSector // Ensure sector is set before flushing
         shipments.push(shipment as Shipment)
       })
       awbBuffer.length = 0
       if (currentShipment) {
+        const s = currentShipment as Partial<Shipment> & { sector?: string }
+        s.sector = currentSector // Ensure sector is set
         shipments.push(currentShipment as Shipment)
         currentShipment = null
       }
-      inShipmentSection = false
+      // Don't set inShipmentSection = false here - there might be another sector
+      // Reset ramp transfer flag for next sector
       isRampTransfer = false
       currentULD = ""
+      console.log("[v0] ✅ TOTALS found for sector:", currentSector, "- flushed buffer, but keeping inShipmentSection active for potential next sector")
       continue
     }
 
@@ -196,19 +231,11 @@ export function parseShipments(content: string, header: LoadPlanHeader): Shipmen
         // Ini adalah kasus yang paling umum: shipment muncul dulu, lalu ULD muncul setelahnya
         if (awbBuffer.length > 0) {
           // Assign ULD ke semua AWB rows di buffer dan push ke shipments
+          // Special notes are stored separately in specialNotes array, NOT appended to ULD
           awbBuffer.forEach(shipment => {
-            // Append special notes to ULD if they exist
-            const notesToAppend: string[] = []
-            if (shipment.specialNotes && shipment.specialNotes.length > 0) {
-              notesToAppend.push(...shipment.specialNotes)
-            }
-            if (notesToAppend.length > 0) {
-              shipment.uld = `${formattedULD} | ${notesToAppend.join(" | ")}`
-              // Clear special notes after appending to ULD
-              shipment.specialNotes = []
-            } else {
-              shipment.uld = formattedULD
-            }
+            shipment.uld = formattedULD
+            shipment.sector = currentSector // Ensure sector is set
+            // Keep special notes in specialNotes array - they will be saved to special_notes column
             shipments.push(shipment as Shipment)
           })
           const bufferCount = awbBuffer.length
@@ -440,20 +467,17 @@ export function parseShipments(content: string, header: LoadPlanHeader): Shipmen
           uld: currentULD || "", // Assign currentULD jika ada, jika tidak akan di-assign nanti
           specialNotes: [],
           isRampTransfer: isRampTransfer,
+          sector: currentSector, // Store current sector for this shipment
         }
         
         // Jika currentULD sudah di-set (ULD muncul SEBELUM AWB row), 
         // assign ke AWB row pertama dan clear currentULD
         if (currentULD) {
           // ULD muncul sebelum AWB row, assign ke AWB row pertama
-          // Append special notes to ULD if they exist
+          // Special notes are stored separately in specialNotes array, NOT appended to ULD
           const shipment = currentShipment as Partial<Shipment> & { specialNotes?: string[] }
-          if (shipment.specialNotes && shipment.specialNotes.length > 0) {
-            shipment.uld = `${currentULD} | ${shipment.specialNotes.join(" | ")}`
-            shipment.specialNotes = [] // Clear after appending to ULD
-          } else {
-            shipment.uld = currentULD
-          }
+          shipment.uld = currentULD
+          // Keep special notes in specialNotes array - they will be saved to special_notes column
           shipments.push(currentShipment as Shipment)
           currentULD = "" // Clear untuk AWB rows berikutnya
           currentShipment = null
@@ -505,11 +529,15 @@ export function parseShipments(content: string, header: LoadPlanHeader): Shipmen
   // Flush buffer dan current shipment di akhir
   // AWB rows yang masih di buffer tanpa ULD akan di-push tanpa ULD
   awbBuffer.forEach(shipment => {
+    const s = shipment as Partial<Shipment> & { sector?: string }
+    s.sector = currentSector // Ensure sector is set before flushing
     shipments.push(shipment as Shipment)
   })
   awbBuffer.length = 0
   
   if (currentShipment) {
+    const s = currentShipment as Partial<Shipment> & { sector?: string }
+    s.sector = currentSector // Ensure sector is set
     shipments.push(currentShipment as Shipment)
   }
 
