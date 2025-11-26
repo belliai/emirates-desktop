@@ -25,7 +25,30 @@ export function parseHeader(content: string): LoadPlanHeader {
   const prepOnMatch = content.match(/PREPARED\s+ON:\s*([\d-]+\s+[\d:]+)/i)
   const preparedOn = prepOnMatch ? prepOnMatch[1] : ""
 
-  return { flightNumber, date, aircraftType, aircraftReg, sector, std, preparedBy, preparedOn }
+  // Parse TTL PLN ULD: TTL PLN ULD: 06PMC/07AKE
+  // Pattern: TTL PLN ULD: followed by value (can contain /, letters, numbers)
+  // Stop at multiple spaces or next field (ULD VERSION or PREPARED ON)
+  const ttlPlnUldMatch = content.match(/TTL\s+PLN\s+ULD:\s*([A-Z0-9\/]+)/i)
+  const ttlPlnUld = ttlPlnUldMatch ? ttlPlnUldMatch[1].trim() : ""
+
+  // Parse ULD VERSION: ULD VERSION: 06/26 or ULD VERSION: 05PMC/26
+  // Pattern: ULD VERSION: followed by value (can contain /, letters, numbers)
+  // Stop at multiple spaces or next field (PREPARED ON)
+  const uldVersionMatch = content.match(/ULD\s+VERSION:\s*([A-Z0-9\/]+)/i)
+  const uldVersion = uldVersionMatch ? uldVersionMatch[1].trim() : ""
+
+  return { 
+    flightNumber, 
+    date, 
+    aircraftType, 
+    aircraftReg, 
+    sector, 
+    std, 
+    preparedBy, 
+    preparedOn,
+    ttlPlnUld: ttlPlnUld || undefined,
+    uldVersion: uldVersion || undefined,
+  }
 }
 
 export function parseShipments(content: string, header: LoadPlanHeader): Shipment[] {
@@ -35,6 +58,8 @@ export function parseShipments(content: string, header: LoadPlanHeader): Shipmen
   let inShipmentSection = false
   let currentULD = ""
   let isRampTransfer = false
+  // Buffer untuk menyimpan AWB rows yang belum memiliki ULD
+  const awbBuffer: Partial<Shipment>[] = []
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim()
@@ -42,6 +67,9 @@ export function parseShipments(content: string, header: LoadPlanHeader): Shipmen
     if (line.includes("SER.") && line.includes("AWB NO")) {
       inShipmentSection = true
       isRampTransfer = false // Reset ramp transfer flag when new section starts
+      // Clear buffer ketika masuk section baru
+      awbBuffer.length = 0
+      currentULD = ""
       continue
     }
 
@@ -53,20 +81,46 @@ export function parseShipments(content: string, header: LoadPlanHeader): Shipmen
     }
 
     if (line.match(/^TOTALS\s*:/i)) {
+      // Flush buffer dan current shipment sebelum keluar dari section
+      awbBuffer.forEach(shipment => {
+        shipments.push(shipment as Shipment)
+      })
+      awbBuffer.length = 0
       if (currentShipment) {
         shipments.push(currentShipment as Shipment)
+        currentShipment = null
       }
       inShipmentSection = false
       isRampTransfer = false
+      currentULD = ""
       continue
     }
 
     if (line.match(/^[_\-=]+$/)) continue
     if (!line) continue
 
-    const uldMatch = line.match(/XX\s+(\d+(?:PMC|AKE|PAG|AMP)(?:\s+\d+(?:PMC|AKE|PAG|AMP))*)\s+XX/i)
+    // Check for ULD section - format: XX 06AKE XX or XX 02PMC 03AKE XX
+    const uldMatch = line.match(/XX\s+(\d+(?:PMC|AKE|PAG|AMP|BULK)(?:\s+\d+(?:PMC|AKE|PAG|AMP|BULK))*)\s+XX/i)
     if (uldMatch) {
-      currentULD = uldMatch[1]
+      const newULD = uldMatch[1]
+      // Format ULD untuk disimpan: "XX 06AKE XX"
+      const formattedULD = `XX ${newULD} XX`
+      
+      // Jika ada AWB rows di buffer, assign ULD tersebut ke semua AWB rows di buffer
+      // (ULD section yang muncul SETELAH AWB rows menjadi parent dari AWB rows tersebut)
+      if (awbBuffer.length > 0) {
+        awbBuffer.forEach(shipment => {
+          shipment.uld = formattedULD
+          shipments.push(shipment as Shipment)
+        })
+        const bufferCount = awbBuffer.length
+        awbBuffer.length = 0
+        console.log("[v0] ✅ ULD section detected:", formattedULD, "- assigned to", bufferCount, "previous AWB rows in buffer")
+      } else {
+        // Jika buffer kosong, ULD section ini untuk AWB rows yang akan datang
+        currentULD = formattedULD
+        console.log("[v0] ✅ ULD section detected:", formattedULD, "- will be used for upcoming AWB rows")
+      }
       continue
     }
 
@@ -153,7 +207,7 @@ export function parseShipments(content: string, header: LoadPlanHeader): Shipmen
 
         currentShipment = {
           serialNo: serial,
-          awbNo: awb,
+          awbNo: awb.replace(/\s+/g, ""), // Remove whitespace from AWB number
           origin: origin,
           destination: destination,
           pieces: Number.parseInt(pcs),
@@ -172,9 +226,24 @@ export function parseShipments(content: string, header: LoadPlanHeader): Shipmen
           qnnAqnn: "",
           whs: "",
           si: si || "N",
-          uld: currentULD,
+          uld: currentULD, // Akan di-assign nanti jika ULD section muncul setelahnya
           specialNotes: [],
           isRampTransfer: isRampTransfer,
+        }
+        
+        // Jika currentULD sudah di-set (ULD muncul SEBELUM AWB row), 
+        // assign ke AWB row pertama dan clear currentULD
+        // AWB rows berikutnya akan masuk buffer untuk menunggu ULD section yang muncul setelahnya
+        if (currentULD && awbBuffer.length === 0) {
+          // ULD muncul sebelum AWB row, assign ke AWB row pertama
+          shipments.push(currentShipment as Shipment)
+          currentULD = "" // Clear untuk AWB rows berikutnya
+          currentShipment = null
+        } else {
+          // Simpan di buffer, akan di-assign ULD nanti ketika menemukan ULD section
+          awbBuffer.push(currentShipment)
+          currentULD = "" // Clear currentULD karena AWB rows ini menunggu ULD section yang muncul setelahnya
+          currentShipment = null
         }
         
         // Log ramp transfer shipments for debugging
@@ -187,20 +256,48 @@ export function parseShipments(content: string, header: LoadPlanHeader): Shipmen
             isRampTransfer: true,
           })
         }
-      } else if ((line.startsWith("[") || line.startsWith("**[")) && currentShipment) {
+      } else if ((line.startsWith("[") || line.startsWith("**["))) {
+        // Special notes bisa untuk currentShipment atau shipment terakhir di buffer
         const note = line.replace(/\*\*/g, "").replace(/[[\]]/g, "").trim()
-        currentShipment.specialNotes = currentShipment.specialNotes || []
-        currentShipment.specialNotes.push(note)
+        if (currentShipment) {
+          currentShipment.specialNotes = currentShipment.specialNotes || []
+          currentShipment.specialNotes.push(note)
+        } else if (awbBuffer.length > 0) {
+          // Assign ke shipment terakhir di buffer
+          const lastShipment = awbBuffer[awbBuffer.length - 1]
+          if (lastShipment) {
+            lastShipment.specialNotes = lastShipment.specialNotes || []
+            lastShipment.specialNotes.push(note)
+          }
+        }
       }
     }
   }
 
+  // Flush buffer dan current shipment di akhir
+  awbBuffer.forEach(shipment => {
+    shipments.push(shipment as Shipment)
+  })
+  awbBuffer.length = 0
+  
   if (currentShipment) {
     shipments.push(currentShipment as Shipment)
   }
 
   console.log("[v0] Parsed shipments:", shipments.length)
-  console.log("[v0] Sample shipment:", shipments[0])
+  if (shipments.length > 0) {
+    console.log("[v0] Sample shipment:", shipments[0])
+    // Log beberapa shipments dengan ULD untuk debugging
+    const shipmentsWithULD = shipments.filter(s => s.uld && s.uld.trim() !== "")
+    console.log("[v0] Shipments with ULD:", shipmentsWithULD.length, "out of", shipments.length)
+    if (shipmentsWithULD.length > 0) {
+      console.log("[v0] Sample shipments with ULD:", shipmentsWithULD.slice(0, 3).map(s => ({
+        serialNo: s.serialNo,
+        awbNo: s.awbNo,
+        uld: s.uld
+      })))
+    }
+  }
 
   return shipments
 }

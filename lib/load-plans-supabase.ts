@@ -256,7 +256,7 @@ export async function getLoadPlanDetailFromSupabase(flightNumber: string): Promi
           uld: uld || "",
           awbs: sortedAwbs.map((item: any) => ({
               ser: item.serial_number?.toString().padStart(3, "0") || "",
-              awbNo: item.awb_number || "",
+              awbNo: (item.awb_number || "").replace(/\s+/g, ""), // Remove whitespace from AWB number
               orgDes: item.origin_destination || "",
               pcs: item.pieces?.toString() || "",
               wgt: item.weight?.toString() || "",
@@ -308,7 +308,7 @@ export async function getLoadPlanDetailFromSupabase(flightNumber: string): Promi
           uld: uld || "",
           awbs: sortedAwbs.map((item: any) => ({
               ser: item.serial_number?.toString().padStart(3, "0") || "",
-              awbNo: item.awb_number || "",
+              awbNo: (item.awb_number || "").replace(/\s+/g, ""), // Remove whitespace from AWB number
               orgDes: item.origin_destination || "",
               pcs: item.pieces?.toString() || "",
               wgt: item.weight?.toString() || "",

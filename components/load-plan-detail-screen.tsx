@@ -17,6 +17,40 @@ import { ULDNumberModal } from "./uld-number-modal"
 import { parseULDSection, formatULDSection } from "@/lib/uld-parser"
 import { AWBQuickActionModal } from "./awb-quick-action-modal"
 
+/**
+ * Calculate total PMC and AKE from all ULD sections in the load plan
+ * Returns formatted string like "05PMC/10AKE"
+ */
+function calculateTTLPlnUld(plan: LoadPlanDetail): string {
+  let pmcCount = 0
+  let akeCount = 0
+
+  plan.sectors.forEach((sector) => {
+    sector.uldSections.forEach((uldSection) => {
+      if (uldSection.uld) {
+        const { expandedTypes } = parseULDSection(uldSection.uld)
+        expandedTypes.forEach((type) => {
+          if (type === "PMC") {
+            pmcCount++
+          } else if (type === "AKE") {
+            akeCount++
+          }
+        })
+      }
+    })
+  })
+
+  const parts: string[] = []
+  if (pmcCount > 0) {
+    parts.push(`${String(pmcCount).padStart(2, "0")}PMC`)
+  }
+  if (akeCount > 0) {
+    parts.push(`${String(akeCount).padStart(2, "0")}AKE`)
+  }
+
+  return parts.length > 0 ? parts.join("/") : ""
+}
+
 // Re-export types for backward compatibility
 export type { AWBRow, ULDSection, LoadPlanItem, LoadPlanDetail } from "./load-plan-types"
 
@@ -258,7 +292,10 @@ export default function LoadPlanDetailScreen({ loadPlan, onBack, onSave, onNavig
 
       <div className="bg-gray-50">
         <FlightHeaderRow
-          plan={editedPlan}
+          plan={{
+            ...editedPlan,
+            ttlPlnUld: calculateTTLPlnUld(editedPlan) || editedPlan.ttlPlnUld,
+          }}
           onFieldUpdate={updateField}
           isReadOnly={isReadOnly}
         />
@@ -472,6 +509,30 @@ function CombinedTable({
   // Separate ONLY by ramp transfer - not by sector
   const regularSections = allSections.filter((s) => !s.isRampTransfer)
   const rampTransferSections = allSections.filter((s) => s.isRampTransfer)
+  
+  // Create a map to store sequential serial numbers for each AWB
+  // Key: `${sectorIndex}-${uldSectionIndex}-${awbIndex}`, Value: sequential serial number
+  const serialNumberMap = new Map<string, string>()
+  let serialCounter = 1
+  
+  // First pass: assign serial numbers to regular sections
+  regularSections.forEach((section) => {
+    const { sectorIndex, uldSectionIndex, uldSection } = section
+    uldSection.awbs.forEach((awb, awbIndex) => {
+      const key = `${sectorIndex}-${uldSectionIndex}-${awbIndex}`
+      serialNumberMap.set(key, String(serialCounter++).padStart(3, "0"))
+    })
+  })
+  
+  // Second pass: assign serial numbers to ramp transfer sections (continues from regular)
+  rampTransferSections.forEach((section) => {
+    const { sectorIndex, uldSectionIndex, uldSection } = section
+    uldSection.awbs.forEach((awb, awbIndex) => {
+      const key = `${sectorIndex}-${uldSectionIndex}-${awbIndex}`
+      serialNumberMap.set(key, String(serialCounter++).padStart(3, "0"))
+    })
+  })
+  
   return (
     <>
       <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
@@ -540,13 +601,18 @@ function CombinedTable({
                         : assignment?.assignmentData.type === "existing"
                         ? assignment.assignmentData.existingUld
                         : null
-                      const isHovered = hoveredUld === assignmentUld && assignmentUld
+                      const isHovered = !!(hoveredUld && assignmentUld && hoveredUld === assignmentUld)
                       const splitGroups = assignment?.assignmentData.type === "split" ? assignment.assignmentData.splitGroups : []
+                      
+                      // Get sequential serial number from map
+                      const serialKey = `${sectorIndex}-${uldSectionIndex}-${awbIndex}`
+                      const sequentialSer = serialNumberMap.get(serialKey) || awb.ser
+                      const awbWithSequentialSer = { ...awb, ser: sequentialSer }
                       
                       return (
                         <React.Fragment key={awbIndex}>
                           <AWBRow
-                            awb={awb}
+                            awb={awbWithSequentialSer}
                             sectorIndex={sectorIndex}
                             uldSectionIndex={uldSectionIndex}
                             awbIndex={awbIndex}
@@ -614,10 +680,16 @@ function CombinedTable({
                         {uldSection.awbs.map((awb, awbIndex) => {
                           const assignmentKey = `${awb.awbNo}-${sectorIndex}-${uldSectionIndex}-${awbIndex}`
                           const assignment = awbAssignments.get(assignmentKey)
+                          
+                          // Get sequential serial number from map (continues from regular sections)
+                          const serialKey = `${sectorIndex}-${uldSectionIndex}-${awbIndex}`
+                          const sequentialSer = serialNumberMap.get(serialKey) || awb.ser
+                          const awbWithSequentialSer = { ...awb, ser: sequentialSer }
+                          
                           return (
                             <AWBRow
                               key={awbIndex}
-                              awb={awb}
+                              awb={awbWithSequentialSer}
                               sectorIndex={sectorIndex}
                               uldSectionIndex={uldSectionIndex}
                               awbIndex={awbIndex}
@@ -818,50 +890,72 @@ function AWBRow({
         }}
       >
         {/* Left section - Quick Actions (up to and including SHC) */}
-        {leftFields.map(({ key, className }) => (
-          <td
-            key={key}
-            className={`px-2 py-1 ${isReadOnly ? "cursor-pointer" : ""} ${hoveredSection === "left" && isReadOnly ? "bg-blue-50" : ""}`}
-            onMouseEnter={() => isReadOnly && setHoveredSection("left")}
-            onMouseLeave={() => setHoveredSection(null)}
-            onClick={(e) => {
-              if (isReadOnly && onLeftSectionClick) {
-                e.stopPropagation()
-                onLeftSectionClick()
-              }
-            }}
-          >
-            <EditableField
-              value={awb[key] || ""}
-              onChange={(value) => onUpdateField(key, value)}
-              className={`text-xs ${className || ""}`}
-              readOnly={isReadOnly}
-            />
-          </td>
-        ))}
+        {leftFields.map(({ key, className }) => {
+          // Remove whitespace from AWB number
+          const displayValue = key === "awbNo" 
+            ? (awb[key] || "").replace(/\s+/g, "")
+            : (awb[key] || "")
+          
+          return (
+            <td
+              key={key}
+              className={`px-2 py-1 ${isReadOnly ? "cursor-pointer" : ""} ${hoveredSection === "left" && isReadOnly ? "bg-blue-50" : ""}`}
+              onMouseEnter={() => isReadOnly && setHoveredSection("left")}
+              onMouseLeave={() => setHoveredSection(null)}
+              onClick={(e) => {
+                if (isReadOnly && onLeftSectionClick) {
+                  e.stopPropagation()
+                  onLeftSectionClick()
+                }
+              }}
+            >
+              <EditableField
+                value={displayValue}
+                onChange={(value) => {
+                  // Remove whitespace when updating AWB number
+                  const cleanedValue = key === "awbNo" ? value.replace(/\s+/g, "") : value
+                  onUpdateField(key, cleanedValue)
+                }}
+                className={`text-xs ${className || ""}`}
+                readOnly={isReadOnly}
+              />
+            </td>
+          )
+        })}
         
         {/* Right section - AWB Assignment (after SHC) */}
-        {rightFields.map(({ key, className }) => (
-          <td
-            key={key}
-            className={`px-2 py-1 ${isReadOnly ? "cursor-pointer" : ""} ${hoveredSection === "right" && isReadOnly ? "bg-gray-50" : ""}`}
-            onMouseEnter={() => isReadOnly && setHoveredSection("right")}
-            onMouseLeave={() => setHoveredSection(null)}
-            onClick={(e) => {
-              if (isReadOnly && onRowClick) {
-                e.stopPropagation()
-                onRowClick()
-              }
-            }}
-          >
-            <EditableField
-              value={awb[key] || ""}
-              onChange={(value) => onUpdateField(key, value)}
-              className={`text-xs ${className || ""}`}
-              readOnly={isReadOnly}
-            />
-          </td>
-        ))}
+        {rightFields.map(({ key, className }) => {
+          // Remove whitespace from AWB number (though it shouldn't be in right section)
+          const displayValue = key === "awbNo" 
+            ? (awb[key] || "").replace(/\s+/g, "")
+            : (awb[key] || "")
+          
+          return (
+            <td
+              key={key}
+              className={`px-2 py-1 ${isReadOnly ? "cursor-pointer" : ""} ${hoveredSection === "right" && isReadOnly ? "bg-gray-50" : ""}`}
+              onMouseEnter={() => isReadOnly && setHoveredSection("right")}
+              onMouseLeave={() => setHoveredSection(null)}
+              onClick={(e) => {
+                if (isReadOnly && onRowClick) {
+                  e.stopPropagation()
+                  onRowClick()
+                }
+              }}
+            >
+              <EditableField
+                value={displayValue}
+                onChange={(value) => {
+                  // Remove whitespace when updating AWB number
+                  const cleanedValue = key === "awbNo" ? value.replace(/\s+/g, "") : value
+                  onUpdateField(key, cleanedValue)
+                }}
+                className={`text-xs ${className || ""}`}
+                readOnly={isReadOnly}
+              />
+            </td>
+          )
+        })}
         <td className="px-2 py-1">
           {remainingPieces ? (
             <span className="text-xs text-orange-600 font-semibold">{remainingPieces}</span>
@@ -918,7 +1012,7 @@ function AWBRow({
             <td className="px-2 py-1 pl-8 text-xs text-gray-500">
               <span className="text-gray-400">└─</span>
             </td>
-            <td className="px-2 py-1 text-xs font-medium text-gray-700">{awb.awbNo}</td>
+            <td className="px-2 py-1 text-xs font-medium text-gray-700">{awb.awbNo.replace(/\s+/g, "")}</td>
             <td className="px-2 py-1 text-xs text-gray-500">{awb.orgDes}</td>
             <td className="px-2 py-1 text-xs text-gray-700 font-semibold">{group.pieces || "-"}</td>
             <td className="px-2 py-1 text-xs text-gray-500">{groupUld || "-"}</td>

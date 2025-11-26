@@ -89,8 +89,8 @@ export function FlightHeaderRow({ plan, onFieldUpdate, isReadOnly }: FlightHeade
         <EditableField
           value={plan.ttlPlnUld}
           onChange={(value) => onFieldUpdate("ttlPlnUld", value)}
-          className="text-gray-700"
-          readOnly={isReadOnly}
+          className="text-gray-700 font-semibold"
+          readOnly={true}
         />
         <EditableField
           value={plan.uldVersion}
