@@ -195,8 +195,8 @@ export async function saveListsDataToSupabase({
         route_full: sectorInfo.full,
         std_time: stdTime,
         prepared_by: results.header.preparedBy || null,
-        total_planned_uld: null, // Not available in parsed data
-        uld_version: null, // Not available in parsed data
+        total_planned_uld: results.header.ttlPlnUld || null,
+        uld_version: results.header.uldVersion || null,
         prepared_on: preparedOn,
         sector: results.header.sector || null,
       })

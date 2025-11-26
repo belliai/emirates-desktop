@@ -7,6 +7,8 @@ export interface LoadPlanHeader {
   std: string
   preparedBy: string
   preparedOn: string
+  ttlPlnUld?: string
+  uldVersion?: string
 }
 
 export interface Shipment {

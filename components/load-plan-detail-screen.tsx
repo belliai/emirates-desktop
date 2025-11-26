@@ -17,6 +17,40 @@ import { ULDNumberModal } from "./uld-number-modal"
 import { parseULDSection, formatULDSection } from "@/lib/uld-parser"
 import { AWBQuickActionModal } from "./awb-quick-action-modal"
 
+/**
+ * Calculate total PMC and AKE from all ULD sections in the load plan
+ * Returns formatted string like "05PMC/10AKE"
+ */
+function calculateTTLPlnUld(plan: LoadPlanDetail): string {
+  let pmcCount = 0
+  let akeCount = 0
+
+  plan.sectors.forEach((sector) => {
+    sector.uldSections.forEach((uldSection) => {
+      if (uldSection.uld) {
+        const { expandedTypes } = parseULDSection(uldSection.uld)
+        expandedTypes.forEach((type) => {
+          if (type === "PMC") {
+            pmcCount++
+          } else if (type === "AKE") {
+            akeCount++
+          }
+        })
+      }
+    })
+  })
+
+  const parts: string[] = []
+  if (pmcCount > 0) {
+    parts.push(`${String(pmcCount).padStart(2, "0")}PMC`)
+  }
+  if (akeCount > 0) {
+    parts.push(`${String(akeCount).padStart(2, "0")}AKE`)
+  }
+
+  return parts.length > 0 ? parts.join("/") : ""
+}
+
 // Re-export types for backward compatibility
 export type { AWBRow, ULDSection, LoadPlanItem, LoadPlanDetail } from "./load-plan-types"
 
@@ -258,7 +292,10 @@ export default function LoadPlanDetailScreen({ loadPlan, onBack, onSave, onNavig
 
       <div className="bg-gray-50">
         <FlightHeaderRow
-          plan={editedPlan}
+          plan={{
+            ...editedPlan,
+            ttlPlnUld: calculateTTLPlnUld(editedPlan) || editedPlan.ttlPlnUld,
+          }}
           onFieldUpdate={updateField}
           isReadOnly={isReadOnly}
         />
@@ -540,7 +577,7 @@ function CombinedTable({
                         : assignment?.assignmentData.type === "existing"
                         ? assignment.assignmentData.existingUld
                         : null
-                      const isHovered = hoveredUld === assignmentUld && assignmentUld
+                      const isHovered = !!(hoveredUld && assignmentUld && hoveredUld === assignmentUld)
                       const splitGroups = assignment?.assignmentData.type === "split" ? assignment.assignmentData.splitGroups : []
                       
                       return (
