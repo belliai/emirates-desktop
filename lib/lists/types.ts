@@ -9,6 +9,7 @@ export interface LoadPlanHeader {
   preparedOn: string
   ttlPlnUld?: string
   uldVersion?: string
+  headerWarning?: string
 }
 
 export interface Shipment {

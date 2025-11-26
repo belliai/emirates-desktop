@@ -46,6 +46,7 @@ export type LoadPlanDetail = {
   ttlPlnUld: string
   uldVersion: string
   preparedOn: string
+  headerWarning?: string
   remarks?: string[]
   sectors: {
     sector: string

@@ -199,6 +199,7 @@ export async function saveListsDataToSupabase({
         uld_version: results.header.uldVersion || null,
         prepared_on: preparedOn,
         sector: results.header.sector || null,
+        header_warning: results.header.headerWarning || null,
       })
       .select()
       .single()
@@ -242,6 +243,8 @@ export async function saveListsDataToSupabase({
         volume: shipment.volume || null,
         load_volume: shipment.lvol || null,
         special_handling_code: shipment.shc || null,
+        // Manual description - DO NOT include special notes here
+        // Special notes like "[Must be load in Fire containment equipment]" should be stored separately
         manual_description: shipment.manDesc || null,
         product_code_pc: shipment.pcode || null,
         total_handling_charge: shipment.thc && !isNaN(parseFloat(shipment.thc)) ? parseFloat(shipment.thc) : null,
@@ -253,11 +256,12 @@ export async function saveListsDataToSupabase({
         quantity_aqnn: shipment.qnnAqnn || null,
         payment_terms: null, // Not available in parsed data
         warehouse_code: shipment.whs || null,
+        // SI field - only store original SI value, NOT special notes
+        // Special notes like "[Must be load in Fire containment equipment]" are stored in ULD field
         special_instructions: shipment.si || null,
+        // ULD allocation - special notes are appended to ULD field (e.g., "XX 01AKE XX | Must be load in Fire containment equipment")
         uld_allocation: shipment.uld || null,
-        is_ramp_transfer: shipment.isRampTransfer === true || shipment.isRampTransfer === 1,
-        // Note: special notes are not stored as there's no remarks field in the database schema
-        // If needed, they could be stored in manual_description or a separate field
+        is_ramp_transfer: shipment.isRampTransfer === true,
       }))
       
       // Log ramp transfer items being saved
@@ -280,9 +284,23 @@ export async function saveListsDataToSupabase({
           sample_item: {
             serial_number: loadPlanItems[0].serial_number,
             awb_number: loadPlanItems[0].awb_number,
+            uld_allocation: loadPlanItems[0].uld_allocation,
             is_ramp_transfer: loadPlanItems[0].is_ramp_transfer,
           }
         })
+        
+        // Log items with BULK ULD allocation
+        const bulkItems = loadPlanItems.filter(item => item.uld_allocation && item.uld_allocation.includes("BULK"))
+        if (bulkItems.length > 0) {
+          console.log(`[v0] Found ${bulkItems.length} item(s) with BULK ULD allocation:`, 
+            bulkItems.map(item => ({
+              serial_number: item.serial_number,
+              awb_number: item.awb_number,
+              uld_allocation: item.uld_allocation,
+              is_ramp_transfer: item.is_ramp_transfer
+            }))
+          )
+        }
       }
 
       // Try to insert with is_ramp_transfer field first
