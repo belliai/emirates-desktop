@@ -17,7 +17,6 @@ export default function BuildupStaffScreen({ initialStaff, onNavigate }: Buildup
   const { loadPlans, getFlightsByStaff } = useLoadPlans()
   const [selectedStaff, setSelectedStaff] = useState<"david" | "harley">(initialStaff || "david")
   const [selectedLoadPlan, setSelectedLoadPlan] = useState<LoadPlanDetail | null>(null)
-  const [savedDetails, setSavedDetails] = useState<Map<string, LoadPlanDetail>>(new Map())
   
   // Update selectedStaff if initialStaff prop changes
   React.useEffect(() => {
@@ -38,14 +37,6 @@ export default function BuildupStaffScreen({ initialStaff, onNavigate }: Buildup
   const assignedLoadPlans = getFlightsByStaff(selectedStaff)
 
   const handleRowClick = async (loadPlan: LoadPlan) => {
-    // Check if we have a saved version first
-    const savedDetail = savedDetails.get(loadPlan.flight)
-    if (savedDetail) {
-      console.log(`[BuildupStaffScreen] Using saved detail for ${loadPlan.flight}`)
-      setSelectedLoadPlan(savedDetail)
-      return
-    }
-
     // Try to fetch from Supabase
     try {
       console.log(`[BuildupStaffScreen] Fetching load plan detail from Supabase for ${loadPlan.flight}`)
@@ -68,14 +59,6 @@ export default function BuildupStaffScreen({ initialStaff, onNavigate }: Buildup
     // Don't show dummy data - just return if no data found
   }
 
-  const handleSave = (updatedPlan: LoadPlanDetail) => {
-    setSavedDetails((prev) => {
-      const updated = new Map(prev)
-      updated.set(updatedPlan.flight, updatedPlan)
-      return updated
-    })
-  }
-
   const handleNavigateToBuildupStaff = (staffName: string) => {
     setSelectedLoadPlan(null)
     if (onNavigate) {
@@ -88,7 +71,7 @@ export default function BuildupStaffScreen({ initialStaff, onNavigate }: Buildup
       <LoadPlanDetailScreen
         loadPlan={selectedLoadPlan}
         onBack={() => setSelectedLoadPlan(null)}
-        onSave={handleSave}
+        // No onSave - makes it read-only with Handover and Generate BCR buttons
         onNavigateToBuildupStaff={handleNavigateToBuildupStaff}
         enableBulkCheckboxes={true}
       />
