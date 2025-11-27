@@ -21,6 +21,9 @@ import SituationalAwarenessScreen from "@/components/situational-awareness-scree
 import WorkAreaScreen from "@/components/work-area-screen"
 import FlightsViewScreen from "@/components/flights-view-screen"
 import ShiftSummaryReportScreen from "@/components/shift-summary-report-screen"
+import BUPAllocationListScreen from "@/components/bup-allocation-list-screen"
+import ScreeningSummaryScreen from "@/components/screening-summary-screen"
+import IncomingWorkloadScreen from "@/components/incoming-workload-screen"
 import SideNavigation from "@/components/side-navigation"
 import { FlightProvider, useFlights } from "@/lib/flight-context"
 import { LoadPlanProvider } from "@/lib/load-plan-context"
@@ -120,22 +123,13 @@ function AppContent() {
       case "situational-awareness":
         return <SituationalAwarenessScreen onNavigate={handleNavigate} />
       case "incoming-workload":
-        return <SituationalAwarenessScreen onNavigate={handleNavigate} />
+        return <IncomingWorkloadScreen />
       case "flights-view":
         return <FlightsViewScreen />
       case "bup-allocation-list":
-        return (
-          <div className="min-h-screen bg-gray-50 p-4">
-            <div className="max-w-full">
-              <div className="bg-white rounded-lg border border-gray-200 p-8 text-center">
-                <h2 className="text-xl font-semibold text-gray-900 mb-2">Coming Soon</h2>
-                <p className="text-gray-600">This feature is under development</p>
-              </div>
-            </div>
-          </div>
-        )
+        return <BUPAllocationListScreen onNavigate={handleNavigate} />
       case "screening":
-        return <BDNDashboardScreen onNavigate={handleNavigate} />
+        return <ScreeningSummaryScreen />
       case "work-area-gcr":
         return <WorkAreaScreen workArea="GCR" onBack={() => setCurrentScreen("desktop")} />
       case "work-area-per":

@@ -42,8 +42,8 @@ export function UploadModal({
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <Card className="max-w-2xl w-full">
         <div className="border-b border-gray-200 px-6 py-4 relative">
-          <h2 className="text-xl font-semibold text-gray-900">Upload Load Plan</h2>
-          <p className="text-sm text-gray-500 mt-1">Upload your load plan file in Markdown, Word, RTF, or PDF format</p>
+          <h2 className="text-xl font-semibold text-gray-900">Upload BUP Allocation List</h2>
+          <p className="text-sm text-gray-500 mt-1">Upload your BUP allocation CSV files</p>
           <button
             onClick={() => !isProcessing && onClose()}
             disabled={isProcessing}
@@ -83,12 +83,12 @@ export function UploadModal({
                   <Upload className="w-12 h-12 text-gray-400" />
                   <div>
                     <p className="text-gray-700 font-medium mb-1">Click to upload or drag and drop</p>
-                    <p className="text-sm text-gray-500">.md, .docx, .doc, .rtf, .pdf - Maximum file size 10 MB (multiple files supported)</p>
+                    <p className="text-sm text-gray-500">.csv - Maximum file size 10 MB (multiple files supported)</p>
                   </div>
                   <input
                     ref={fileInputRef}
                     type="file"
-                    accept=".md,.docx,.doc,.rtf,.pdf"
+                    accept=".csv"
                     onChange={onFileInputChange}
                     className="hidden"
                     id="lists-file-upload"

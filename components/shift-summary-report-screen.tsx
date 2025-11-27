@@ -1,1150 +1,1185 @@
 "use client"
 
-import { useState } from "react"
-import { ChevronDown, ChevronRight } from "lucide-react"
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
+import { useState, useMemo } from "react"
+import { EditableField } from "./editable-field"
 
-// Data from CSV files - Plan vs Advance
-const planVsAdvanceData = {
-  time1300_1600: {
-    planned: { pmcAmf: 244, alfPla: 14, akeRke: 78, sclrPcs: 0, total: 336 },
-    built: { pmcAmf: 192, alfPla: 14, akeRke: 64, sclrPcs: 0, total: 270 },
-    thru: { pmcAmf: 0, alfPla: 0, akeRke: 0, sclrPcs: 0, total: 0 },
-    total: { pmcAmf: 192, alfPla: 14, akeRke: 64, sclrPcs: 0, total: 270 },
-    pending: { pmcAmf: 52, alfPla: 0, akeRke: 14, sclrPcs: 0, total: 66 },
-  },
-  time1601_2359: {
-    planned: { pmcAmf: 76, alfPla: 11, akeRke: 23, sclrPcs: 0, total: 110 },
-    built: { pmcAmf: 39, alfPla: 1, akeRke: 12, sclrPcs: 0, total: 52 },
-    thru: { pmcAmf: 0, alfPla: 0, akeRke: 0, sclrPcs: 0, total: 0 },
-    total: { pmcAmf: 39, alfPla: 1, akeRke: 12, sclrPcs: 0, total: 52 },
-    pending: { pmcAmf: 37, alfPla: 10, akeRke: 11, sclrPcs: 0, total: 58 },
-  },
-  totalAdvance: { pmcAmf: 231, alfPla: 15, akeRke: 76, sclrPcs: 0, total: 322 },
-  totalPending: { pmcAmf: 89, alfPla: 10, akeRke: 25, sclrPcs: 0, total: 124 },
-  dayShiftHandover: {
-    pendingAdvance: 124,
-    firstWave: 336,
-    secondWave: 110,
-    total: 446,
-    staffs: 0,
-    averageEfficiency: 1.90,
-    overtime: 0,
-    perStaffEfficiency: 22.8,
-    totalStaffs: 0,
-    staffsRequired: 14,
-    totalULD: 322,
-    aftBuilt: 0,
-    totalHours: 0,
-    emBuilt: 0,
-    efficiency: "#DIV/0!",
-    advance: 322,
-    firstWavePending: 66,
-    secondWavePending: 58,
-    totalPending: 124,
-    screeningTotal: 322,
-  },
-  nightShiftHandover: {
-    pendingAdvance: 124,
-    firstWave: 336,
-    secondWave: 110,
-    total: 446,
-    pendingULDsTill1600: 66,
-    pendingULDsFrom1600: 58,
-    pendingTotal: 248,
-    staffs: 42,
-    averageEfficiency: 1.90,
-    overtime: 5,
-    perStaffEfficiency: 23,
-    totalStaffs: 47,
-    staffsRequired: 44,
-    totalULD: 992,
-    emBuilt: 77,
-    totalHours: 530,
-    lmBuilt: 593,
-    efficiency: 1.87,
-    advance: 322,
-    firstWavePending: 66,
-    secondWavePending: 58,
-    totalPending: 124,
-    screeningTotal: 992,
-    plannedPcs: 1602,
-    builtPcs: 1602,
-    supervisor: "Roosevelt",
-    emPending: 77,
-    lmPending: 371,
-  },
+// Types
+type ULDBreakdown = {
+  pmcAmf: number
+  alfPla: number
+  akeRke: number
+  sclrPcs: number
 }
 
-// Data from Advance Report CSV
-const advanceReportData = {
-  advanceUnits: {
-    totalFlights: 40,
-    totalStaff: 40,
-    thruULDs: { pmc: 0, alf: 0, ake: 0 },
-    builtULDs: { pmc: 192, alf: 14, ake: 64 },
-    total: 270,
-    pendingUnits: { pmc: 0, alf: 0, ake: 0 },
-    totalPending: 0,
-  },
-  bonusUnits: {
-    totalFlights: 28,
-    totalStaff: 28,
-    thruULDs: { pmc: 0, alf: 0, ake: 0 },
-    builtULDs: { pmc: 39, alf: 1, ake: 12 },
-    total: 52,
-    pendingUnits: { pmc: 0, alf: 0, ake: 0 },
-    totalPending: 0,
-  },
-  totalBuiltUnits: 322,
-  totalPendingUnits: 0,
+type TimeWindowData = {
+  planned: ULDBreakdown
+  built: ULDBreakdown
+  thru: ULDBreakdown
+  total: ULDBreakdown
+  pending: ULDBreakdown
 }
 
-// Sample flight data from BUP Shift Details Night CSV (simplified for display)
-const bupShiftDetailsData = {
-  shift: "04",
-  dutyHours: "21:00-09:00",
-  date: "24TH NOV2025",
-  supervisor: "Roosevelt",
-  supervisorID: "S416437",
-  totalULDs: {
-    pmc: 616,
-    alf: 59,
-    ake: 317,
-    total: 992,
-  },
-  thruULDs: {
-    pmc: 0,
-    alf: 0,
-    ake: 0,
-    total: 0,
-  },
-  flights: [
-    { no: 1, flight: "0801", etd: "00:15", dst: "DXB-JED", staff: "L/OVER", pmc: 0, alf: 0, ake: 0, total: 0 },
-    { no: 2, flight: "0977", etd: "01:15", dst: "DXB-IKA", staff: "L/OVER", pmc: 0, alf: 0, ake: 0, total: 0 },
-    { no: 3, flight: "0807", etd: "01:15", dst: "DXB-MED", staff: "SOHAN", pmc: 1, alf: 1, ake: 0, total: 1 },
-    // Add more flights as needed - truncated for brevity
-  ],
-  staffDetails: [
-    { srNo: 1, name: "DAVID", staffNo: "439111", flightCount: 0, uldCount: 0, deployment: "Chaser", contact: "", dutyHours: "12", actualHours: "12" },
-    { srNo: 2, name: "MARK", staffNo: "418664", flightCount: 0, uldCount: 0, deployment: "RXS", contact: "", dutyHours: "12", actualHours: "12" },
-    // Add more staff as needed
-  ],
+type FlightData = {
+  no: number
+  flight: string
+  etd: string
+  dst: string
+  staff: string
+  builtPmc: number
+  builtAlf: number
+  builtAke: number
+  thruPmc: number
+  thruAlf: number
+  thruAke: number
 }
 
 export default function ShiftSummaryReportScreen() {
-  const [expandedSections, setExpandedSections] = useState<Set<string>>(
-    new Set(["plan-vs-advance", "bup-shift-details", "advance-report"])
-  )
+  const [shiftType, setShiftType] = useState<"Night" | "Day">("Night")
+  const [date, setDate] = useState("24/11/2025")
+  const [day, setDay] = useState("Monday")
+  const [shift, setShift] = useState("4")
+  const [dutyHours, setDutyHours] = useState("21:00-09:00")
+  const [supervisor, setSupervisor] = useState("Roosevelt")
+  const [supervisorID, setSupervisorID] = useState("S416437")
 
-  const toggleSection = (sectionId: string) => {
-    setExpandedSections((prev) => {
-      const newSet = new Set(prev)
-      if (newSet.has(sectionId)) {
-        newSet.delete(sectionId)
-      } else {
-        newSet.add(sectionId)
+  // Planned ULDs - Editable inputs (from Plan vs Advance)
+  const [planned1300_1600, setPlanned1300_1600] = useState<ULDBreakdown>({
+    pmcAmf: 244,
+    alfPla: 14,
+    akeRke: 78,
+    sclrPcs: 0,
+  })
+  const [planned1601_2359, setPlanned1601_2359] = useState<ULDBreakdown>({
+    pmcAmf: 76,
+    alfPla: 11,
+    akeRke: 23,
+    sclrPcs: 0,
+  })
+
+  // Advance Report - Flight data (editable inputs)
+  const [advanceFlights, setAdvanceFlights] = useState<FlightData[]>([
+    { no: 1, flight: "0943", etd: "13:00", dst: "DXB-BGW", staff: "manu", builtPmc: 3, builtAlf: 0, builtAke: 3, thruPmc: 0, thruAlf: 0, thruAke: 0 },
+    { no: 2, flight: "0502", etd: "13:15", dst: "DXB-BOM", staff: "WAHAB", builtPmc: 4, builtAlf: 1, builtAke: 0, thruPmc: 0, thruAlf: 0, thruAke: 0 },
+    { no: 3, flight: "0566", etd: "13:35", dst: "DXB-BLR", staff: "RENATO", builtPmc: 7, builtAlf: 0, builtAke: 0, thruPmc: 0, thruAlf: 0, thruAke: 0 },
+    { no: 4, flight: "0041", etd: "13:40", dst: "DXB-LHR", staff: "HARLEY", builtPmc: 8, builtAlf: 1, builtAke: 2, thruPmc: 0, thruAlf: 0, thruAke: 0 },
+    { no: 5, flight: "0187", etd: "14:00", dst: "DXB-BCN", staff: "BILAL", builtPmc: 12, builtAlf: 0, builtAke: 3, thruPmc: 0, thruAlf: 0, thruAke: 0 },
+  ])
+  const [bonusFlights, setBonusFlights] = useState<FlightData[]>([
+    { no: 1, flight: "0839", etd: "16:00", dst: "DXB-BAH", staff: "KINTU", builtPmc: 3, builtAlf: 0, builtAke: 2, thruPmc: 0, thruAlf: 0, thruAke: 0 },
+    { no: 2, flight: "0005", etd: "16:05", dst: "DXB-LHR", staff: "HARLEY", builtPmc: 3, builtAlf: 0, builtAke: 3, thruPmc: 0, thruAlf: 0, thruAke: 0 },
+    { no: 3, flight: "0648", etd: "16:10", dst: "DXB-CMB", staff: "BRIGHT", builtPmc: 5, builtAlf: 0, builtAke: 1, thruPmc: 0, thruAlf: 0, thruAke: 0 },
+  ])
+
+  // BUP Shift Details - Flight data (editable inputs)
+  const [bupFlights, setBupFlights] = useState<FlightData[]>([
+    { no: 1, flight: "0801", etd: "00:15", dst: "DXB-JED", staff: "L/OVER", builtPmc: 0, builtAlf: 0, builtAke: 0, thruPmc: 0, thruAlf: 0, thruAke: 0 },
+    { no: 2, flight: "0977", etd: "01:15", dst: "DXB-IKA", staff: "L/OVER", builtPmc: 0, builtAlf: 0, builtAke: 0, thruPmc: 0, thruAlf: 0, thruAke: 0 },
+    { no: 3, flight: "0807", etd: "01:15", dst: "DXB-MED", staff: "SOHAN", builtPmc: 1, builtAlf: 1, builtAke: 0, thruPmc: 0, thruAlf: 0, thruAke: 0 },
+    { no: 4, flight: "0815", etd: "01:25", dst: "DXB-RUH", staff: "HARLEY", builtPmc: 4, builtAlf: 2, builtAke: 0, thruPmc: 0, thruAlf: 0, thruAke: 0 },
+    { no: 5, flight: "0582", etd: "01:55", dst: "DXB-DAC", staff: "L/OVER", builtPmc: 0, builtAlf: 0, builtAke: 0, thruPmc: 0, thruAlf: 0, thruAke: 0 },
+  ])
+
+  // Calculate totals from Advance Report flights (formula: SUM from flights)
+  const advanceReportTotals = useMemo(() => {
+    const advanceBuilt = advanceFlights.reduce(
+      (acc, f) => ({
+        pmcAmf: acc.pmcAmf + f.builtPmc,
+        alfPla: acc.alfPla + f.builtAlf,
+        akeRke: acc.akeRke + f.builtAke,
+        sclrPcs: 0,
+      }),
+      { pmcAmf: 0, alfPla: 0, akeRke: 0, sclrPcs: 0 }
+    )
+    const advanceThru = advanceFlights.reduce(
+      (acc, f) => ({
+        pmcAmf: acc.pmcAmf + f.thruPmc,
+        alfPla: acc.alfPla + f.thruAlf,
+        akeRke: acc.akeRke + f.thruAke,
+        sclrPcs: 0,
+      }),
+      { pmcAmf: 0, alfPla: 0, akeRke: 0, sclrPcs: 0 }
+    )
+    const bonusBuilt = bonusFlights.reduce(
+      (acc, f) => ({
+        pmcAmf: acc.pmcAmf + f.builtPmc,
+        alfPla: acc.alfPla + f.builtAlf,
+        akeRke: acc.akeRke + f.builtAke,
+        sclrPcs: 0,
+      }),
+      { pmcAmf: 0, alfPla: 0, akeRke: 0, sclrPcs: 0 }
+    )
+    const bonusThru = bonusFlights.reduce(
+      (acc, f) => ({
+        pmcAmf: acc.pmcAmf + f.thruPmc,
+        alfPla: acc.alfPla + f.thruAlf,
+        akeRke: acc.akeRke + f.thruAke,
+        sclrPcs: 0,
+      }),
+      { pmcAmf: 0, alfPla: 0, akeRke: 0, sclrPcs: 0 }
+    )
+
+    return {
+      advanceBuilt,
+      advanceThru,
+      bonusBuilt,
+      bonusThru,
+      totalBuilt: {
+        pmcAmf: advanceBuilt.pmcAmf + bonusBuilt.pmcAmf,
+        alfPla: advanceBuilt.alfPla + bonusBuilt.alfPla,
+        akeRke: advanceBuilt.akeRke + bonusBuilt.akeRke,
+        sclrPcs: 0,
+      },
+      totalThru: {
+        pmcAmf: advanceThru.pmcAmf + bonusThru.pmcAmf,
+        alfPla: advanceThru.alfPla + bonusThru.alfPla,
+        akeRke: advanceThru.akeRke + bonusThru.akeRke,
+        sclrPcs: 0,
+      },
+    }
+  }, [advanceFlights, bonusFlights])
+
+  // Calculate BUP Shift Details totals (formula: SUM from flights)
+  const bupTotals = useMemo(() => {
+    return bupFlights.reduce(
+      (acc, f) => ({
+        built: {
+          pmcAmf: acc.built.pmcAmf + f.builtPmc,
+          alfPla: acc.built.alfPla + f.builtAlf,
+          akeRke: acc.built.akeRke + f.builtAke,
+          sclrPcs: 0,
+        },
+        thru: {
+          pmcAmf: acc.thru.pmcAmf + f.thruPmc,
+          alfPla: acc.thru.alfPla + f.thruAlf,
+          akeRke: acc.thru.akeRke + f.thruAke,
+          sclrPcs: 0,
+        },
+      }),
+      {
+        built: { pmcAmf: 0, alfPla: 0, akeRke: 0, sclrPcs: 0 },
+        thru: { pmcAmf: 0, alfPla: 0, akeRke: 0, sclrPcs: 0 },
       }
-      return newSet
-    })
+    )
+  }, [bupFlights])
+
+  // Calculate Plan vs Advance totals (formula: Built + Thru)
+  const time1300_1600 = useMemo((): TimeWindowData => {
+    const built = advanceReportTotals.advanceBuilt
+    const thru = advanceReportTotals.advanceThru
+    const total = {
+      pmcAmf: built.pmcAmf + thru.pmcAmf,
+      alfPla: built.alfPla + thru.alfPla,
+      akeRke: built.akeRke + thru.akeRke,
+      sclrPcs: 0,
+    }
+    const pending = {
+      pmcAmf: planned1300_1600.pmcAmf - total.pmcAmf,
+      alfPla: planned1300_1600.alfPla - total.alfPla,
+      akeRke: planned1300_1600.akeRke - total.akeRke,
+      sclrPcs: 0,
+    }
+    return { planned: planned1300_1600, built, thru, total, pending }
+  }, [planned1300_1600, advanceReportTotals.advanceBuilt, advanceReportTotals.advanceThru])
+
+  const time1601_2359 = useMemo((): TimeWindowData => {
+    const built = advanceReportTotals.bonusBuilt
+    const thru = advanceReportTotals.bonusThru
+    const total = {
+      pmcAmf: built.pmcAmf + thru.pmcAmf,
+      alfPla: built.alfPla + thru.alfPla,
+      akeRke: built.akeRke + thru.akeRke,
+      sclrPcs: 0,
+    }
+    const pending = {
+      pmcAmf: planned1601_2359.pmcAmf - total.pmcAmf,
+      alfPla: planned1601_2359.alfPla - total.alfPla,
+      akeRke: planned1601_2359.akeRke - total.akeRke,
+      sclrPcs: 0,
+    }
+    return { planned: planned1601_2359, built, thru, total, pending }
+  }, [planned1601_2359, advanceReportTotals.bonusBuilt, advanceReportTotals.bonusThru])
+
+  // Calculate total advance and total pending
+  const totalAdvance = useMemo(() => ({
+    pmcAmf: time1300_1600.total.pmcAmf + time1601_2359.total.pmcAmf,
+    alfPla: time1300_1600.total.alfPla + time1601_2359.total.alfPla,
+    akeRke: time1300_1600.total.akeRke + time1601_2359.total.akeRke,
+    sclrPcs: 0,
+  }), [time1300_1600, time1601_2359])
+
+  const totalPending = useMemo(() => ({
+    pmcAmf: time1300_1600.pending.pmcAmf + time1601_2359.pending.pmcAmf,
+    alfPla: time1300_1600.pending.alfPla + time1601_2359.pending.alfPla,
+    akeRke: time1300_1600.pending.akeRke + time1601_2359.pending.akeRke,
+    sclrPcs: 0,
+  }), [time1300_1600, time1601_2359])
+
+  // Helper to calculate total from breakdown
+  const getTotal = (breakdown: ULDBreakdown) =>
+    breakdown.pmcAmf + breakdown.alfPla + breakdown.akeRke + breakdown.sclrPcs
+
+  // Helper to update flight data
+  const updateFlight = (
+    flights: FlightData[],
+    setFlights: React.Dispatch<React.SetStateAction<FlightData[]>>,
+    index: number,
+    field: keyof FlightData,
+    value: string | number
+  ) => {
+    const updated = [...flights]
+    updated[index] = { ...updated[index], [field]: value }
+    setFlights(updated)
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 p-4">
-      <div className="max-w-full">
-        {/* Header */}
-        <div className="mb-4 px-2">
-          <h2 className="text-lg font-semibold text-gray-900">Shift Summary Report</h2>
-          <p className="text-sm text-gray-500 mt-1">Date: 24/11/2025 | Day: Monday | Shift: 4 | Duty: 21:00-09:00</p>
+    <div className="min-h-screen bg-white p-2" style={{ fontFamily: "Arial, sans-serif", fontSize: "11px" }}>
+      <div className="max-w-full space-y-2">
+        {/* TOP SECTION: Advance Planned vs Built */}
+        <div className="border border-gray-400 p-2 bg-white">
+          <div className="grid grid-cols-2 gap-2 mb-2">
+            <div>
+              <div className="text-xs font-semibold mb-1">Advance planned v/s Built</div>
+              <div className="text-xs text-gray-600">
+                <span className="mr-4">Date</span>
+                <EditableField value={date} onChange={setDate} className="text-xs" />
+                <span className="mx-2">|</span>
+                <span className="mr-2">Day</span>
+                <EditableField value={day} onChange={setDay} className="text-xs" />
         </div>
-
-        {/* Plan vs Advance Section - Top Header */}
-        <Collapsible
-          open={expandedSections.has("plan-vs-advance")}
-          onOpenChange={() => toggleSection("plan-vs-advance")}
-        >
-          <div className="bg-white rounded-lg border border-gray-200 mb-4">
-            <CollapsibleTrigger className="w-full">
-              <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 hover:bg-gray-50">
-                <div className="flex items-center gap-2">
-                  {expandedSections.has("plan-vs-advance") ? (
-                    <ChevronDown className="w-4 h-4 text-gray-500" />
-                  ) : (
-                    <ChevronRight className="w-4 h-4 text-gray-500" />
-                  )}
-                  <h3 className="text-sm font-semibold text-gray-900">Advance planned v/s Built</h3>
                 </div>
+            <div className="text-right text-xs text-gray-600">
+              <div>
+                <span className="mr-2">Shift</span>
+                <EditableField value={shift} onChange={setShift} className="text-xs w-8" />
+                <span className="mx-2">|</span>
+                <span className="mr-2">Duty</span>
+                <EditableField value={dutyHours} onChange={setDutyHours} className="text-xs" />
               </div>
-            </CollapsibleTrigger>
-            <CollapsibleContent>
-              <div className="p-4">
+            </div>
+          </div>
+
                 {/* 1300-1600 Section */}
-                <div className="mb-6">
-                  <h4 className="text-xs font-semibold text-gray-700 mb-3">1300-1600</h4>
-                  <div className="grid grid-cols-2 gap-4">
+          <div className="mb-3">
+            <div className="text-xs font-semibold mb-1">1300-1600</div>
+            <div className="grid grid-cols-3 gap-2">
                     {/* Planned */}
-                    <div className="border border-gray-200 rounded p-3">
-                      <h5 className="text-xs font-semibold text-gray-700 mb-2">Planned</h5>
-                      <table className="w-full text-xs">
+              <div className="border border-gray-400">
+                <div className="bg-gray-200 px-1 py-0.5 text-xs font-semibold border-b border-gray-400">Planned</div>
+                <table className="w-full text-xs border-collapse">
                         <thead>
-                          <tr className="bg-gray-50">
-                            <th className="px-2 py-1 text-left">Details</th>
-                            <th className="px-2 py-1 text-right">PMC-AMF</th>
-                            <th className="px-2 py-1 text-right">ALF-PLA</th>
-                            <th className="px-2 py-1 text-right">AKE-RKE</th>
-                            <th className="px-2 py-1 text-right">SCLR Pcs</th>
-                            <th className="px-2 py-1 text-right">Total</th>
+                    <tr className="bg-gray-100">
+                      <th className="border border-gray-400 px-1 py-0.5 text-left">Details</th>
+                      <th className="border border-gray-400 px-1 py-0.5 text-right">PMC-AMF</th>
+                      <th className="border border-gray-400 px-1 py-0.5 text-right">ALF-PLA</th>
+                      <th className="border border-gray-400 px-1 py-0.5 text-right">AKE-RKE</th>
+                      <th className="border border-gray-400 px-1 py-0.5 text-right">SCLR Pcs</th>
+                      <th className="border border-gray-400 px-1 py-0.5 text-right">Total</th>
                           </tr>
                         </thead>
                         <tbody>
                           <tr>
-                            <td className="px-2 py-1">Planned</td>
-                            <td className="px-2 py-1 text-right">{planVsAdvanceData.time1300_1600.planned.pmcAmf}</td>
-                            <td className="px-2 py-1 text-right">{planVsAdvanceData.time1300_1600.planned.alfPla}</td>
-                            <td className="px-2 py-1 text-right">{planVsAdvanceData.time1300_1600.planned.akeRke}</td>
-                            <td className="px-2 py-1 text-right">{planVsAdvanceData.time1300_1600.planned.sclrPcs}</td>
-                            <td className="px-2 py-1 text-right font-semibold">{planVsAdvanceData.time1300_1600.planned.total}</td>
+                      <td className="border border-gray-400 px-1 py-0.5">Planned</td>
+                      <td className="border border-gray-400 px-1 py-0.5 text-right">
+                        <EditableField
+                          value={planned1300_1600.pmcAmf.toString()}
+                          onChange={(v) =>
+                            setPlanned1300_1600((prev) => ({ ...prev, pmcAmf: parseInt(v) || 0 }))
+                          }
+                          type="number"
+                          className="w-12 text-right text-xs"
+                        />
+                      </td>
+                      <td className="border border-gray-400 px-1 py-0.5 text-right">
+                        <EditableField
+                          value={planned1300_1600.alfPla.toString()}
+                          onChange={(v) =>
+                            setPlanned1300_1600((prev) => ({ ...prev, alfPla: parseInt(v) || 0 }))
+                          }
+                          type="number"
+                          className="w-12 text-right text-xs"
+                        />
+                      </td>
+                      <td className="border border-gray-400 px-1 py-0.5 text-right">
+                        <EditableField
+                          value={planned1300_1600.akeRke.toString()}
+                          onChange={(v) =>
+                            setPlanned1300_1600((prev) => ({ ...prev, akeRke: parseInt(v) || 0 }))
+                          }
+                          type="number"
+                          className="w-12 text-right text-xs"
+                        />
+                      </td>
+                      <td className="border border-gray-400 px-1 py-0.5 text-right">
+                        <EditableField
+                          value={planned1300_1600.sclrPcs.toString()}
+                          onChange={(v) =>
+                            setPlanned1300_1600((prev) => ({ ...prev, sclrPcs: parseInt(v) || 0 }))
+                          }
+                          type="number"
+                          className="w-12 text-right text-xs"
+                        />
+                      </td>
+                      <td className="border border-gray-400 px-1 py-0.5 text-right font-semibold bg-gray-50">
+                        {getTotal(planned1300_1600)}
+                      </td>
                           </tr>
                         </tbody>
                       </table>
                     </div>
 
                     {/* Advance Built */}
-                    <div className="border border-gray-200 rounded p-3">
-                      <h5 className="text-xs font-semibold text-gray-700 mb-2">Advance Built</h5>
-                      <table className="w-full text-xs">
+              <div className="border border-gray-400">
+                <div className="bg-gray-200 px-1 py-0.5 text-xs font-semibold border-b border-gray-400">Advance built</div>
+                <table className="w-full text-xs border-collapse">
                         <thead>
-                          <tr className="bg-gray-50">
-                            <th className="px-2 py-1 text-left">Details</th>
-                            <th className="px-2 py-1 text-right">PMC-AMF</th>
-                            <th className="px-2 py-1 text-right">ALF-PLA</th>
-                            <th className="px-2 py-1 text-right">AKE-RKE</th>
-                            <th className="px-2 py-1 text-right">SCLR Pcs</th>
-                            <th className="px-2 py-1 text-right">Total</th>
+                    <tr className="bg-gray-100">
+                      <th className="border border-gray-400 px-1 py-0.5 text-left">Details</th>
+                      <th className="border border-gray-400 px-1 py-0.5 text-right">PMC-AMF</th>
+                      <th className="border border-gray-400 px-1 py-0.5 text-right">ALF-PLA</th>
+                      <th className="border border-gray-400 px-1 py-0.5 text-right">AKE-RKE</th>
+                      <th className="border border-gray-400 px-1 py-0.5 text-right">SCLR Pcs</th>
+                      <th className="border border-gray-400 px-1 py-0.5 text-right">Total</th>
                           </tr>
                         </thead>
                         <tbody>
                           <tr>
-                            <td className="px-2 py-1">Built</td>
-                            <td className="px-2 py-1 text-right">{planVsAdvanceData.time1300_1600.built.pmcAmf}</td>
-                            <td className="px-2 py-1 text-right">{planVsAdvanceData.time1300_1600.built.alfPla}</td>
-                            <td className="px-2 py-1 text-right">{planVsAdvanceData.time1300_1600.built.akeRke}</td>
-                            <td className="px-2 py-1 text-right">{planVsAdvanceData.time1300_1600.built.sclrPcs}</td>
-                            <td className="px-2 py-1 text-right">{planVsAdvanceData.time1300_1600.built.total}</td>
+                      <td className="border border-gray-400 px-1 py-0.5">Built</td>
+                      <td className="border border-gray-400 px-1 py-0.5 text-right">{time1300_1600.built.pmcAmf}</td>
+                      <td className="border border-gray-400 px-1 py-0.5 text-right">{time1300_1600.built.alfPla}</td>
+                      <td className="border border-gray-400 px-1 py-0.5 text-right">{time1300_1600.built.akeRke}</td>
+                      <td className="border border-gray-400 px-1 py-0.5 text-right">{time1300_1600.built.sclrPcs}</td>
+                      <td className="border border-gray-400 px-1 py-0.5 text-right">{getTotal(time1300_1600.built)}</td>
                           </tr>
                           <tr>
-                            <td className="px-2 py-1">Thru</td>
-                            <td className="px-2 py-1 text-right">{planVsAdvanceData.time1300_1600.thru.pmcAmf}</td>
-                            <td className="px-2 py-1 text-right">{planVsAdvanceData.time1300_1600.thru.alfPla}</td>
-                            <td className="px-2 py-1 text-right">{planVsAdvanceData.time1300_1600.thru.akeRke}</td>
-                            <td className="px-2 py-1 text-right">{planVsAdvanceData.time1300_1600.thru.sclrPcs}</td>
-                            <td className="px-2 py-1 text-right">{planVsAdvanceData.time1300_1600.thru.total}</td>
+                      <td className="border border-gray-400 px-1 py-0.5">Thru</td>
+                      <td className="border border-gray-400 px-1 py-0.5 text-right">{time1300_1600.thru.pmcAmf}</td>
+                      <td className="border border-gray-400 px-1 py-0.5 text-right">{time1300_1600.thru.alfPla}</td>
+                      <td className="border border-gray-400 px-1 py-0.5 text-right">{time1300_1600.thru.akeRke}</td>
+                      <td className="border border-gray-400 px-1 py-0.5 text-right">{time1300_1600.thru.sclrPcs}</td>
+                      <td className="border border-gray-400 px-1 py-0.5 text-right">{getTotal(time1300_1600.thru)}</td>
                           </tr>
-                          <tr className="bg-gray-50 font-semibold">
-                            <td className="px-2 py-1">TOTAL</td>
-                            <td className="px-2 py-1 text-right">{planVsAdvanceData.time1300_1600.total.pmcAmf}</td>
-                            <td className="px-2 py-1 text-right">{planVsAdvanceData.time1300_1600.total.alfPla}</td>
-                            <td className="px-2 py-1 text-right">{planVsAdvanceData.time1300_1600.total.akeRke}</td>
-                            <td className="px-2 py-1 text-right">{planVsAdvanceData.time1300_1600.total.sclrPcs}</td>
-                            <td className="px-2 py-1 text-right">{planVsAdvanceData.time1300_1600.total.total}</td>
+                    <tr className="bg-gray-200 font-semibold">
+                      <td className="border border-gray-400 px-1 py-0.5">TOTAL</td>
+                      <td className="border border-gray-400 px-1 py-0.5 text-right">{time1300_1600.total.pmcAmf}</td>
+                      <td className="border border-gray-400 px-1 py-0.5 text-right">{time1300_1600.total.alfPla}</td>
+                      <td className="border border-gray-400 px-1 py-0.5 text-right">{time1300_1600.total.akeRke}</td>
+                      <td className="border border-gray-400 px-1 py-0.5 text-right">{time1300_1600.total.sclrPcs}</td>
+                      <td className="border border-gray-400 px-1 py-0.5 text-right">{getTotal(time1300_1600.total)}</td>
                           </tr>
                         </tbody>
                       </table>
-                    </div>
                   </div>
 
                   {/* Pending */}
-                  <div className="mt-3 border border-gray-200 rounded p-3">
-                    <h5 className="text-xs font-semibold text-gray-700 mb-2">Pending</h5>
-                    <table className="w-full text-xs">
+              <div className="border border-gray-400">
+                <div className="bg-gray-200 px-1 py-0.5 text-xs font-semibold border-b border-gray-400">Pending</div>
+                <table className="w-full text-xs border-collapse">
                       <thead>
-                        <tr className="bg-gray-50">
-                          <th className="px-2 py-1 text-left">ULD Details</th>
-                          <th className="px-2 py-1 text-right">PMC-AMF</th>
-                          <th className="px-2 py-1 text-right">ALF-PLA</th>
-                          <th className="px-2 py-1 text-right">AKE-RKE</th>
-                          <th className="px-2 py-1 text-right">SCLR Pcs</th>
-                          <th className="px-2 py-1 text-right">Total</th>
+                    <tr className="bg-gray-100">
+                      <th className="border border-gray-400 px-1 py-0.5 text-left">ULD Details</th>
+                      <th className="border border-gray-400 px-1 py-0.5 text-right">PMC-AMF</th>
+                      <th className="border border-gray-400 px-1 py-0.5 text-right">ALF-PLA</th>
+                      <th className="border border-gray-400 px-1 py-0.5 text-right">AKE-RKE</th>
+                      <th className="border border-gray-400 px-1 py-0.5 text-right">SCLR Pcs</th>
+                      <th className="border border-gray-400 px-1 py-0.5 text-right">Total</th>
                         </tr>
                       </thead>
                       <tbody>
                         <tr>
-                          <td className="px-2 py-1">To action</td>
-                          <td className="px-2 py-1 text-right">{planVsAdvanceData.time1300_1600.pending.pmcAmf}</td>
-                          <td className={`px-2 py-1 text-right ${planVsAdvanceData.time1300_1600.pending.alfPla === 0 ? 'bg-green-100' : ''}`}>
-                            {planVsAdvanceData.time1300_1600.pending.alfPla}
+                      <td className="border border-gray-400 px-1 py-0.5">To action</td>
+                      <td className="border border-gray-400 px-1 py-0.5 text-right">{time1300_1600.pending.pmcAmf}</td>
+                      <td className="border border-gray-400 px-1 py-0.5 text-right">{time1300_1600.pending.alfPla}</td>
+                      <td className="border border-gray-400 px-1 py-0.5 text-right">{time1300_1600.pending.akeRke}</td>
+                      <td className="border border-gray-400 px-1 py-0.5 text-right">{time1300_1600.pending.sclrPcs}</td>
+                      <td className="border border-gray-400 px-1 py-0.5 text-right font-semibold bg-gray-50">
+                        {getTotal(time1300_1600.pending)}
                           </td>
-                          <td className="px-2 py-1 text-right">{planVsAdvanceData.time1300_1600.pending.akeRke}</td>
-                          <td className="px-2 py-1 text-right">{planVsAdvanceData.time1300_1600.pending.sclrPcs}</td>
-                          <td className="px-2 py-1 text-right font-semibold">{planVsAdvanceData.time1300_1600.pending.total}</td>
                         </tr>
                       </tbody>
                     </table>
+              </div>
                   </div>
                 </div>
 
                 {/* 1601-2359 Section */}
-                <div className="mb-6">
-                  <h4 className="text-xs font-semibold text-gray-700 mb-3">1601-2359</h4>
-                  <div className="grid grid-cols-2 gap-4">
+          <div className="mb-3">
+            <div className="text-xs font-semibold mb-1">1601-2359</div>
+            <div className="grid grid-cols-3 gap-2">
                     {/* Planned */}
-                    <div className="border border-gray-200 rounded p-3">
-                      <h5 className="text-xs font-semibold text-gray-700 mb-2">Planned</h5>
-                      <table className="w-full text-xs">
+              <div className="border border-gray-400">
+                <div className="bg-gray-200 px-1 py-0.5 text-xs font-semibold border-b border-gray-400">Planned</div>
+                <table className="w-full text-xs border-collapse">
                         <thead>
-                          <tr className="bg-gray-50">
-                            <th className="px-2 py-1 text-left">Details</th>
-                            <th className="px-2 py-1 text-right">PMC-AMF</th>
-                            <th className="px-2 py-1 text-right">ALF-PLA</th>
-                            <th className="px-2 py-1 text-right">AKE-RKE</th>
-                            <th className="px-2 py-1 text-right">SCLR Pcs</th>
-                            <th className="px-2 py-1 text-right">Total</th>
+                    <tr className="bg-gray-100">
+                      <th className="border border-gray-400 px-1 py-0.5 text-left">Details</th>
+                      <th className="border border-gray-400 px-1 py-0.5 text-right">PMC-AMF</th>
+                      <th className="border border-gray-400 px-1 py-0.5 text-right">ALF-PLA</th>
+                      <th className="border border-gray-400 px-1 py-0.5 text-right">AKE-RKE</th>
+                      <th className="border border-gray-400 px-1 py-0.5 text-right">SCLR Pcs</th>
+                      <th className="border border-gray-400 px-1 py-0.5 text-right">Total</th>
                           </tr>
                         </thead>
                         <tbody>
                           <tr>
-                            <td className="px-2 py-1">Planned</td>
-                            <td className="px-2 py-1 text-right">{planVsAdvanceData.time1601_2359.planned.pmcAmf}</td>
-                            <td className="px-2 py-1 text-right">{planVsAdvanceData.time1601_2359.planned.alfPla}</td>
-                            <td className="px-2 py-1 text-right">{planVsAdvanceData.time1601_2359.planned.akeRke}</td>
-                            <td className="px-2 py-1 text-right">{planVsAdvanceData.time1601_2359.planned.sclrPcs}</td>
-                            <td className="px-2 py-1 text-right font-semibold">{planVsAdvanceData.time1601_2359.planned.total}</td>
+                      <td className="border border-gray-400 px-1 py-0.5">Planned</td>
+                      <td className="border border-gray-400 px-1 py-0.5 text-right">
+                        <EditableField
+                          value={planned1601_2359.pmcAmf.toString()}
+                          onChange={(v) =>
+                            setPlanned1601_2359((prev) => ({ ...prev, pmcAmf: parseInt(v) || 0 }))
+                          }
+                          type="number"
+                          className="w-12 text-right text-xs"
+                        />
+                      </td>
+                      <td className="border border-gray-400 px-1 py-0.5 text-right">
+                        <EditableField
+                          value={planned1601_2359.alfPla.toString()}
+                          onChange={(v) =>
+                            setPlanned1601_2359((prev) => ({ ...prev, alfPla: parseInt(v) || 0 }))
+                          }
+                          type="number"
+                          className="w-12 text-right text-xs"
+                        />
+                      </td>
+                      <td className="border border-gray-400 px-1 py-0.5 text-right">
+                        <EditableField
+                          value={planned1601_2359.akeRke.toString()}
+                          onChange={(v) =>
+                            setPlanned1601_2359((prev) => ({ ...prev, akeRke: parseInt(v) || 0 }))
+                          }
+                          type="number"
+                          className="w-12 text-right text-xs"
+                        />
+                      </td>
+                      <td className="border border-gray-400 px-1 py-0.5 text-right">
+                        <EditableField
+                          value={planned1601_2359.sclrPcs.toString()}
+                          onChange={(v) =>
+                            setPlanned1601_2359((prev) => ({ ...prev, sclrPcs: parseInt(v) || 0 }))
+                          }
+                          type="number"
+                          className="w-12 text-right text-xs"
+                        />
+                      </td>
+                      <td className="border border-gray-400 px-1 py-0.5 text-right font-semibold bg-gray-50">
+                        {getTotal(planned1601_2359)}
+                      </td>
                           </tr>
                         </tbody>
                       </table>
                     </div>
 
                     {/* Advance Built */}
-                    <div className="border border-gray-200 rounded p-3">
-                      <h5 className="text-xs font-semibold text-gray-700 mb-2">Advance Built</h5>
-                      <table className="w-full text-xs">
+              <div className="border border-gray-400">
+                <div className="bg-gray-200 px-1 py-0.5 text-xs font-semibold border-b border-gray-400">Advance built</div>
+                <table className="w-full text-xs border-collapse">
                         <thead>
-                          <tr className="bg-gray-50">
-                            <th className="px-2 py-1 text-left">Details</th>
-                            <th className="px-2 py-1 text-right">PMC-AMF</th>
-                            <th className="px-2 py-1 text-right">ALF-PLA</th>
-                            <th className="px-2 py-1 text-right">AKE-RKE</th>
-                            <th className="px-2 py-1 text-right">SCLR Pcs</th>
-                            <th className="px-2 py-1 text-right">Total</th>
+                    <tr className="bg-gray-100">
+                      <th className="border border-gray-400 px-1 py-0.5 text-left">Details</th>
+                      <th className="border border-gray-400 px-1 py-0.5 text-right">PMC-AMF</th>
+                      <th className="border border-gray-400 px-1 py-0.5 text-right">ALF-PLA</th>
+                      <th className="border border-gray-400 px-1 py-0.5 text-right">AKE-RKE</th>
+                      <th className="border border-gray-400 px-1 py-0.5 text-right">SCLR Pcs</th>
+                      <th className="border border-gray-400 px-1 py-0.5 text-right">Total</th>
                           </tr>
                         </thead>
                         <tbody>
                           <tr>
-                            <td className="px-2 py-1">Built</td>
-                            <td className="px-2 py-1 text-right">{planVsAdvanceData.time1601_2359.built.pmcAmf}</td>
-                            <td className="px-2 py-1 text-right">{planVsAdvanceData.time1601_2359.built.alfPla}</td>
-                            <td className="px-2 py-1 text-right">{planVsAdvanceData.time1601_2359.built.akeRke}</td>
-                            <td className="px-2 py-1 text-right">{planVsAdvanceData.time1601_2359.built.sclrPcs}</td>
-                            <td className="px-2 py-1 text-right">{planVsAdvanceData.time1601_2359.built.total}</td>
+                      <td className="border border-gray-400 px-1 py-0.5">Built</td>
+                      <td className="border border-gray-400 px-1 py-0.5 text-right">{time1601_2359.built.pmcAmf}</td>
+                      <td className="border border-gray-400 px-1 py-0.5 text-right">{time1601_2359.built.alfPla}</td>
+                      <td className="border border-gray-400 px-1 py-0.5 text-right">{time1601_2359.built.akeRke}</td>
+                      <td className="border border-gray-400 px-1 py-0.5 text-right">{time1601_2359.built.sclrPcs}</td>
+                      <td className="border border-gray-400 px-1 py-0.5 text-right">{getTotal(time1601_2359.built)}</td>
                           </tr>
                           <tr>
-                            <td className="px-2 py-1">Thru</td>
-                            <td className="px-2 py-1 text-right">{planVsAdvanceData.time1601_2359.thru.pmcAmf}</td>
-                            <td className="px-2 py-1 text-right">{planVsAdvanceData.time1601_2359.thru.alfPla}</td>
-                            <td className="px-2 py-1 text-right">{planVsAdvanceData.time1601_2359.thru.akeRke}</td>
-                            <td className="px-2 py-1 text-right">{planVsAdvanceData.time1601_2359.thru.sclrPcs}</td>
-                            <td className="px-2 py-1 text-right">{planVsAdvanceData.time1601_2359.thru.total}</td>
+                      <td className="border border-gray-400 px-1 py-0.5">Thru</td>
+                      <td className="border border-gray-400 px-1 py-0.5 text-right">{time1601_2359.thru.pmcAmf}</td>
+                      <td className="border border-gray-400 px-1 py-0.5 text-right">{time1601_2359.thru.alfPla}</td>
+                      <td className="border border-gray-400 px-1 py-0.5 text-right">{time1601_2359.thru.akeRke}</td>
+                      <td className="border border-gray-400 px-1 py-0.5 text-right">{time1601_2359.thru.sclrPcs}</td>
+                      <td className="border border-gray-400 px-1 py-0.5 text-right">{getTotal(time1601_2359.thru)}</td>
                           </tr>
-                          <tr className="bg-gray-50 font-semibold">
-                            <td className="px-2 py-1">TOTAL</td>
-                            <td className="px-2 py-1 text-right">{planVsAdvanceData.time1601_2359.total.pmcAmf}</td>
-                            <td className="px-2 py-1 text-right">{planVsAdvanceData.time1601_2359.total.alfPla}</td>
-                            <td className="px-2 py-1 text-right">{planVsAdvanceData.time1601_2359.total.akeRke}</td>
-                            <td className="px-2 py-1 text-right">{planVsAdvanceData.time1601_2359.total.sclrPcs}</td>
-                            <td className="px-2 py-1 text-right">{planVsAdvanceData.time1601_2359.total.total}</td>
+                    <tr className="bg-gray-200 font-semibold">
+                      <td className="border border-gray-400 px-1 py-0.5">TOTAL</td>
+                      <td className="border border-gray-400 px-1 py-0.5 text-right">{time1601_2359.total.pmcAmf}</td>
+                      <td className="border border-gray-400 px-1 py-0.5 text-right">{time1601_2359.total.alfPla}</td>
+                      <td className="border border-gray-400 px-1 py-0.5 text-right">{time1601_2359.total.akeRke}</td>
+                      <td className="border border-gray-400 px-1 py-0.5 text-right">{time1601_2359.total.sclrPcs}</td>
+                      <td className="border border-gray-400 px-1 py-0.5 text-right">{getTotal(time1601_2359.total)}</td>
                           </tr>
                         </tbody>
                       </table>
-                    </div>
                   </div>
 
                   {/* Pending */}
-                  <div className="mt-3 border border-gray-200 rounded p-3">
-                    <h5 className="text-xs font-semibold text-gray-700 mb-2">Pending</h5>
-                    <table className="w-full text-xs">
+              <div className="border border-gray-400">
+                <div className="bg-gray-200 px-1 py-0.5 text-xs font-semibold border-b border-gray-400">Pending</div>
+                <table className="w-full text-xs border-collapse">
                       <thead>
-                        <tr className="bg-gray-50">
-                          <th className="px-2 py-1 text-left">ULD Details</th>
-                          <th className="px-2 py-1 text-right">PMC-AMF</th>
-                          <th className="px-2 py-1 text-right">ALF-PLA</th>
-                          <th className="px-2 py-1 text-right">AKE-RKE</th>
-                          <th className="px-2 py-1 text-right">SCLR Pcs</th>
-                          <th className="px-2 py-1 text-right">Total</th>
+                    <tr className="bg-gray-100">
+                      <th className="border border-gray-400 px-1 py-0.5 text-left">ULD Details</th>
+                      <th className="border border-gray-400 px-1 py-0.5 text-right">PMC-AMF</th>
+                      <th className="border border-gray-400 px-1 py-0.5 text-right">ALF-PLA</th>
+                      <th className="border border-gray-400 px-1 py-0.5 text-right">AKE-RKE</th>
+                      <th className="border border-gray-400 px-1 py-0.5 text-right">SCLR Pcs</th>
+                      <th className="border border-gray-400 px-1 py-0.5 text-right">Total</th>
                         </tr>
                       </thead>
                       <tbody>
                         <tr>
-                          <td className="px-2 py-1">To action</td>
-                          <td className="px-2 py-1 text-right">{planVsAdvanceData.time1601_2359.pending.pmcAmf}</td>
-                          <td className="px-2 py-1 text-right">{planVsAdvanceData.time1601_2359.pending.alfPla}</td>
-                          <td className="px-2 py-1 text-right">{planVsAdvanceData.time1601_2359.pending.akeRke}</td>
-                          <td className="px-2 py-1 text-right">{planVsAdvanceData.time1601_2359.pending.sclrPcs}</td>
-                          <td className="px-2 py-1 text-right font-semibold">{planVsAdvanceData.time1601_2359.pending.total}</td>
+                      <td className="border border-gray-400 px-1 py-0.5">To action</td>
+                      <td className="border border-gray-400 px-1 py-0.5 text-right">{time1601_2359.pending.pmcAmf}</td>
+                      <td className="border border-gray-400 px-1 py-0.5 text-right">{time1601_2359.pending.alfPla}</td>
+                      <td className="border border-gray-400 px-1 py-0.5 text-right">{time1601_2359.pending.akeRke}</td>
+                      <td className="border border-gray-400 px-1 py-0.5 text-right">{time1601_2359.pending.sclrPcs}</td>
+                      <td className="border border-gray-400 px-1 py-0.5 text-right font-semibold bg-gray-50">
+                        {getTotal(time1601_2359.pending)}
+                      </td>
                         </tr>
                       </tbody>
                     </table>
-                  </div>
-                </div>
-
-                {/* Total Advance and Total Pending Summary */}
-                <div className="grid grid-cols-2 gap-4 mt-4">
-                  <div className="border border-gray-200 rounded p-3">
-                    <h5 className="text-xs font-semibold text-gray-700 mb-2">Total Advance</h5>
-                    <table className="w-full text-xs">
-                      <thead>
-                        <tr className="bg-gray-50">
-                          <th className="px-2 py-1 text-left">Details</th>
-                          <th className="px-2 py-1 text-right">PMC-AMF</th>
-                          <th className="px-2 py-1 text-right">ALF-PLA</th>
-                          <th className="px-2 py-1 text-right">AKE-RKE</th>
-                          <th className="px-2 py-1 text-right">SCLR Pcs</th>
-                          <th className="px-2 py-1 text-right">Total</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        <tr>
-                          <td className="px-2 py-1">1300-1600</td>
-                          <td className="px-2 py-1 text-right">{planVsAdvanceData.time1300_1600.total.pmcAmf}</td>
-                          <td className="px-2 py-1 text-right">{planVsAdvanceData.time1300_1600.total.alfPla}</td>
-                          <td className="px-2 py-1 text-right">{planVsAdvanceData.time1300_1600.total.akeRke}</td>
-                          <td className="px-2 py-1 text-right">{planVsAdvanceData.time1300_1600.total.sclrPcs}</td>
-                          <td className="px-2 py-1 text-right">{planVsAdvanceData.time1300_1600.total.total}</td>
-                        </tr>
-                        <tr>
-                          <td className="px-2 py-1">1601-2359</td>
-                          <td className="px-2 py-1 text-right">{planVsAdvanceData.time1601_2359.total.pmcAmf}</td>
-                          <td className="px-2 py-1 text-right">{planVsAdvanceData.time1601_2359.total.alfPla}</td>
-                          <td className="px-2 py-1 text-right">{planVsAdvanceData.time1601_2359.total.akeRke}</td>
-                          <td className="px-2 py-1 text-right">{planVsAdvanceData.time1601_2359.total.sclrPcs}</td>
-                          <td className="px-2 py-1 text-right">{planVsAdvanceData.time1601_2359.total.total}</td>
-                        </tr>
-                        <tr className="bg-gray-50 font-semibold">
-                          <td className="px-2 py-1">TOTAL</td>
-                          <td className="px-2 py-1 text-right">{planVsAdvanceData.totalAdvance.pmcAmf}</td>
-                          <td className="px-2 py-1 text-right">{planVsAdvanceData.totalAdvance.alfPla}</td>
-                          <td className="px-2 py-1 text-right">{planVsAdvanceData.totalAdvance.akeRke}</td>
-                          <td className="px-2 py-1 text-right">{planVsAdvanceData.totalAdvance.sclrPcs}</td>
-                          <td className="px-2 py-1 text-right">{planVsAdvanceData.totalAdvance.total}</td>
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
-
-                  <div className="border border-gray-200 rounded p-3">
-                    <h5 className="text-xs font-semibold text-gray-700 mb-2">Total Pending</h5>
-                    <table className="w-full text-xs">
-                      <thead>
-                        <tr className="bg-gray-50">
-                          <th className="px-2 py-1 text-left">Details</th>
-                          <th className="px-2 py-1 text-right">PMC-AMF</th>
-                          <th className="px-2 py-1 text-right">ALF-PLA</th>
-                          <th className="px-2 py-1 text-right">AKE-RKE</th>
-                          <th className="px-2 py-1 text-right">SCLR Pcs</th>
-                          <th className="px-2 py-1 text-right">Total</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        <tr>
-                          <td className="px-2 py-1">1300-1600</td>
-                          <td className="px-2 py-1 text-right">{planVsAdvanceData.time1300_1600.pending.pmcAmf}</td>
-                          <td className={`px-2 py-1 text-right ${planVsAdvanceData.time1300_1600.pending.alfPla === 0 ? 'bg-green-100' : ''}`}>
-                            {planVsAdvanceData.time1300_1600.pending.alfPla}
-                          </td>
-                          <td className="px-2 py-1 text-right">{planVsAdvanceData.time1300_1600.pending.akeRke}</td>
-                          <td className="px-2 py-1 text-right">{planVsAdvanceData.time1300_1600.pending.sclrPcs}</td>
-                          <td className="px-2 py-1 text-right">{planVsAdvanceData.time1300_1600.pending.total}</td>
-                        </tr>
-                        <tr>
-                          <td className="px-2 py-1">1601-2359</td>
-                          <td className="px-2 py-1 text-right">{planVsAdvanceData.time1601_2359.pending.pmcAmf}</td>
-                          <td className="px-2 py-1 text-right">{planVsAdvanceData.time1601_2359.pending.alfPla}</td>
-                          <td className="px-2 py-1 text-right">{planVsAdvanceData.time1601_2359.pending.akeRke}</td>
-                          <td className="px-2 py-1 text-right">{planVsAdvanceData.time1601_2359.pending.sclrPcs}</td>
-                          <td className="px-2 py-1 text-right">{planVsAdvanceData.time1601_2359.pending.total}</td>
-                        </tr>
-                        <tr className="bg-gray-50 font-semibold">
-                          <td className="px-2 py-1">TOTAL</td>
-                          <td className="px-2 py-1 text-right">{planVsAdvanceData.totalPending.pmcAmf}</td>
-                          <td className={`px-2 py-1 text-right ${planVsAdvanceData.totalPending.alfPla === 10 ? 'bg-green-100' : ''}`}>
-                            {planVsAdvanceData.totalPending.alfPla}
-                          </td>
-                          <td className="px-2 py-1 text-right">{planVsAdvanceData.totalPending.akeRke}</td>
-                          <td className="px-2 py-1 text-right">{planVsAdvanceData.totalPending.sclrPcs}</td>
-                          <td className="px-2 py-1 text-right">{planVsAdvanceData.totalPending.total}</td>
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-
-                {/* Day Shift and Night Shift Handover Sections */}
-                <div className="grid grid-cols-2 gap-4 mt-6">
-                  {/* Day Shift Handover */}
-                  <div className="border border-gray-200 rounded p-3">
-                    <h5 className="text-xs font-semibold text-gray-700 mb-2">Day Shift handover</h5>
-                    <div className="space-y-2 text-xs">
-                      <div className="grid grid-cols-2 gap-2">
-                        <span className="text-gray-600">Date:</span>
-                        <span className="font-medium">24/11/2025</span>
-                        <span className="text-gray-600">Day:</span>
-                        <span className="font-medium">Monday</span>
-                        <span className="text-gray-600">Shift:</span>
-                        <span className="font-medium">4</span>
-                        <span className="text-gray-600">Duty:</span>
-                        <span className="font-medium">21:00-09:00</span>
-                      </div>
-                      <div className="border-t pt-2 mt-2">
-                        <div className="font-semibold mb-1">Handover Details</div>
-                        <div className="space-y-1">
-                          <div className="flex justify-between">
-                            <span>Pending Advance:</span>
-                            <span className="font-medium">{planVsAdvanceData.dayShiftHandover.pendingAdvance}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span>First Wave (06:00-09:00):</span>
-                            <span className="font-medium">{planVsAdvanceData.dayShiftHandover.firstWave}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span>Second Wave (09:01-12:59):</span>
-                            <span className="font-medium">{planVsAdvanceData.dayShiftHandover.secondWave}</span>
-                          </div>
-                          <div className="flex justify-between font-semibold border-t pt-1">
-                            <span>Total:</span>
-                            <span>{planVsAdvanceData.dayShiftHandover.total}</span>
-                          </div>
-                        </div>
-                      </div>
-                      <div className="border-t pt-2 mt-2">
-                        <div className="font-semibold mb-1">Man Power</div>
-                        <div className="space-y-1">
-                          <div className="flex justify-between">
-                            <span>Staffs (POS+Floor+OS Staffs):</span>
-                            <span className="font-medium">{planVsAdvanceData.dayShiftHandover.staffs}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span>Average Efficiency:</span>
-                            <span className="font-medium">{planVsAdvanceData.dayShiftHandover.averageEfficiency}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span>Overtime:</span>
-                            <span className="font-medium">{planVsAdvanceData.dayShiftHandover.overtime}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span>Per Staff Efficiency:</span>
-                            <span className="font-medium">{planVsAdvanceData.dayShiftHandover.perStaffEfficiency}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span>Total:</span>
-                            <span className="font-medium">{planVsAdvanceData.dayShiftHandover.totalStaffs}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="font-semibold">Staffs Required:</span>
-                            <span className={`font-semibold ${planVsAdvanceData.dayShiftHandover.staffsRequired === 14 ? 'bg-green-100 px-2 py-1 rounded' : ''}`}>
-                              {planVsAdvanceData.dayShiftHandover.staffsRequired}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                      <div className="border-t pt-2 mt-2">
-                        <div className="font-semibold mb-1">Advance Built</div>
-                        <div className="space-y-1">
-                          <div className="flex justify-between">
-                            <span>Total ULD:</span>
-                            <span className="font-medium">{planVsAdvanceData.dayShiftHandover.totalULD}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span>AFT Built:</span>
-                            <span className="font-medium">{planVsAdvanceData.dayShiftHandover.aftBuilt}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span>Advance:</span>
-                            <span className="font-medium">{planVsAdvanceData.dayShiftHandover.advance}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span>First Wave Pending:</span>
-                            <span className={`font-medium ${planVsAdvanceData.dayShiftHandover.firstWavePending === 66 ? 'bg-green-100 px-2 py-1 rounded' : ''}`}>
-                              {planVsAdvanceData.dayShiftHandover.firstWavePending}
-                            </span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span>Second Wave Pending:</span>
-                            <span className="font-medium">{planVsAdvanceData.dayShiftHandover.secondWavePending}</span>
-                          </div>
-                          <div className="flex justify-between font-semibold border-t pt-1">
-                            <span>Total Pending:</span>
-                            <span className={`${planVsAdvanceData.dayShiftHandover.totalPending === 124 ? 'bg-yellow-100 px-2 py-1 rounded' : ''}`}>
-                              {planVsAdvanceData.dayShiftHandover.totalPending}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Night Shift Handover */}
-                  <div className="border border-gray-200 rounded p-3">
-                    <h5 className="text-xs font-semibold text-gray-700 mb-2">Night Shift handover</h5>
-                    <div className="space-y-2 text-xs">
-                      <div className="grid grid-cols-2 gap-2">
-                        <span className="text-gray-600">Date:</span>
-                        <span className="font-medium">24/11/2025</span>
-                        <span className="text-gray-600">Day:</span>
-                        <span className="font-medium">Monday</span>
-                        <span className="text-gray-600">Shift:</span>
-                        <span className="font-medium">4</span>
-                        <span className="text-gray-600">Duty:</span>
-                        <span className="font-medium">21:00-09:00</span>
-                      </div>
-                      <div className="border-t pt-2 mt-2">
-                        <div className="font-semibold mb-1">Handover Details</div>
-                        <div className="space-y-1">
-                          <div className="flex justify-between">
-                            <span>Pending Advance:</span>
-                            <span className="font-medium">{planVsAdvanceData.nightShiftHandover.pendingAdvance}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span>First Wave (13:00-16:00):</span>
-                            <span className="font-medium">{planVsAdvanceData.nightShiftHandover.firstWave}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span>Second Wave (16:01-23:59):</span>
-                            <span className="font-medium">{planVsAdvanceData.nightShiftHandover.secondWave}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span>Pending ULDs till 16:00:</span>
-                            <span className="font-medium">{planVsAdvanceData.nightShiftHandover.pendingULDsTill1600}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span>Pending ULDs from 16:00-23:59:</span>
-                            <span className="font-medium">{planVsAdvanceData.nightShiftHandover.pendingULDsFrom1600}</span>
-                          </div>
-                          <div className="flex justify-between font-semibold border-t pt-1">
-                            <span>Pending Total:</span>
-                            <span>{planVsAdvanceData.nightShiftHandover.pendingTotal}</span>
-                          </div>
-                        </div>
-                      </div>
-                      <div className="border-t pt-2 mt-2">
-                        <div className="font-semibold mb-1">Man Power</div>
-                        <div className="space-y-1">
-                          <div className="flex justify-between">
-                            <span>Staffs (POS+Floor+OS Staffs):</span>
-                            <span className={`font-medium ${planVsAdvanceData.nightShiftHandover.staffs === 42 ? 'bg-red-100 px-2 py-1 rounded' : ''}`}>
-                              {planVsAdvanceData.nightShiftHandover.staffs}
-                            </span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span>Average Efficiency:</span>
-                            <span className="font-medium">{planVsAdvanceData.nightShiftHandover.averageEfficiency}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span>Overtime:</span>
-                            <span className="font-medium">{planVsAdvanceData.nightShiftHandover.overtime}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span>Per Staff Efficiency:</span>
-                            <span className="font-medium">{planVsAdvanceData.nightShiftHandover.perStaffEfficiency}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span>Total:</span>
-                            <span className="font-medium">{planVsAdvanceData.nightShiftHandover.totalStaffs}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="font-semibold">Staffs Required:</span>
-                            <span className={`font-semibold ${planVsAdvanceData.nightShiftHandover.staffsRequired === 44 ? 'bg-yellow-100 px-2 py-1 rounded' : ''}`}>
-                              {planVsAdvanceData.nightShiftHandover.staffsRequired}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                      <div className="border-t pt-2 mt-2">
-                        <div className="font-semibold mb-1">Advance Built</div>
-                        <div className="space-y-1">
-                          <div className="flex justify-between">
-                            <span>Total ULD:</span>
-                            <span className="font-medium">{planVsAdvanceData.nightShiftHandover.totalULD}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span>E/M Built:</span>
-                            <span className="font-medium">{planVsAdvanceData.nightShiftHandover.emBuilt}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span>Total Hours:</span>
-                            <span className="font-medium">{planVsAdvanceData.nightShiftHandover.totalHours}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span>L/M Built:</span>
-                            <span className="font-medium">{planVsAdvanceData.nightShiftHandover.lmBuilt}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span>Efficiency:</span>
-                            <span className={`font-medium ${planVsAdvanceData.nightShiftHandover.efficiency === 1.87 ? 'bg-red-100 px-2 py-1 rounded' : ''}`}>
-                              {planVsAdvanceData.nightShiftHandover.efficiency}
-                            </span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span>Advance:</span>
-                            <span className="font-medium">{planVsAdvanceData.nightShiftHandover.advance}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span>First Wave Pending:</span>
-                            <span className={`font-medium ${planVsAdvanceData.nightShiftHandover.firstWavePending === 66 ? 'bg-yellow-100 px-2 py-1 rounded' : ''}`}>
-                              {planVsAdvanceData.nightShiftHandover.firstWavePending}
-                            </span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span>Second Wave Pending:</span>
-                            <span className="font-medium">{planVsAdvanceData.nightShiftHandover.secondWavePending}</span>
-                          </div>
-                          <div className="flex justify-between font-semibold border-t pt-1">
-                            <span>Total Pending:</span>
-                            <span className={`${planVsAdvanceData.nightShiftHandover.totalPending === 124 ? 'bg-yellow-100 px-2 py-1 rounded' : ''}`}>
-                              {planVsAdvanceData.nightShiftHandover.totalPending}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                      <div className="border-t pt-2 mt-2">
-                        <div className="font-semibold mb-1">Screening Load</div>
-                        <div className="space-y-1">
-                          <div className="flex justify-between">
-                            <span>Total:</span>
-                            <span className="font-medium">{planVsAdvanceData.nightShiftHandover.screeningTotal}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span>Planned Pcs:</span>
-                            <span className="font-medium">{planVsAdvanceData.nightShiftHandover.plannedPcs}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span>Built Pcs:</span>
-                            <span className="font-medium">{planVsAdvanceData.nightShiftHandover.builtPcs}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span>Supervisor:</span>
-                            <span className="font-medium">{planVsAdvanceData.nightShiftHandover.supervisor}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span>E/M Pending:</span>
-                            <span className="font-medium">{planVsAdvanceData.nightShiftHandover.emPending}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span>L/M Pending:</span>
-                            <span className="font-medium">{planVsAdvanceData.nightShiftHandover.lmPending}</span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
               </div>
-            </CollapsibleContent>
-          </div>
-        </Collapsible>
-
-        {/* BUP Shift Details Night Section */}
-        <Collapsible
-          open={expandedSections.has("bup-shift-details")}
-          onOpenChange={() => toggleSection("bup-shift-details")}
-        >
-          <div className="bg-white rounded-lg border border-gray-200 mb-4">
-            <CollapsibleTrigger className="w-full">
-              <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 hover:bg-gray-50">
-                <div className="flex items-center gap-2">
-                  {expandedSections.has("bup-shift-details") ? (
-                    <ChevronDown className="w-4 h-4 text-gray-500" />
-                  ) : (
-                    <ChevronRight className="w-4 h-4 text-gray-500" />
-                  )}
-                  <h3 className="text-sm font-semibold text-gray-900">BUP Shift Details Night</h3>
+                  </div>
                 </div>
-              </div>
-            </CollapsibleTrigger>
-            <CollapsibleContent>
-              <div className="p-4">
-                <div className="mb-4">
-                  <h4 className="text-xs font-semibold text-gray-700 mb-2">
-                    BUILD UP // {bupShiftDetailsData.date} // SHIFT : {bupShiftDetailsData.shift} // {bupShiftDetailsData.dutyHours}HRS
-                  </h4>
-                  <div className="grid grid-cols-2 gap-4 mb-4">
-                    <div>
-                      <div className="text-xs text-gray-600 mb-1">Checked by Supervisor</div>
-                      <div className="text-xs font-medium">{bupShiftDetailsData.supervisor}</div>
-                      <div className="text-xs text-gray-500">{bupShiftDetailsData.supervisorID}</div>
+
+          {/* Total Advance and Total Pending */}
+          <div className="grid grid-cols-2 gap-2">
+            <div className="border border-gray-400">
+              <div className="bg-gray-200 px-1 py-0.5 text-xs font-semibold border-b border-gray-400">Total Advance</div>
+              <table className="w-full text-xs border-collapse">
+                      <thead>
+                  <tr className="bg-gray-100">
+                    <th className="border border-gray-400 px-1 py-0.5 text-left">Details</th>
+                    <th className="border border-gray-400 px-1 py-0.5 text-right">PMC-AMF</th>
+                    <th className="border border-gray-400 px-1 py-0.5 text-right">ALF-PLA</th>
+                    <th className="border border-gray-400 px-1 py-0.5 text-right">AKE-RKE</th>
+                    <th className="border border-gray-400 px-1 py-0.5 text-right">SCLR Pcs</th>
+                    <th className="border border-gray-400 px-1 py-0.5 text-right">Total</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr>
+                    <td className="border border-gray-400 px-1 py-0.5">1300-1600</td>
+                    <td className="border border-gray-400 px-1 py-0.5 text-right">{time1300_1600.total.pmcAmf}</td>
+                    <td className="border border-gray-400 px-1 py-0.5 text-right">{time1300_1600.total.alfPla}</td>
+                    <td className="border border-gray-400 px-1 py-0.5 text-right">{time1300_1600.total.akeRke}</td>
+                    <td className="border border-gray-400 px-1 py-0.5 text-right">{time1300_1600.total.sclrPcs}</td>
+                    <td className="border border-gray-400 px-1 py-0.5 text-right">{getTotal(time1300_1600.total)}</td>
+                        </tr>
+                        <tr>
+                    <td className="border border-gray-400 px-1 py-0.5">1601-2359</td>
+                    <td className="border border-gray-400 px-1 py-0.5 text-right">{time1601_2359.total.pmcAmf}</td>
+                    <td className="border border-gray-400 px-1 py-0.5 text-right">{time1601_2359.total.alfPla}</td>
+                    <td className="border border-gray-400 px-1 py-0.5 text-right">{time1601_2359.total.akeRke}</td>
+                    <td className="border border-gray-400 px-1 py-0.5 text-right">{time1601_2359.total.sclrPcs}</td>
+                    <td className="border border-gray-400 px-1 py-0.5 text-right">{getTotal(time1601_2359.total)}</td>
+                        </tr>
+                  <tr className="bg-gray-200 font-semibold">
+                    <td className="border border-gray-400 px-1 py-0.5">TOTAL</td>
+                    <td className="border border-gray-400 px-1 py-0.5 text-right">{totalAdvance.pmcAmf}</td>
+                    <td className="border border-gray-400 px-1 py-0.5 text-right">{totalAdvance.alfPla}</td>
+                    <td className="border border-gray-400 px-1 py-0.5 text-right">{totalAdvance.akeRke}</td>
+                    <td className="border border-gray-400 px-1 py-0.5 text-right">{totalAdvance.sclrPcs}</td>
+                    <td className="border border-gray-400 px-1 py-0.5 text-right">{getTotal(totalAdvance)}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+
+            <div className="border border-gray-400">
+              <div className="bg-gray-200 px-1 py-0.5 text-xs font-semibold border-b border-gray-400">Total Pending</div>
+              <table className="w-full text-xs border-collapse">
+                      <thead>
+                  <tr className="bg-gray-100">
+                    <th className="border border-gray-400 px-1 py-0.5 text-left">Details</th>
+                    <th className="border border-gray-400 px-1 py-0.5 text-right">PMC-AMF</th>
+                    <th className="border border-gray-400 px-1 py-0.5 text-right">ALF-PLA</th>
+                    <th className="border border-gray-400 px-1 py-0.5 text-right">AKE-RKE</th>
+                    <th className="border border-gray-400 px-1 py-0.5 text-right">SCLR Pcs</th>
+                    <th className="border border-gray-400 px-1 py-0.5 text-right">Total</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr>
+                    <td className="border border-gray-400 px-1 py-0.5">1300-1600</td>
+                    <td className="border border-gray-400 px-1 py-0.5 text-right">{time1300_1600.pending.pmcAmf}</td>
+                    <td className="border border-gray-400 px-1 py-0.5 text-right">{time1300_1600.pending.alfPla}</td>
+                    <td className="border border-gray-400 px-1 py-0.5 text-right">{time1300_1600.pending.akeRke}</td>
+                    <td className="border border-gray-400 px-1 py-0.5 text-right">{time1300_1600.pending.sclrPcs}</td>
+                    <td className="border border-gray-400 px-1 py-0.5 text-right">{getTotal(time1300_1600.pending)}</td>
+                        </tr>
+                        <tr>
+                    <td className="border border-gray-400 px-1 py-0.5">1601-2359</td>
+                    <td className="border border-gray-400 px-1 py-0.5 text-right">{time1601_2359.pending.pmcAmf}</td>
+                    <td className="border border-gray-400 px-1 py-0.5 text-right">{time1601_2359.pending.alfPla}</td>
+                    <td className="border border-gray-400 px-1 py-0.5 text-right">{time1601_2359.pending.akeRke}</td>
+                    <td className="border border-gray-400 px-1 py-0.5 text-right">{time1601_2359.pending.sclrPcs}</td>
+                    <td className="border border-gray-400 px-1 py-0.5 text-right">{getTotal(time1601_2359.pending)}</td>
+                        </tr>
+                  <tr className="bg-gray-200 font-semibold">
+                    <td className="border border-gray-400 px-1 py-0.5">TOTAL</td>
+                    <td className="border border-gray-400 px-1 py-0.5 text-right">{totalPending.pmcAmf}</td>
+                    <td className="border border-gray-400 px-1 py-0.5 text-right">{totalPending.alfPla}</td>
+                    <td className="border border-gray-400 px-1 py-0.5 text-right">{totalPending.akeRke}</td>
+                    <td className="border border-gray-400 px-1 py-0.5 text-right">{totalPending.sclrPcs}</td>
+                    <td className="border border-gray-400 px-1 py-0.5 text-right">{getTotal(totalPending)}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                      </div>
                     </div>
                   </div>
+
+        {/* BOTTOM SECTION: Split into Left and Right */}
+                      <div className="grid grid-cols-2 gap-2">
+          {/* BOTTOM LEFT: BUP Shift Details */}
+          <div className="border border-gray-400 p-2 bg-white">
+            <div className="text-xs font-semibold mb-1">
+              BUILD UP // {date.toUpperCase()} // SHIFT : {shift} // {dutyHours}HRS
+                      </div>
+            <div className="mb-2">
+              <div className="text-xs mb-1">Checked by Supervisor</div>
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <div>
+                  <div className="font-medium">
+                    <EditableField value={supervisor} onChange={setSupervisor} className="text-xs" />
+                          </div>
+                  <div className="text-gray-600">
+                    <EditableField value={supervisorID} onChange={setSupervisorID} className="text-xs" />
+                          </div>
+                          </div>
+                          </div>
+                          </div>
+
+            {/* Allocation Table */}
+            <div className="border border-gray-400">
+              <div className="bg-gray-200 px-1 py-0.5 text-xs font-semibold border-b border-gray-400">Allocation</div>
+              <div className="overflow-x-auto max-h-96 overflow-y-auto">
+                <table className="w-full text-xs border-collapse">
+                  <thead className="sticky top-0 bg-gray-100">
+                    <tr>
+                      <th className="border border-gray-400 px-1 py-0.5 text-left">No</th>
+                      <th className="border border-gray-400 px-1 py-0.5 text-left">Flight</th>
+                      <th className="border border-gray-400 px-1 py-0.5 text-left">ETD</th>
+                      <th className="border border-gray-400 px-1 py-0.5 text-left">DST</th>
+                      <th className="border border-gray-400 px-1 py-0.5 text-left">Staff</th>
+                      <th className="border border-gray-400 px-1 py-0.5 text-right">PMC/AMF</th>
+                      <th className="border border-gray-400 px-1 py-0.5 text-right">ALF/PLA</th>
+                      <th className="border border-gray-400 px-1 py-0.5 text-right">AKE/AKL</th>
+                      <th className="border border-gray-400 px-1 py-0.5 text-right">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {bupFlights.map((flight, index) => (
+                      <tr key={index}>
+                        <td className="border border-gray-400 px-1 py-0.5">{flight.no}</td>
+                        <td className="border border-gray-400 px-1 py-0.5">
+                          <EditableField
+                            value={flight.flight}
+                            onChange={(v) => updateFlight(bupFlights, setBupFlights, index, "flight", v)}
+                            className="font-semibold text-xs"
+                          />
+                        </td>
+                        <td className="border border-gray-400 px-1 py-0.5">
+                          <EditableField
+                            value={flight.etd}
+                            onChange={(v) => updateFlight(bupFlights, setBupFlights, index, "etd", v)}
+                            className="text-xs"
+                          />
+                        </td>
+                        <td className="border border-gray-400 px-1 py-0.5">
+                          <EditableField
+                            value={flight.dst}
+                            onChange={(v) => updateFlight(bupFlights, setBupFlights, index, "dst", v)}
+                            className="text-xs"
+                          />
+                        </td>
+                        <td className="border border-gray-400 px-1 py-0.5">
+                          <EditableField
+                            value={flight.staff}
+                            onChange={(v) => updateFlight(bupFlights, setBupFlights, index, "staff", v)}
+                            className="text-xs"
+                          />
+                        </td>
+                        <td className="border border-gray-400 px-1 py-0.5 text-right">
+                          <EditableField
+                            value={flight.builtPmc.toString()}
+                            onChange={(v) =>
+                              updateFlight(bupFlights, setBupFlights, index, "builtPmc", parseInt(v) || 0)
+                            }
+                            type="number"
+                            className="w-10 text-right text-xs"
+                          />
+                        </td>
+                        <td className="border border-gray-400 px-1 py-0.5 text-right">
+                          <EditableField
+                            value={flight.builtAlf.toString()}
+                            onChange={(v) =>
+                              updateFlight(bupFlights, setBupFlights, index, "builtAlf", parseInt(v) || 0)
+                            }
+                            type="number"
+                            className="w-10 text-right text-xs"
+                          />
+                        </td>
+                        <td className="border border-gray-400 px-1 py-0.5 text-right">
+                          <EditableField
+                            value={flight.builtAke.toString()}
+                            onChange={(v) =>
+                              updateFlight(bupFlights, setBupFlights, index, "builtAke", parseInt(v) || 0)
+                            }
+                            type="number"
+                            className="w-10 text-right text-xs"
+                          />
+                        </td>
+                        <td className="border border-gray-400 px-1 py-0.5 text-right font-semibold bg-gray-50">
+                          {flight.builtPmc + flight.builtAlf + flight.builtAke}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                  </div>
                 </div>
 
-                {/* ULD Summary */}
-                <div className="grid grid-cols-2 gap-4 mb-4">
-                  <div className="border border-gray-200 rounded p-3">
-                    <h5 className="text-xs font-semibold text-gray-700 mb-2">Built ULD Details</h5>
-                    <table className="w-full text-xs">
-                      <thead>
-                        <tr className="bg-gray-50">
-                          <th className="px-2 py-1 text-left">Type</th>
-                          <th className="px-2 py-1 text-right">Count</th>
-                        </tr>
-                      </thead>
+            {/* ULD Analysis */}
+            <div className="mt-2 grid grid-cols-2 gap-2">
+              <div className="border border-gray-400">
+                <div className="bg-gray-200 px-1 py-0.5 text-xs font-semibold border-b border-gray-400">Built ULD Details</div>
+                <table className="w-full text-xs border-collapse">
                       <tbody>
                         <tr>
-                          <td className="px-2 py-1">Total PMC</td>
-                          <td className="px-2 py-1 text-right font-semibold">{bupShiftDetailsData.totalULDs.pmc}</td>
+                      <td className="border border-gray-400 px-1 py-0.5">Total PMC</td>
+                      <td className="border border-gray-400 px-1 py-0.5 text-right font-semibold">{bupTotals.built.pmcAmf}</td>
                         </tr>
                         <tr>
-                          <td className="px-2 py-1">Total ALF</td>
-                          <td className="px-2 py-1 text-right font-semibold">{bupShiftDetailsData.totalULDs.alf}</td>
+                      <td className="border border-gray-400 px-1 py-0.5">Total ALF</td>
+                      <td className="border border-gray-400 px-1 py-0.5 text-right font-semibold">{bupTotals.built.alfPla}</td>
                         </tr>
                         <tr>
-                          <td className="px-2 py-1">Total AKE</td>
-                          <td className="px-2 py-1 text-right font-semibold">{bupShiftDetailsData.totalULDs.ake}</td>
+                      <td className="border border-gray-400 px-1 py-0.5">Total AKE</td>
+                      <td className="border border-gray-400 px-1 py-0.5 text-right font-semibold">{bupTotals.built.akeRke}</td>
                         </tr>
-                        <tr className="bg-gray-50 font-semibold">
-                          <td className="px-2 py-1">Total ULD</td>
-                          <td className="px-2 py-1 text-right">{bupShiftDetailsData.totalULDs.total}</td>
+                    <tr className="bg-gray-200 font-semibold">
+                      <td className="border border-gray-400 px-1 py-0.5">Total ULD</td>
+                      <td className="border border-gray-400 px-1 py-0.5 text-right">{getTotal(bupTotals.built)}</td>
                         </tr>
                       </tbody>
                     </table>
                   </div>
 
-                  <div className="border border-gray-200 rounded p-3">
-                    <h5 className="text-xs font-semibold text-gray-700 mb-2">Thru ULD Details</h5>
-                    <table className="w-full text-xs">
-                      <thead>
-                        <tr className="bg-gray-50">
-                          <th className="px-2 py-1 text-left">Type</th>
-                          <th className="px-2 py-1 text-right">Count</th>
-                        </tr>
-                      </thead>
+              <div className="border border-gray-400">
+                <div className="bg-gray-200 px-1 py-0.5 text-xs font-semibold border-b border-gray-400">Thru ULD Details</div>
+                <table className="w-full text-xs border-collapse">
                       <tbody>
                         <tr>
-                          <td className="px-2 py-1">Total PMC</td>
-                          <td className="px-2 py-1 text-right">{bupShiftDetailsData.thruULDs.pmc}</td>
+                      <td className="border border-gray-400 px-1 py-0.5">Total PMC</td>
+                      <td className="border border-gray-400 px-1 py-0.5 text-right">{bupTotals.thru.pmcAmf}</td>
                         </tr>
                         <tr>
-                          <td className="px-2 py-1">Total ALF</td>
-                          <td className="px-2 py-1 text-right">{bupShiftDetailsData.thruULDs.alf}</td>
+                      <td className="border border-gray-400 px-1 py-0.5">Total ALF</td>
+                      <td className="border border-gray-400 px-1 py-0.5 text-right">{bupTotals.thru.alfPla}</td>
                         </tr>
                         <tr>
-                          <td className="px-2 py-1">Total AKE</td>
-                          <td className="px-2 py-1 text-right">{bupShiftDetailsData.thruULDs.ake}</td>
+                      <td className="border border-gray-400 px-1 py-0.5">Total AKE</td>
+                      <td className="border border-gray-400 px-1 py-0.5 text-right">{bupTotals.thru.akeRke}</td>
                         </tr>
-                        <tr className="bg-gray-50 font-semibold">
-                          <td className="px-2 py-1">Total ULD</td>
-                          <td className="px-2 py-1 text-right">{bupShiftDetailsData.thruULDs.total}</td>
+                    <tr className="bg-gray-200 font-semibold">
+                      <td className="border border-gray-400 px-1 py-0.5">Total ULD</td>
+                      <td className="border border-gray-400 px-1 py-0.5 text-right">{getTotal(bupTotals.thru)}</td>
                         </tr>
                       </tbody>
                     </table>
+              </div>
                   </div>
                 </div>
 
-                {/* Flight Allocation Table */}
-                <div className="border border-gray-200 rounded p-3 mb-4">
-                  <h5 className="text-xs font-semibold text-gray-700 mb-2">Allocation</h5>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-xs">
-                      <thead>
-                        <tr className="bg-gray-50">
-                          <th className="px-2 py-1 text-left">No</th>
-                          <th className="px-2 py-1 text-left">Flight</th>
-                          <th className="px-2 py-1 text-left">ETD</th>
-                          <th className="px-2 py-1 text-left">DST</th>
-                          <th className="px-2 py-1 text-left">Staff</th>
-                          <th className="px-2 py-1 text-right">PMC/AMF</th>
-                          <th className="px-2 py-1 text-right">ALF/PLA</th>
-                          <th className="px-2 py-1 text-right">AKE/AKL</th>
-                          <th className="px-2 py-1 text-right">Total</th>
+          {/* BOTTOM RIGHT: Advance Report */}
+          <div className="border border-gray-400 p-2 bg-white">
+            <div className="grid grid-cols-2 gap-2 mb-2">
+              {/* ADVANCE UNITS */}
+              <div className="border border-gray-400">
+                <div className="bg-gray-200 px-1 py-0.5 text-xs font-semibold border-b border-gray-400 text-center">ADVANCE UNITS</div>
+                <div className="overflow-x-auto max-h-96 overflow-y-auto">
+                  <table className="w-full text-xs border-collapse">
+                    <thead className="sticky top-0 bg-gray-100">
+                      <tr>
+                        <th className="border border-gray-400 px-1 py-0.5 text-left">FLTS</th>
+                        <th className="border border-gray-400 px-1 py-0.5 text-left">STAFF</th>
+                        <th className="border border-gray-400 px-1 py-0.5 text-center" colSpan={3}>THRU ULDS</th>
+                        <th className="border border-gray-400 px-1 py-0.5 text-center" colSpan={3}>BUILT ULDS</th>
+                        <th className="border border-gray-400 px-1 py-0.5 text-right">TOT</th>
+                        <th className="border border-gray-400 px-1 py-0.5 text-center" colSpan={3}>PENDING UNITS</th>
+                        <th className="border border-gray-400 px-1 py-0.5 text-right">TOT</th>
+                      </tr>
+                      <tr>
+                        <th className="border border-gray-400 px-1 py-0.5"></th>
+                        <th className="border border-gray-400 px-1 py-0.5"></th>
+                        <th className="border border-gray-400 px-1 py-0.5 text-right">PMC</th>
+                        <th className="border border-gray-400 px-1 py-0.5 text-right">ALF</th>
+                        <th className="border border-gray-400 px-1 py-0.5 text-right">AKE</th>
+                        <th className="border border-gray-400 px-1 py-0.5 text-right">PMC</th>
+                        <th className="border border-gray-400 px-1 py-0.5 text-right">ALF</th>
+                        <th className="border border-gray-400 px-1 py-0.5 text-right">AKE</th>
+                        <th className="border border-gray-400 px-1 py-0.5 text-right bg-gray-300"></th>
+                        <th className="border border-gray-400 px-1 py-0.5 text-right">PMC</th>
+                        <th className="border border-gray-400 px-1 py-0.5 text-right">ALF</th>
+                        <th className="border border-gray-400 px-1 py-0.5 text-right">AKE</th>
+                        <th className="border border-gray-400 px-1 py-0.5 text-right bg-gray-300"></th>
                         </tr>
                       </thead>
                       <tbody>
-                        {bupShiftDetailsData.flights.slice(0, 20).map((flight) => (
-                          <tr key={flight.no} className="border-b border-gray-100">
-                            <td className="px-2 py-1">{flight.no}</td>
-                            <td className="px-2 py-1 font-semibold">{flight.flight}</td>
-                            <td className="px-2 py-1">{flight.etd}</td>
-                            <td className="px-2 py-1">{flight.dst}</td>
-                            <td className="px-2 py-1">{flight.staff}</td>
-                            <td className="px-2 py-1 text-right">{flight.pmc}</td>
-                            <td className="px-2 py-1 text-right">{flight.alf}</td>
-                            <td className="px-2 py-1 text-right">{flight.ake}</td>
-                            <td className="px-2 py-1 text-right font-semibold">{flight.total}</td>
+                      {advanceFlights.map((flight, index) => (
+                        <tr key={index} className={index % 2 === 0 ? "bg-white" : "bg-gray-50"}>
+                          <td className="border border-gray-400 px-1 py-0.5">
+                            <EditableField
+                              value={flight.flight}
+                              onChange={(v) => updateFlight(advanceFlights, setAdvanceFlights, index, "flight", v)}
+                              className="text-xs"
+                            />
+                          </td>
+                          <td className="border border-gray-400 px-1 py-0.5">
+                            <EditableField
+                              value={flight.staff}
+                              onChange={(v) => updateFlight(advanceFlights, setAdvanceFlights, index, "staff", v)}
+                              className="text-xs"
+                            />
+                          </td>
+                          <td className="border border-gray-400 px-1 py-0.5 text-right">
+                            <EditableField
+                              value={flight.thruPmc.toString()}
+                              onChange={(v) =>
+                                updateFlight(advanceFlights, setAdvanceFlights, index, "thruPmc", parseInt(v) || 0)
+                              }
+                              type="number"
+                              className="w-8 text-right text-xs"
+                            />
+                          </td>
+                          <td className="border border-gray-400 px-1 py-0.5 text-right">
+                            <EditableField
+                              value={flight.thruAlf.toString()}
+                              onChange={(v) =>
+                                updateFlight(advanceFlights, setAdvanceFlights, index, "thruAlf", parseInt(v) || 0)
+                              }
+                              type="number"
+                              className="w-8 text-right text-xs"
+                            />
+                          </td>
+                          <td className="border border-gray-400 px-1 py-0.5 text-right">
+                            <EditableField
+                              value={flight.thruAke.toString()}
+                              onChange={(v) =>
+                                updateFlight(advanceFlights, setAdvanceFlights, index, "thruAke", parseInt(v) || 0)
+                              }
+                              type="number"
+                              className="w-8 text-right text-xs"
+                            />
+                          </td>
+                          <td className="border border-gray-400 px-1 py-0.5 text-right">
+                            <EditableField
+                              value={flight.builtPmc.toString()}
+                              onChange={(v) =>
+                                updateFlight(advanceFlights, setAdvanceFlights, index, "builtPmc", parseInt(v) || 0)
+                              }
+                              type="number"
+                              className="w-8 text-right text-xs"
+                            />
+                          </td>
+                          <td className="border border-gray-400 px-1 py-0.5 text-right">
+                            <EditableField
+                              value={flight.builtAlf.toString()}
+                              onChange={(v) =>
+                                updateFlight(advanceFlights, setAdvanceFlights, index, "builtAlf", parseInt(v) || 0)
+                              }
+                              type="number"
+                              className="w-8 text-right text-xs"
+                            />
+                          </td>
+                          <td className="border border-gray-400 px-1 py-0.5 text-right">
+                            <EditableField
+                              value={flight.builtAke.toString()}
+                              onChange={(v) =>
+                                updateFlight(advanceFlights, setAdvanceFlights, index, "builtAke", parseInt(v) || 0)
+                              }
+                              type="number"
+                              className="w-8 text-right text-xs"
+                            />
+                          </td>
+                          <td className="border border-gray-400 px-1 py-0.5 text-right font-semibold bg-gray-300">
+                            {flight.builtPmc + flight.builtAlf + flight.builtAke}
+                          </td>
+                          <td className="border border-gray-400 px-1 py-0.5 text-right">0</td>
+                          <td className="border border-gray-400 px-1 py-0.5 text-right">0</td>
+                          <td className="border border-gray-400 px-1 py-0.5 text-right">0</td>
+                          <td className="border border-gray-400 px-1 py-0.5 text-right bg-gray-300">0</td>
                           </tr>
                         ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-
-                {/* Staff Performance Table */}
-                <div className="border border-gray-200 rounded p-3">
-                  <h5 className="text-xs font-semibold text-gray-700 mb-2">Shift & Staff Details</h5>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-xs">
-                      <thead>
-                        <tr className="bg-gray-50">
-                          <th className="px-2 py-1 text-left">Sr.No</th>
-                          <th className="px-2 py-1 text-left">Total Staffs</th>
-                          <th className="px-2 py-1 text-left">Staff No</th>
-                          <th className="px-2 py-1 text-left">Flight Count</th>
-                          <th className="px-2 py-1 text-left">ULD Count</th>
-                          <th className="px-2 py-1 text-left">Deployment</th>
-                          <th className="px-2 py-1 text-left">Contact</th>
-                          <th className="px-2 py-1 text-left">Duty Hours</th>
-                          <th className="px-2 py-1 text-left">Actual Hours</th>
+                      <tr className="bg-gray-200 font-semibold">
+                        <td className="border border-gray-400 px-1 py-0.5">TTL FLTS</td>
+                        <td className="border border-gray-400 px-1 py-0.5">TTL STAFF</td>
+                        <td className="border border-gray-400 px-1 py-0.5 text-right" colSpan={3}>THRU ULDS</td>
+                        <td className="border border-gray-400 px-1 py-0.5 text-right" colSpan={3}>BUILT ULDS</td>
+                        <td className="border border-gray-400 px-1 py-0.5 text-right">TOT</td>
+                        <td className="border border-gray-400 px-1 py-0.5 text-right" colSpan={3}>PENDING UNITS</td>
+                        <td className="border border-gray-400 px-1 py-0.5 text-right">TOT</td>
                         </tr>
-                      </thead>
-                      <tbody>
-                        {bupShiftDetailsData.staffDetails.map((staff) => (
-                          <tr key={staff.srNo} className="border-b border-gray-100">
-                            <td className="px-2 py-1">{staff.srNo}</td>
-                            <td className="px-2 py-1"></td>
-                            <td className="px-2 py-1 font-semibold">{staff.name}</td>
-                            <td className="px-2 py-1">{staff.staffNo}</td>
-                            <td className="px-2 py-1">{staff.flightCount}</td>
-                            <td className="px-2 py-1">{staff.uldCount}</td>
-                            <td className="px-2 py-1">{staff.deployment}</td>
-                            <td className="px-2 py-1">{staff.contact}</td>
-                            <td className="px-2 py-1">{staff.dutyHours}</td>
-                            <td className="px-2 py-1">{staff.actualHours}</td>
+                      <tr className="bg-gray-200 font-semibold">
+                        <td className="border border-gray-400 px-1 py-0.5">{advanceFlights.length}</td>
+                        <td className="border border-gray-400 px-1 py-0.5">
+                          {new Set(advanceFlights.map((f) => f.staff).filter(Boolean)).size}
+                        </td>
+                        <td className="border border-gray-400 px-1 py-0.5 text-right">{advanceReportTotals.advanceThru.pmcAmf}</td>
+                        <td className="border border-gray-400 px-1 py-0.5 text-right">{advanceReportTotals.advanceThru.alfPla}</td>
+                        <td className="border border-gray-400 px-1 py-0.5 text-right">{advanceReportTotals.advanceThru.akeRke}</td>
+                        <td className="border border-gray-400 px-1 py-0.5 text-right">{advanceReportTotals.advanceBuilt.pmcAmf}</td>
+                        <td className="border border-gray-400 px-1 py-0.5 text-right">{advanceReportTotals.advanceBuilt.alfPla}</td>
+                        <td className="border border-gray-400 px-1 py-0.5 text-right">{advanceReportTotals.advanceBuilt.akeRke}</td>
+                        <td className="border border-gray-400 px-1 py-0.5 text-right bg-gray-300">
+                          {getTotal(advanceReportTotals.advanceBuilt)}
+                        </td>
+                        <td className="border border-gray-400 px-1 py-0.5 text-right">0</td>
+                        <td className="border border-gray-400 px-1 py-0.5 text-right">0</td>
+                        <td className="border border-gray-400 px-1 py-0.5 text-right">0</td>
+                        <td className="border border-gray-400 px-1 py-0.5 text-right bg-gray-300">0</td>
                           </tr>
-                        ))}
                       </tbody>
                     </table>
                   </div>
                 </div>
-              </div>
-            </CollapsibleContent>
-          </div>
-        </Collapsible>
 
-        {/* Advance Report Section */}
-        <Collapsible
-          open={expandedSections.has("advance-report")}
-          onOpenChange={() => toggleSection("advance-report")}
-        >
-          <div className="bg-white rounded-lg border border-gray-200 mb-4">
-            <CollapsibleTrigger className="w-full">
-              <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 hover:bg-gray-50">
-                <div className="flex items-center gap-2">
-                  {expandedSections.has("advance-report") ? (
-                    <ChevronDown className="w-4 h-4 text-gray-500" />
-                  ) : (
-                    <ChevronRight className="w-4 h-4 text-gray-500" />
-                  )}
-                  <h3 className="text-sm font-semibold text-gray-900">Advance Report</h3>
+              {/* BONUS UNITS */}
+              <div className="border border-gray-400">
+                <div className="bg-gray-200 px-1 py-0.5 text-xs font-semibold border-b border-gray-400 text-center">BONUS UNITS</div>
+                <div className="overflow-x-auto max-h-96 overflow-y-auto">
+                  <table className="w-full text-xs border-collapse">
+                    <thead className="sticky top-0 bg-gray-100">
+                      <tr>
+                        <th className="border border-gray-400 px-1 py-0.5 text-left">FLTS</th>
+                        <th className="border border-gray-400 px-1 py-0.5 text-left">STAFF</th>
+                        <th className="border border-gray-400 px-1 py-0.5 text-center" colSpan={3}>THRU ULDS</th>
+                        <th className="border border-gray-400 px-1 py-0.5 text-center" colSpan={3}>BUILT ULDS</th>
+                        <th className="border border-gray-400 px-1 py-0.5 text-right">TOT</th>
+                        <th className="border border-gray-400 px-1 py-0.5 text-center" colSpan={3}>PENDING UNITS</th>
+                        <th className="border border-gray-400 px-1 py-0.5 text-right">TOT</th>
+                        </tr>
+                        <tr>
+                        <th className="border border-gray-400 px-1 py-0.5"></th>
+                        <th className="border border-gray-400 px-1 py-0.5"></th>
+                        <th className="border border-gray-400 px-1 py-0.5 text-right">PMC</th>
+                        <th className="border border-gray-400 px-1 py-0.5 text-right">ALF</th>
+                        <th className="border border-gray-400 px-1 py-0.5 text-right">AKE</th>
+                        <th className="border border-gray-400 px-1 py-0.5 text-right">PMC</th>
+                        <th className="border border-gray-400 px-1 py-0.5 text-right">ALF</th>
+                        <th className="border border-gray-400 px-1 py-0.5 text-right">AKE</th>
+                        <th className="border border-gray-400 px-1 py-0.5 text-right bg-gray-300"></th>
+                        <th className="border border-gray-400 px-1 py-0.5 text-right">PMC</th>
+                        <th className="border border-gray-400 px-1 py-0.5 text-right">ALF</th>
+                        <th className="border border-gray-400 px-1 py-0.5 text-right">AKE</th>
+                        <th className="border border-gray-400 px-1 py-0.5 text-right bg-gray-300"></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                      {bonusFlights.map((flight, index) => (
+                        <tr key={index} className={index % 2 === 0 ? "bg-white" : "bg-gray-50"}>
+                          <td className="border border-gray-400 px-1 py-0.5">
+                            <EditableField
+                              value={flight.flight}
+                              onChange={(v) => updateFlight(bonusFlights, setBonusFlights, index, "flight", v)}
+                              className="text-xs"
+                            />
+                          </td>
+                          <td className="border border-gray-400 px-1 py-0.5">
+                            <EditableField
+                              value={flight.staff}
+                              onChange={(v) => updateFlight(bonusFlights, setBonusFlights, index, "staff", v)}
+                              className="text-xs"
+                            />
+                          </td>
+                          <td className="border border-gray-400 px-1 py-0.5 text-right">
+                            <EditableField
+                              value={flight.thruPmc.toString()}
+                              onChange={(v) =>
+                                updateFlight(bonusFlights, setBonusFlights, index, "thruPmc", parseInt(v) || 0)
+                              }
+                              type="number"
+                              className="w-8 text-right text-xs"
+                            />
+                          </td>
+                          <td className="border border-gray-400 px-1 py-0.5 text-right">
+                            <EditableField
+                              value={flight.thruAlf.toString()}
+                              onChange={(v) =>
+                                updateFlight(bonusFlights, setBonusFlights, index, "thruAlf", parseInt(v) || 0)
+                              }
+                              type="number"
+                              className="w-8 text-right text-xs"
+                            />
+                          </td>
+                          <td className="border border-gray-400 px-1 py-0.5 text-right">
+                            <EditableField
+                              value={flight.thruAke.toString()}
+                              onChange={(v) =>
+                                updateFlight(bonusFlights, setBonusFlights, index, "thruAke", parseInt(v) || 0)
+                              }
+                              type="number"
+                              className="w-8 text-right text-xs"
+                            />
+                          </td>
+                          <td className="border border-gray-400 px-1 py-0.5 text-right">
+                            <EditableField
+                              value={flight.builtPmc.toString()}
+                              onChange={(v) =>
+                                updateFlight(bonusFlights, setBonusFlights, index, "builtPmc", parseInt(v) || 0)
+                              }
+                              type="number"
+                              className="w-8 text-right text-xs"
+                            />
+                          </td>
+                          <td className="border border-gray-400 px-1 py-0.5 text-right">
+                            <EditableField
+                              value={flight.builtAlf.toString()}
+                              onChange={(v) =>
+                                updateFlight(bonusFlights, setBonusFlights, index, "builtAlf", parseInt(v) || 0)
+                              }
+                              type="number"
+                              className="w-8 text-right text-xs"
+                            />
+                          </td>
+                          <td className="border border-gray-400 px-1 py-0.5 text-right">
+                            <EditableField
+                              value={flight.builtAke.toString()}
+                              onChange={(v) =>
+                                updateFlight(bonusFlights, setBonusFlights, index, "builtAke", parseInt(v) || 0)
+                              }
+                              type="number"
+                              className="w-8 text-right text-xs"
+                            />
+                          </td>
+                          <td className="border border-gray-400 px-1 py-0.5 text-right font-semibold bg-gray-300">
+                            {flight.builtPmc + flight.builtAlf + flight.builtAke}
+                          </td>
+                          <td className="border border-gray-400 px-1 py-0.5 text-right">0</td>
+                          <td className="border border-gray-400 px-1 py-0.5 text-right">0</td>
+                          <td className="border border-gray-400 px-1 py-0.5 text-right">0</td>
+                          <td className="border border-gray-400 px-1 py-0.5 text-right bg-gray-300">0</td>
+                        </tr>
+                      ))}
+                      <tr className="bg-gray-200 font-semibold">
+                        <td className="border border-gray-400 px-1 py-0.5">TTL FLTS</td>
+                        <td className="border border-gray-400 px-1 py-0.5">TTL STAFF</td>
+                        <td className="border border-gray-400 px-1 py-0.5 text-right" colSpan={3}>THRU ULDS</td>
+                        <td className="border border-gray-400 px-1 py-0.5 text-right" colSpan={3}>BUILT ULDS</td>
+                        <td className="border border-gray-400 px-1 py-0.5 text-right">TOT</td>
+                        <td className="border border-gray-400 px-1 py-0.5 text-right" colSpan={3}>PENDING UNITS</td>
+                        <td className="border border-gray-400 px-1 py-0.5 text-right">TOT</td>
+                        </tr>
+                      <tr className="bg-gray-200 font-semibold">
+                        <td className="border border-gray-400 px-1 py-0.5">{bonusFlights.length}</td>
+                        <td className="border border-gray-400 px-1 py-0.5">
+                          {new Set(bonusFlights.map((f) => f.staff).filter(Boolean)).size}
+                        </td>
+                        <td className="border border-gray-400 px-1 py-0.5 text-right">{advanceReportTotals.bonusThru.pmcAmf}</td>
+                        <td className="border border-gray-400 px-1 py-0.5 text-right">{advanceReportTotals.bonusThru.alfPla}</td>
+                        <td className="border border-gray-400 px-1 py-0.5 text-right">{advanceReportTotals.bonusThru.akeRke}</td>
+                        <td className="border border-gray-400 px-1 py-0.5 text-right">{advanceReportTotals.bonusBuilt.pmcAmf}</td>
+                        <td className="border border-gray-400 px-1 py-0.5 text-right">{advanceReportTotals.bonusBuilt.alfPla}</td>
+                        <td className="border border-gray-400 px-1 py-0.5 text-right">{advanceReportTotals.bonusBuilt.akeRke}</td>
+                        <td className="border border-gray-400 px-1 py-0.5 text-right bg-gray-300">
+                          {getTotal(advanceReportTotals.bonusBuilt)}
+                        </td>
+                        <td className="border border-gray-400 px-1 py-0.5 text-right">0</td>
+                        <td className="border border-gray-400 px-1 py-0.5 text-right">0</td>
+                        <td className="border border-gray-400 px-1 py-0.5 text-right">0</td>
+                        <td className="border border-gray-400 px-1 py-0.5 text-right bg-gray-300">0</td>
+                        </tr>
+                      </tbody>
+                    </table>
                 </div>
-              </div>
-            </CollapsibleTrigger>
-            <CollapsibleContent>
-              <div className="p-4">
-                <div className="grid grid-cols-2 gap-4 mb-4">
-                  {/* Advance Units */}
-                  <div className="border border-gray-200 rounded p-3">
-                    <h5 className="text-xs font-semibold text-gray-700 mb-2">ADVANCE UNITS</h5>
-                    <table className="w-full text-xs">
-                      <thead>
-                        <tr className="bg-gray-50">
-                          <th className="px-2 py-1 text-left">Category</th>
-                          <th className="px-2 py-1 text-right">Value</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        <tr>
-                          <td className="px-2 py-1">TTL FLTS</td>
-                          <td className="px-2 py-1 text-right font-semibold">{advanceReportData.advanceUnits.totalFlights}</td>
-                        </tr>
-                        <tr>
-                          <td className="px-2 py-1">TTL STAFF</td>
-                          <td className="px-2 py-1 text-right font-semibold">{advanceReportData.advanceUnits.totalStaff}</td>
-                        </tr>
-                        <tr className="border-t">
-                          <td className="px-2 py-1">THRU ULDS - PMC</td>
-                          <td className="px-2 py-1 text-right">{advanceReportData.advanceUnits.thruULDs.pmc}</td>
-                        </tr>
-                        <tr>
-                          <td className="px-2 py-1">THRU ULDS - ALF</td>
-                          <td className="px-2 py-1 text-right">{advanceReportData.advanceUnits.thruULDs.alf}</td>
-                        </tr>
-                        <tr>
-                          <td className="px-2 py-1">THRU ULDS - AKE</td>
-                          <td className="px-2 py-1 text-right">{advanceReportData.advanceUnits.thruULDs.ake}</td>
-                        </tr>
-                        <tr className="border-t">
-                          <td className="px-2 py-1">BUILT ULDS - PMC</td>
-                          <td className="px-2 py-1 text-right">{advanceReportData.advanceUnits.builtULDs.pmc}</td>
-                        </tr>
-                        <tr>
-                          <td className="px-2 py-1">BUILT ULDS - ALF</td>
-                          <td className="px-2 py-1 text-right">{advanceReportData.advanceUnits.builtULDs.alf}</td>
-                        </tr>
-                        <tr>
-                          <td className="px-2 py-1">BUILT ULDS - AKE</td>
-                          <td className="px-2 py-1 text-right">{advanceReportData.advanceUnits.builtULDs.ake}</td>
-                        </tr>
-                        <tr className="bg-gray-50 font-semibold border-t">
-                          <td className="px-2 py-1">TOT</td>
-                          <td className="px-2 py-1 text-right">{advanceReportData.advanceUnits.total}</td>
-                        </tr>
-                        <tr className="border-t">
-                          <td className="px-2 py-1">PENDING UNITS - PMC</td>
-                          <td className="px-2 py-1 text-right">{advanceReportData.advanceUnits.pendingUnits.pmc}</td>
-                        </tr>
-                        <tr>
-                          <td className="px-2 py-1">PENDING UNITS - ALF</td>
-                          <td className="px-2 py-1 text-right">{advanceReportData.advanceUnits.pendingUnits.alf}</td>
-                        </tr>
-                        <tr>
-                          <td className="px-2 py-1">PENDING UNITS - AKE</td>
-                          <td className="px-2 py-1 text-right">{advanceReportData.advanceUnits.pendingUnits.ake}</td>
-                        </tr>
-                        <tr className="bg-gray-50 font-semibold">
-                          <td className="px-2 py-1">TOT</td>
-                          <td className="px-2 py-1 text-right">{advanceReportData.advanceUnits.totalPending}</td>
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
-
-                  {/* Bonus Units */}
-                  <div className="border border-gray-200 rounded p-3">
-                    <h5 className="text-xs font-semibold text-gray-700 mb-2">BONUS UNITS</h5>
-                    <table className="w-full text-xs">
-                      <thead>
-                        <tr className="bg-gray-50">
-                          <th className="px-2 py-1 text-left">Category</th>
-                          <th className="px-2 py-1 text-right">Value</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        <tr>
-                          <td className="px-2 py-1">TTL FLTS</td>
-                          <td className="px-2 py-1 text-right font-semibold">{advanceReportData.bonusUnits.totalFlights}</td>
-                        </tr>
-                        <tr>
-                          <td className="px-2 py-1">TTL STAFF</td>
-                          <td className="px-2 py-1 text-right font-semibold">{advanceReportData.bonusUnits.totalStaff}</td>
-                        </tr>
-                        <tr className="border-t">
-                          <td className="px-2 py-1">THRU ULDS - PMC</td>
-                          <td className="px-2 py-1 text-right">{advanceReportData.bonusUnits.thruULDs.pmc}</td>
-                        </tr>
-                        <tr>
-                          <td className="px-2 py-1">THRU ULDS - ALF</td>
-                          <td className="px-2 py-1 text-right">{advanceReportData.bonusUnits.thruULDs.alf}</td>
-                        </tr>
-                        <tr>
-                          <td className="px-2 py-1">THRU ULDS - AKE</td>
-                          <td className="px-2 py-1 text-right">{advanceReportData.bonusUnits.thruULDs.ake}</td>
-                        </tr>
-                        <tr className="border-t">
-                          <td className="px-2 py-1">BUILT ULDS - PMC</td>
-                          <td className="px-2 py-1 text-right">{advanceReportData.bonusUnits.builtULDs.pmc}</td>
-                        </tr>
-                        <tr>
-                          <td className="px-2 py-1">BUILT ULDS - ALF</td>
-                          <td className="px-2 py-1 text-right">{advanceReportData.bonusUnits.builtULDs.alf}</td>
-                        </tr>
-                        <tr>
-                          <td className="px-2 py-1">BUILT ULDS - AKE</td>
-                          <td className="px-2 py-1 text-right">{advanceReportData.bonusUnits.builtULDs.ake}</td>
-                        </tr>
-                        <tr className="bg-gray-50 font-semibold border-t">
-                          <td className="px-2 py-1">TOT</td>
-                          <td className="px-2 py-1 text-right">{advanceReportData.bonusUnits.total}</td>
-                        </tr>
-                        <tr className="border-t">
-                          <td className="px-2 py-1">PENDING UNITS - PMC</td>
-                          <td className="px-2 py-1 text-right">{advanceReportData.bonusUnits.pendingUnits.pmc}</td>
-                        </tr>
-                        <tr>
-                          <td className="px-2 py-1">PENDING UNITS - ALF</td>
-                          <td className="px-2 py-1 text-right">{advanceReportData.bonusUnits.pendingUnits.alf}</td>
-                        </tr>
-                        <tr>
-                          <td className="px-2 py-1">PENDING UNITS - AKE</td>
-                          <td className="px-2 py-1 text-right">{advanceReportData.bonusUnits.pendingUnits.ake}</td>
-                        </tr>
-                        <tr className="bg-gray-50 font-semibold">
-                          <td className="px-2 py-1">TOT</td>
-                          <td className="px-2 py-1 text-right">{advanceReportData.bonusUnits.totalPending}</td>
-                        </tr>
-                      </tbody>
-                    </table>
                   </div>
                 </div>
 
                 {/* Summary Totals */}
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="border border-gray-200 rounded p-3">
-                    <h5 className="text-xs font-semibold text-gray-700 mb-2">ADVANCE UNITS</h5>
-                    <table className="w-full text-xs">
+            <div className="mt-2 grid grid-cols-2 gap-2">
+              <div className="border border-gray-400">
+                <div className="bg-gray-200 px-1 py-0.5 text-xs font-semibold border-b border-gray-400">ADVANCE UNITS</div>
+                <table className="w-full text-xs border-collapse">
                       <thead>
-                        <tr className="bg-gray-50">
-                          <th className="px-2 py-1 text-left">ULD Details</th>
-                          <th className="px-2 py-1 text-right">PMC</th>
-                          <th className="px-2 py-1 text-right">ALF</th>
-                          <th className="px-2 py-1 text-right">AKE</th>
-                          <th className="px-2 py-1 text-right">Total</th>
+                    <tr className="bg-gray-100">
+                      <th className="border border-gray-400 px-1 py-0.5 text-left">ULD Details</th>
+                      <th className="border border-gray-400 px-1 py-0.5 text-right">PMC</th>
+                      <th className="border border-gray-400 px-1 py-0.5 text-right">ALF</th>
+                      <th className="border border-gray-400 px-1 py-0.5 text-right">AKE</th>
+                      <th className="border border-gray-400 px-1 py-0.5 text-right">Total</th>
                         </tr>
                       </thead>
                       <tbody>
                         <tr>
-                          <td className="px-2 py-1">Units-Built</td>
-                          <td className="px-2 py-1 text-right">{advanceReportData.advanceUnits.builtULDs.pmc}</td>
-                          <td className="px-2 py-1 text-right">{advanceReportData.advanceUnits.builtULDs.alf}</td>
-                          <td className="px-2 py-1 text-right">{advanceReportData.advanceUnits.builtULDs.ake}</td>
-                          <td className="px-2 py-1 text-right font-semibold">{advanceReportData.advanceUnits.total}</td>
+                      <td className="border border-gray-400 px-1 py-0.5">Units-Built</td>
+                      <td className="border border-gray-400 px-1 py-0.5 text-right">{advanceReportTotals.advanceBuilt.pmcAmf}</td>
+                      <td className="border border-gray-400 px-1 py-0.5 text-right">{advanceReportTotals.advanceBuilt.alfPla}</td>
+                      <td className="border border-gray-400 px-1 py-0.5 text-right">{advanceReportTotals.advanceBuilt.akeRke}</td>
+                      <td className="border border-gray-400 px-1 py-0.5 text-right font-semibold bg-gray-50">
+                        {getTotal(advanceReportTotals.advanceBuilt)}
+                      </td>
                         </tr>
                         <tr>
-                          <td className="px-2 py-1">Thru Units</td>
-                          <td className="px-2 py-1 text-right">{advanceReportData.advanceUnits.thruULDs.pmc}</td>
-                          <td className="px-2 py-1 text-right">{advanceReportData.advanceUnits.thruULDs.alf}</td>
-                          <td className="px-2 py-1 text-right">{advanceReportData.advanceUnits.thruULDs.ake}</td>
-                          <td className="px-2 py-1 text-right">{advanceReportData.advanceUnits.thruULDs.pmc + advanceReportData.advanceUnits.thruULDs.alf + advanceReportData.advanceUnits.thruULDs.ake}</td>
+                      <td className="border border-gray-400 px-1 py-0.5">Thru Units</td>
+                      <td className="border border-gray-400 px-1 py-0.5 text-right">{advanceReportTotals.advanceThru.pmcAmf}</td>
+                      <td className="border border-gray-400 px-1 py-0.5 text-right">{advanceReportTotals.advanceThru.alfPla}</td>
+                      <td className="border border-gray-400 px-1 py-0.5 text-right">{advanceReportTotals.advanceThru.akeRke}</td>
+                      <td className="border border-gray-400 px-1 py-0.5 text-right">
+                        {getTotal(advanceReportTotals.advanceThru)}
+                      </td>
                         </tr>
-                        <tr className="bg-gray-50 font-semibold">
-                          <td className="px-2 py-1">Total</td>
-                          <td className="px-2 py-1 text-right">{advanceReportData.advanceUnits.builtULDs.pmc}</td>
-                          <td className="px-2 py-1 text-right">{advanceReportData.advanceUnits.builtULDs.alf}</td>
-                          <td className="px-2 py-1 text-right">{advanceReportData.advanceUnits.builtULDs.ake}</td>
-                          <td className="px-2 py-1 text-right">{advanceReportData.advanceUnits.total}</td>
+                    <tr className="bg-gray-200 font-semibold">
+                      <td className="border border-gray-400 px-1 py-0.5">Total</td>
+                      <td className="border border-gray-400 px-1 py-0.5 text-right">{advanceReportTotals.advanceBuilt.pmcAmf}</td>
+                      <td className="border border-gray-400 px-1 py-0.5 text-right">{advanceReportTotals.advanceBuilt.alfPla}</td>
+                      <td className="border border-gray-400 px-1 py-0.5 text-right">{advanceReportTotals.advanceBuilt.akeRke}</td>
+                      <td className="border border-gray-400 px-1 py-0.5 text-right">{getTotal(advanceReportTotals.advanceBuilt)}</td>
                         </tr>
                       </tbody>
                     </table>
                   </div>
 
-                  <div className="border border-gray-200 rounded p-3">
-                    <h5 className="text-xs font-semibold text-gray-700 mb-2">BONUS UNITS</h5>
-                    <table className="w-full text-xs">
+              <div className="border border-gray-400">
+                <div className="bg-gray-200 px-1 py-0.5 text-xs font-semibold border-b border-gray-400">BONUS UNITS</div>
+                <table className="w-full text-xs border-collapse">
                       <thead>
-                        <tr className="bg-gray-50">
-                          <th className="px-2 py-1 text-left">ULD Details</th>
-                          <th className="px-2 py-1 text-right">PMC</th>
-                          <th className="px-2 py-1 text-right">ALF</th>
-                          <th className="px-2 py-1 text-right">AKE</th>
-                          <th className="px-2 py-1 text-right">Total</th>
+                    <tr className="bg-gray-100">
+                      <th className="border border-gray-400 px-1 py-0.5 text-left">ULD Details</th>
+                      <th className="border border-gray-400 px-1 py-0.5 text-right">PMC</th>
+                      <th className="border border-gray-400 px-1 py-0.5 text-right">ALF</th>
+                      <th className="border border-gray-400 px-1 py-0.5 text-right">AKE</th>
+                      <th className="border border-gray-400 px-1 py-0.5 text-right">Total</th>
                         </tr>
                       </thead>
                       <tbody>
                         <tr>
-                          <td className="px-2 py-1">Units-Built</td>
-                          <td className="px-2 py-1 text-right">{advanceReportData.bonusUnits.builtULDs.pmc}</td>
-                          <td className="px-2 py-1 text-right">{advanceReportData.bonusUnits.builtULDs.alf}</td>
-                          <td className="px-2 py-1 text-right">{advanceReportData.bonusUnits.builtULDs.ake}</td>
-                          <td className="px-2 py-1 text-right font-semibold">{advanceReportData.bonusUnits.total}</td>
+                      <td className="border border-gray-400 px-1 py-0.5">Units-Built</td>
+                      <td className="border border-gray-400 px-1 py-0.5 text-right">{advanceReportTotals.bonusBuilt.pmcAmf}</td>
+                      <td className="border border-gray-400 px-1 py-0.5 text-right">{advanceReportTotals.bonusBuilt.alfPla}</td>
+                      <td className="border border-gray-400 px-1 py-0.5 text-right">{advanceReportTotals.bonusBuilt.akeRke}</td>
+                      <td className="border border-gray-400 px-1 py-0.5 text-right font-semibold bg-gray-50">
+                        {getTotal(advanceReportTotals.bonusBuilt)}
+                      </td>
                         </tr>
                         <tr>
-                          <td className="px-2 py-1">Thru Units</td>
-                          <td className="px-2 py-1 text-right">{advanceReportData.bonusUnits.thruULDs.pmc}</td>
-                          <td className="px-2 py-1 text-right">{advanceReportData.bonusUnits.thruULDs.alf}</td>
-                          <td className="px-2 py-1 text-right">{advanceReportData.bonusUnits.thruULDs.ake}</td>
-                          <td className="px-2 py-1 text-right">{advanceReportData.bonusUnits.thruULDs.pmc + advanceReportData.bonusUnits.thruULDs.alf + advanceReportData.bonusUnits.thruULDs.ake}</td>
+                      <td className="border border-gray-400 px-1 py-0.5">Thru Units</td>
+                      <td className="border border-gray-400 px-1 py-0.5 text-right">{advanceReportTotals.bonusThru.pmcAmf}</td>
+                      <td className="border border-gray-400 px-1 py-0.5 text-right">{advanceReportTotals.bonusThru.alfPla}</td>
+                      <td className="border border-gray-400 px-1 py-0.5 text-right">{advanceReportTotals.bonusThru.akeRke}</td>
+                      <td className="border border-gray-400 px-1 py-0.5 text-right">
+                        {getTotal(advanceReportTotals.bonusThru)}
+                      </td>
                         </tr>
-                        <tr className="bg-gray-50 font-semibold">
-                          <td className="px-2 py-1">Total</td>
-                          <td className="px-2 py-1 text-right">{advanceReportData.bonusUnits.builtULDs.pmc}</td>
-                          <td className="px-2 py-1 text-right">{advanceReportData.bonusUnits.builtULDs.alf}</td>
-                          <td className="px-2 py-1 text-right">{advanceReportData.bonusUnits.builtULDs.ake}</td>
-                          <td className="px-2 py-1 text-right">{advanceReportData.bonusUnits.total}</td>
+                    <tr className="bg-gray-200 font-semibold">
+                      <td className="border border-gray-400 px-1 py-0.5">Total</td>
+                      <td className="border border-gray-400 px-1 py-0.5 text-right">{advanceReportTotals.bonusBuilt.pmcAmf}</td>
+                      <td className="border border-gray-400 px-1 py-0.5 text-right">{advanceReportTotals.bonusBuilt.alfPla}</td>
+                      <td className="border border-gray-400 px-1 py-0.5 text-right">{advanceReportTotals.bonusBuilt.akeRke}</td>
+                      <td className="border border-gray-400 px-1 py-0.5 text-right">{getTotal(advanceReportTotals.bonusBuilt)}</td>
                         </tr>
                       </tbody>
                     </table>
@@ -1152,24 +1187,15 @@ export default function ShiftSummaryReportScreen() {
                 </div>
 
                 {/* Grand Totals */}
-                <div className="mt-4 border border-gray-200 rounded p-3 bg-gray-50">
-                  <div className="grid grid-cols-2 gap-4 text-xs">
-                    <div>
-                      <div className="font-semibold mb-1">TOTAL BUILT UNITS (ADVANCE + BONUS)</div>
-                      <div className="text-lg font-bold text-[#D71A21]">{advanceReportData.totalBuiltUnits}</div>
+            <div className="mt-2 border border-gray-400 bg-gray-100 p-1">
+              <div className="text-xs font-semibold mb-1">TOTAL BUILT UNITS (ADVANCE + BONUS)</div>
+              <div className="text-base font-bold" style={{ color: "#8B0000" }}>
+                {getTotal(advanceReportTotals.totalBuilt)}
                     </div>
-                    <div>
-                      <div className="font-semibold mb-1">TOTAL PENDING UNITS (ADVANCE + BONUS)</div>
-                      <div className="text-lg font-bold">{advanceReportData.totalPendingUnits}</div>
                     </div>
                   </div>
                 </div>
-              </div>
-            </CollapsibleContent>
-          </div>
-        </Collapsible>
       </div>
     </div>
   )
 }
-

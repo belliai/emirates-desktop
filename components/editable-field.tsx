@@ -8,9 +8,11 @@ interface EditableFieldProps {
   className?: string
   multiline?: boolean
   readOnly?: boolean
+  type?: "text" | "number"
+  placeholder?: string
 }
 
-export function EditableField({ value, onChange, className = "", multiline = false, readOnly = false }: EditableFieldProps) {
+export function EditableField({ value, onChange, className = "", multiline = false, readOnly = false, type = "text", placeholder }: EditableFieldProps) {
   const [isEditing, setIsEditing] = useState(false)
   const [editValue, setEditValue] = useState(value)
 
@@ -53,13 +55,14 @@ export function EditableField({ value, onChange, className = "", multiline = fal
     }
     return (
       <input
-        type="text"
+        type={type}
         value={editValue}
         onChange={(e) => setEditValue(e.target.value)}
         onBlur={handleBlur}
         onKeyDown={handleKeyDown}
         className={`px-2 py-1 border border-[#D71A21] rounded focus:outline-none focus:ring-1 focus:ring-[#D71A21] min-w-[60px] ${className}`}
         autoFocus
+        placeholder={placeholder}
       />
     )
   }
