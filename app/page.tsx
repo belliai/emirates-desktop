@@ -20,6 +20,7 @@ import FlightAssignmentScreen from "@/components/flight-assignment-screen"
 import SituationalAwarenessScreen from "@/components/situational-awareness-screen"
 import WorkAreaScreen from "@/components/work-area-screen"
 import FlightsViewScreen from "@/components/flights-view-screen"
+import ShiftSummaryReportScreen from "@/components/shift-summary-report-screen"
 import SideNavigation from "@/components/side-navigation"
 import { FlightProvider, useFlights } from "@/lib/flight-context"
 import { LoadPlanProvider } from "@/lib/load-plan-context"
@@ -44,6 +45,7 @@ function AppContent() {
     | "uld-management"
     | "buildup-staff"
     | "flight-assignment"
+    | "shift-summary-report"
     | "situational-awareness"
     | "flights-view"
     | "work-area-gcr"
@@ -134,6 +136,8 @@ function AppContent() {
         return <CustomReportsScreen />
       case "flight-assignment":
         return <FlightAssignmentScreen />
+      case "shift-summary-report":
+        return <ShiftSummaryReportScreen />
       case "staff":
         return <PerformanceScreen />
       case "uld-management":

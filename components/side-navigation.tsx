@@ -85,6 +85,7 @@ export default function SideNavigation({ currentScreen, onNavigate }: SideNaviga
       items: [
         { id: "staff", label: "Performance", icon: Users },
         { id: "flight-assignment", label: "Flight Assignment", icon: Plane },
+        { id: "shift-summary-report", label: "Shift Summary Report", icon: FileText },
       ],
     },
   ]
