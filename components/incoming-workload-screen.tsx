@@ -2,7 +2,7 @@
 
 import { useMemo } from "react"
 import { Plane, Clock, MapPin, Package } from "lucide-react"
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from "recharts"
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell, TooltipProps } from "recharts"
 import { useLoadPlans, type LoadPlan } from "@/lib/load-plan-context"
 import { BUP_ALLOCATION_DATA } from "@/lib/bup-allocation-data"
 
@@ -16,6 +16,77 @@ function parseULDCount(ttlPlnUld: string): { pmc: number; ake: number; bulk: num
   const ake = akeMatch ? parseInt(akeMatch[1]) : 0
   const bulk = bulkMatch ? parseInt(bulkMatch[1]) : 0
   return { pmc, ake, bulk, total: pmc + ake + bulk }
+}
+
+// Custom tooltip to prevent duplicates and only show relevant data
+function CustomTooltip({ active, payload, label }: TooltipProps<number, string>) {
+  if (!active || !payload || !payload.length) return null
+
+  const data = payload[0]?.payload
+  if (!data) return null
+
+  // For Total bar, show breakdown
+  if (label === "Total" && data.pmc !== undefined) {
+    const items: Array<{ name: string; value: number; color: string }> = []
+    
+    if (data.pmc > 0) {
+      items.push({ name: "PMC", value: data.pmc, color: "#DC2626" })
+    }
+    if (data.ake > 0) {
+      items.push({ name: "AKE", value: data.ake, color: "#EF4444" })
+    }
+    if (data.bulk > 0) {
+      items.push({ name: "Bulk", value: data.bulk, color: "#F59E0B" })
+    }
+    
+    return (
+      <div className="bg-white border border-gray-300 rounded px-3 py-2 shadow-lg">
+        <p className="font-semibold text-sm mb-1">Total: {data.total || 0} ULDs</p>
+        {items.length > 0 && (
+          <div className="space-y-1">
+            {items.map((item, idx) => (
+              <div key={idx} className="flex items-center gap-2 text-xs">
+                <span
+                  style={{
+                    display: "inline-block",
+                    width: "10px",
+                    height: "10px",
+                    backgroundColor: item.color,
+                    borderRadius: "2px"
+                  }}
+                />
+                <span>{item.name}: {item.value} ULDs</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  // For individual bars (PMC or AKE), show single value
+  const value = typeof payload[0]?.value === 'number' ? payload[0].value : 0
+  if (value <= 0) return null
+
+  const color = label === "AKE" ? "#EF4444" : "#DC2626"
+  
+  return (
+    <div className="bg-white border border-gray-300 rounded px-3 py-2 shadow-lg">
+      <p className="font-semibold text-sm mb-1">ULD Type: {label}</p>
+      <div className="flex items-center gap-2 text-xs">
+        <span
+          style={{
+            display: "inline-block",
+            width: "10px",
+            height: "10px",
+            backgroundColor: color,
+            borderRadius: "2px"
+          }}
+        />
+        <span>{label}: {value} ULDs</span>
+      </div>
+    </div>
+  )
 }
 
 // Extract destination from pax field (e.g., "DXB/MAA/0/23/251" -> "DXB-MAA")
@@ -96,30 +167,24 @@ export default function IncomingWorkloadScreen() {
     return calculateULDBreakdown(displayFlights)
   }, [displayFlights])
 
-  // Prepare bar chart data for ULD types - based on actual flight data
+  // Prepare bar chart data for ULD types - based on actual load plan ttlPlnUld data
   const uldTypeChartData = useMemo(() => {
     return [
       {
         type: "PMC",
-        pmc: uldBreakdownData.PMC,
-        ake: 0,
-        pmcAke: 0,
-        bulk: 0,
+        value: uldBreakdownData.PMC,
         total: uldBreakdownData.PMC,
       },
       {
         type: "AKE",
-        pmc: 0,
-        ake: uldBreakdownData.AKE,
-        pmcAke: 0,
-        bulk: 0,
+        value: uldBreakdownData.AKE,
         total: uldBreakdownData.AKE,
       },
       {
         type: "Total",
-        pmc: 0,
-        ake: 0,
-        pmcAke: uldBreakdownData.PMC + uldBreakdownData.AKE,
+        value: uldBreakdownData.PMC + uldBreakdownData.AKE + uldBreakdownData.BULK,
+        pmc: uldBreakdownData.PMC,
+        ake: uldBreakdownData.AKE,
         bulk: uldBreakdownData.BULK,
         total: uldBreakdownData.PMC + uldBreakdownData.AKE + uldBreakdownData.BULK,
       },
@@ -153,34 +218,7 @@ export default function IncomingWorkloadScreen() {
                   tick={{ fontSize: 12, fill: "#6B7280" }}
                   stroke="#9CA3AF"
                 />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: "white",
-                    border: "1px solid #E5E7EB",
-                    borderRadius: "4px",
-                    fontSize: "12px",
-                  }}
-                  formatter={(value: number, name: string, props: any) => {
-                    if (props.payload.type === "Total") {
-                      if (name === "pmcAke") {
-                        return [`${value} ULDs (PMC + AKE)`, "PMC + AKE"]
-                      } else if (name === "bulk") {
-                        return [`${value} ULDs`, "Bulk"]
-                      } else if (name === "total") {
-                        return [`${value} ULDs`, "Total"]
-                      }
-                    } else {
-                      return [`${value} ULDs`, props.payload.type]
-                    }
-                    return null
-                  }}
-                  labelFormatter={(label) => {
-                    if (label === "Total") {
-                      return `Total: ${uldBreakdownData.total} ULDs`
-                    }
-                    return `ULD Type: ${label}`
-                  }}
-                />
+                <Tooltip content={<CustomTooltip />} />
                 <Legend 
                   wrapperStyle={{ fontSize: "12px", paddingTop: "20px", pointerEvents: "none" }} 
                   iconSize={12}
@@ -227,37 +265,23 @@ export default function IncomingWorkloadScreen() {
                     )
                   }}
                 />
-                <Bar dataKey="pmc" fill="#DC2626" name="PMC" barSize={60} radius={[4, 4, 0, 0]}>
-                  {uldTypeChartData.map((entry, index) => (
-                    <Cell 
-                      key={`cell-pmc-${index}`} 
-                      fill={entry.type === "PMC" ? "#DC2626" : "transparent"} 
-                    />
-                  ))}
-                </Bar>
-                <Bar dataKey="ake" fill="#EF4444" name="AKE" barSize={60} radius={[4, 4, 0, 0]}>
-                  {uldTypeChartData.map((entry, index) => (
-                    <Cell 
-                      key={`cell-ake-${index}`} 
-                      fill={entry.type === "AKE" ? "#EF4444" : "transparent"} 
-                    />
-                  ))}
-                </Bar>
-                <Bar dataKey="pmcAke" stackId="total" fill="#DC2626" name="PMC + AKE" barSize={60} radius={[0, 0, 0, 0]}>
-                  {uldTypeChartData.map((entry, index) => (
-                    <Cell 
-                      key={`cell-total-pmcake-${index}`} 
-                      fill={entry.type === "Total" ? "#DC2626" : "transparent"} 
-                    />
-                  ))}
-                </Bar>
-                <Bar dataKey="bulk" stackId="total" fill="#F59E0B" name="Bulk" barSize={60} radius={[4, 4, 0, 0]}>
-                  {uldTypeChartData.map((entry, index) => (
-                    <Cell 
-                      key={`cell-total-bulk-${index}`} 
-                      fill={entry.type === "Total" ? "#F59E0B" : "transparent"} 
-                    />
-                  ))}
+                <Bar dataKey="value" barSize={60} radius={[4, 4, 0, 0]} name="value">
+                  {uldTypeChartData.map((entry, index) => {
+                    let fillColor = "#DC2626"
+                    
+                    if (entry.type === "AKE") {
+                      fillColor = "#EF4444"
+                    } else if (entry.type === "Total") {
+                      fillColor = "#DC2626"
+                    }
+                    
+                    return (
+                      <Cell 
+                        key={`cell-${index}`} 
+                        fill={fillColor}
+                      />
+                    )
+                  })}
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
