@@ -1,17 +1,43 @@
 "use client"
 
-import { useState, useEffect, useMemo } from "react"
-import { ChevronRight, Plane, Calendar, Package, Users, Clock, FileText, Phone, User, Filter } from "lucide-react"
+import { useState, useEffect, useMemo, useRef } from "react"
+import { ChevronRight, Plane, Calendar, Package, Users, Clock, FileText, Phone, User, Filter, X } from "lucide-react"
 import LoadPlanDetailScreen from "./load-plan-detail-screen"
-import type { LoadPlanDetail } from "./load-plan-types"
+import type { LoadPlanDetail, AWBRow, ULDSection } from "./load-plan-types"
 import { useLoadPlans, type LoadPlan } from "@/lib/load-plan-context"
 import { getLoadPlansFromSupabase, getLoadPlanDetailFromSupabase } from "@/lib/load-plans-supabase"
 import { parseULDSection } from "@/lib/uld-parser"
 
 // Types for completion tracking
 type CompletionStatus = "green" | "amber" | "red"
-type WorkArea = "All" | "GCR" | "PER" | "PIL"
+type WorkArea = "All" | "GCR" | "PIL and PER"
 type Shift = "All" | "9am to 9pm" | "9pm to 9am"
+
+// PIL/PER SHC codes that identify PIL and PER work areas
+const PIL_PER_SHC_CODES = ["FRO", "FRI", "ACT", "CRT", "COL", "ERT", "PIL-ACT", "PIL-COL", "PEF-COL", "PER-COL"]
+
+/**
+ * Check if an AWB has any PIL/PER SHC code
+ * Case-insensitive matching, exact match required
+ */
+export function hasPilPerShcCode(awb: AWBRow): boolean {
+  if (!awb.shc || awb.shc.trim() === "") {
+    return false
+  }
+  
+  const shcUpper = awb.shc.trim().toUpperCase()
+  return PIL_PER_SHC_CODES.some(code => shcUpper === code.toUpperCase())
+}
+
+/**
+ * Check if a ULD section contains any AWB with PIL/PER SHC codes
+ */
+export function uldSectionHasPilPerShc(uldSection: ULDSection): boolean {
+  return uldSection.awbs.some(awb => hasPilPerShcCode(awb))
+}
+
+// Export WorkArea type for use in other components
+export type { WorkArea }
 
 // Two 9-9 shifts
 const SHIFTS: Shift[] = ["All", "9am to 9pm", "9pm to 9am"]
@@ -47,7 +73,6 @@ type FlightCompletion = {
   status: CompletionStatus
   staffName: string
   staffContact: string
-  workArea: WorkArea
   shift: Shift
 }
 
@@ -79,22 +104,7 @@ const COMPLETION_DATA: Record<string, { completedULDs: number }> = {
   "EK1024": { completedULDs: 6 },
 }
 
-// Work area assignments - GCR has most, then PER, then PIL
-const WORK_AREA_DATA: Record<string, WorkArea> = {
-  // GCR - 5 flights (most)
-  "EK0544": "GCR",
-  "EK0205": "GCR",
-  "EK0301": "GCR",
-  "EK0618": "GCR",
-  "EK0720": "GCR",
-  // PER - 3 flights
-  "EK0402": "PER",
-  "EK0112": "PER",
-  "EK0832": "PER",
-  // PIL - 2 flights (least)
-  "EK0915": "PIL",
-  "EK1024": "PIL",
-}
+// Work area assignments removed - work areas are now determined by SHC codes within flights
 
 // Shift assignments - based on STD times for demo
 // 9am-9pm (Day shift) and 9pm-9am (Night shift)
@@ -145,6 +155,167 @@ function parseTTLPlnUld(ttlPlnUld: string): number {
   return total || 1 // Return at least 1 to avoid division by zero
 }
 
+/**
+ * Calculate total planned ULDs from load plan detail, filtered by work area
+ * Uses ttlPlnUld field as default, but if ULD numbers have been modified via modal,
+ * uses the total count of ULD number slots (including empty ones)
+ * @param loadPlanDetail - The load plan detail
+ * @param workAreaFilter - Optional work area filter ("All", "GCR", or "PIL and PER")
+ */
+function calculateTotalPlannedULDs(loadPlanDetail: LoadPlanDetail, workAreaFilter?: WorkArea): number {
+  // Check if ULD numbers have been saved (modified via modal)
+  if (typeof window !== 'undefined') {
+    try {
+      const stored = localStorage.getItem(`uld-numbers-${loadPlanDetail.flight}`)
+      if (stored) {
+        const parsed = JSON.parse(stored)
+        
+        // Filter ULD sections based on workAreaFilter
+        let totalSlots = 0
+        Object.entries(parsed).forEach(([key, value]) => {
+          // Parse sectorIndex and uldSectionIndex from key format: "sectorIndex-uldSectionIndex"
+          const [sectorIndexStr, uldSectionIndexStr] = key.split('-')
+          const sectorIndex = parseInt(sectorIndexStr, 10)
+          const uldSectionIndex = parseInt(uldSectionIndexStr, 10)
+          
+          // Check if this ULD section matches the filter
+          const sector = loadPlanDetail.sectors[sectorIndex]
+          if (sector && sector.uldSections[uldSectionIndex]) {
+            const uldSection = sector.uldSections[uldSectionIndex]
+            
+            // Apply filter logic
+            let shouldInclude = true
+            if (workAreaFilter === "PIL and PER") {
+              shouldInclude = uldSectionHasPilPerShc(uldSection)
+            } else if (workAreaFilter === "GCR") {
+              // GCR = everything that's NOT PIL/PER
+              shouldInclude = !uldSectionHasPilPerShc(uldSection)
+            }
+            // "All" or undefined = include everything
+            
+            if (shouldInclude && Array.isArray(value)) {
+              // Handle both old format (string[]) and new format (ULDEntry[])
+              if (value.length > 0 && typeof value[0] === 'object' && 'checked' in value[0]) {
+                // New format: ULDEntry[] - count all entries (checked or not)
+                totalSlots += value.length
+              } else {
+                // Old format: string[] - count all entries
+                totalSlots += value.length
+              }
+            }
+          }
+        })
+        
+        // If we have saved ULD numbers, use the total slots as denominator
+        // This reflects additions/subtractions made via the ULD numbers modal
+        if (totalSlots > 0) {
+          return totalSlots
+        }
+      }
+    } catch (e) {
+      // Fall through to default calculation
+    }
+  }
+  
+  // Default: count from ULD sections, filtered by work area
+  let total = 0
+  loadPlanDetail.sectors.forEach((sector) => {
+    sector.uldSections.forEach((uldSection) => {
+      // Apply filter logic
+      let shouldInclude = true
+      if (workAreaFilter === "PIL and PER") {
+        shouldInclude = uldSectionHasPilPerShc(uldSection)
+      } else if (workAreaFilter === "GCR") {
+        // GCR = everything that's NOT PIL/PER
+        shouldInclude = !uldSectionHasPilPerShc(uldSection)
+      }
+      // "All" or undefined = include everything
+      
+      if (shouldInclude && uldSection.uld) {
+        const { count } = parseULDSection(uldSection.uld)
+        total += count
+      }
+    })
+  })
+  
+  // If filtered result is 0, fall back to parsing from ttlPlnUld (for "All" case)
+  if (total === 0 && (!workAreaFilter || workAreaFilter === "All")) {
+    const fromTtlPlnUld = parseTTLPlnUld(loadPlanDetail.ttlPlnUld || "")
+    if (fromTtlPlnUld > 0) {
+      return fromTtlPlnUld
+    }
+  }
+  
+  return total || 1 // Return at least 1 to avoid division by zero
+}
+
+/**
+ * Calculate total marked ULDs from saved ULD numbers in localStorage, filtered by work area
+ * A marked ULD is one that has a non-empty ULD number assigned
+ * @param flightNumber - The flight number
+ * @param loadPlanDetail - The load plan detail (needed to check ULD section SHC codes)
+ * @param workAreaFilter - Optional work area filter ("All", "GCR", or "PIL and PER")
+ */
+function calculateTotalMarkedULDs(flightNumber: string, loadPlanDetail: LoadPlanDetail, workAreaFilter?: WorkArea): number {
+  if (typeof window === 'undefined') return 0
+  
+  try {
+    const stored = localStorage.getItem(`uld-numbers-${flightNumber}`)
+    if (!stored) return 0
+    
+    const parsed = JSON.parse(stored)
+    let markedCount = 0
+    
+    // Count checked ULD entries, filtered by work area
+    Object.entries(parsed).forEach(([key, value]) => {
+      // Parse sectorIndex and uldSectionIndex from key format: "sectorIndex-uldSectionIndex"
+      const [sectorIndexStr, uldSectionIndexStr] = key.split('-')
+      const sectorIndex = parseInt(sectorIndexStr, 10)
+      const uldSectionIndex = parseInt(uldSectionIndexStr, 10)
+      
+      // Check if this ULD section matches the filter
+      const sector = loadPlanDetail.sectors[sectorIndex]
+      if (sector && sector.uldSections[uldSectionIndex]) {
+        const uldSection = sector.uldSections[uldSectionIndex]
+        
+        // Apply filter logic
+        let shouldInclude = true
+        if (workAreaFilter === "PIL and PER") {
+          shouldInclude = uldSectionHasPilPerShc(uldSection)
+        } else if (workAreaFilter === "GCR") {
+          // GCR = everything that's NOT PIL/PER
+          shouldInclude = !uldSectionHasPilPerShc(uldSection)
+        }
+        // "All" or undefined = include everything
+        
+        if (shouldInclude && Array.isArray(value)) {
+          // Handle both old format (string[]) and new format (ULDEntry[])
+          if (value.length > 0 && typeof value[0] === 'object' && 'checked' in value[0]) {
+            // New format: ULDEntry[] - count only checked entries
+            value.forEach((entry: { checked: boolean }) => {
+              if (entry.checked) {
+                markedCount++
+              }
+            })
+          } else {
+            // Old format: string[] - count non-empty numbers (backward compatibility)
+            value.forEach((uldNumber: string) => {
+              if (typeof uldNumber === 'string' && uldNumber.trim() !== '') {
+                markedCount++
+              }
+            })
+          }
+        }
+      }
+    })
+    
+    return markedCount
+  } catch (e) {
+    console.error(`[FlightsViewScreen] Error reading ULD numbers for ${flightNumber}:`, e)
+    return 0
+  }
+}
+
 function calculateFlightCompletion(loadPlan: LoadPlan, loadedAWBCount?: number): FlightCompletion {
   const totalPlannedULDs = parseTTLPlnUld(loadPlan.ttlPlnUld)
   
@@ -158,7 +329,6 @@ function calculateFlightCompletion(loadPlan: LoadPlan, loadedAWBCount?: number):
   const status = getCompletionStatus(completionPercentage)
   
   const staffInfo = STAFF_DATA[loadPlan.flight] || { name: "Unassigned", contact: "-" }
-  const workArea = WORK_AREA_DATA[loadPlan.flight] || "GCR"
   
   // Calculate shift from STD - use demo data or actual STD from load plan
   const stdTime = SHIFT_DATA[loadPlan.flight] || loadPlan.std || "00:00"
@@ -172,7 +342,6 @@ function calculateFlightCompletion(loadPlan: LoadPlan, loadedAWBCount?: number):
     status,
     staffName: staffInfo.name,
     staffContact: staffInfo.contact,
-    workArea,
     shift,
   }
 }
@@ -182,8 +351,12 @@ export default function FlightsViewScreen() {
   const [selectedLoadPlan, setSelectedLoadPlan] = useState<LoadPlanDetail | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [flightCompletions, setFlightCompletions] = useState<Map<string, FlightCompletion>>(new Map())
+  const [loadPlanDetailsCache, setLoadPlanDetailsCache] = useState<Map<string, LoadPlanDetail>>(new Map())
   const [selectedWorkArea, setSelectedWorkArea] = useState<WorkArea>("All")
   const [selectedShift, setSelectedShift] = useState<Shift>("All" as Shift)
+  const [customTimeRange, setCustomTimeRange] = useState<{ start: string; end: string } | null>(null)
+  const [showTimeRangePicker, setShowTimeRangePicker] = useState(false)
+  const timeRangePickerRef = useRef<HTMLDivElement>(null)
 
   // Fetch load plans from Supabase on mount
   useEffect(() => {
@@ -194,8 +367,26 @@ export default function FlightsViewScreen() {
         if (supabaseLoadPlans.length > 0) {
           setLoadPlans(supabaseLoadPlans)
           
-          // Calculate completions for each flight
+          // Fetch load plan details for all flights to enable filtered completion calculations
+          const detailsCache = new Map<string, LoadPlanDetail>()
           const completions = new Map<string, FlightCompletion>()
+          
+          await Promise.all(
+            supabaseLoadPlans.map(async (plan) => {
+              try {
+                const detail = await getLoadPlanDetailFromSupabase(plan.flight)
+                if (detail) {
+                  detailsCache.set(plan.flight, detail)
+                }
+              } catch (err) {
+                console.error(`[FlightsViewScreen] Error fetching detail for ${plan.flight}:`, err)
+              }
+            })
+          )
+          
+          setLoadPlanDetailsCache(detailsCache)
+          
+          // Calculate initial completions (will be recalculated when filter changes)
           supabaseLoadPlans.forEach(plan => {
             completions.set(plan.flight, calculateFlightCompletion(plan))
           })
@@ -214,22 +405,105 @@ export default function FlightsViewScreen() {
     fetchLoadPlans()
   }, [setLoadPlans])
 
-  // Filter load plans based on selected work area and shift
+  // Recalculate completions when work area filter changes
+  useEffect(() => {
+    if (loadPlans.length === 0) return
+    
+    const recalculatedCompletions = new Map<string, FlightCompletion>()
+    
+    loadPlans.forEach(plan => {
+      const cachedDetail = loadPlanDetailsCache.get(plan.flight)
+      
+      if (cachedDetail && selectedWorkArea !== "All") {
+        // Calculate filtered completion if we have load plan detail
+        const totalPlannedULDs = calculateTotalPlannedULDs(cachedDetail, selectedWorkArea)
+        const totalMarkedULDs = calculateTotalMarkedULDs(plan.flight, cachedDetail, selectedWorkArea)
+        const completionPercentage = totalPlannedULDs > 0 
+          ? Math.round((totalMarkedULDs / totalPlannedULDs) * 100) 
+          : 0
+        const status = getCompletionStatus(completionPercentage)
+        
+        const staffInfo = STAFF_DATA[plan.flight] || { name: "Unassigned", contact: "-" }
+        const stdTime = SHIFT_DATA[plan.flight] || plan.std || "00:00"
+        const shift = getShiftFromStd(stdTime)
+        
+        recalculatedCompletions.set(plan.flight, {
+          flight: plan.flight,
+          totalPlannedULDs,
+          completedULDs: totalMarkedULDs,
+          completionPercentage,
+          status,
+          staffName: staffInfo.name,
+          staffContact: staffInfo.contact,
+          shift,
+        })
+      } else {
+        // Fall back to default calculation
+        recalculatedCompletions.set(plan.flight, calculateFlightCompletion(plan))
+      }
+    })
+    
+    setFlightCompletions(recalculatedCompletions)
+  }, [loadPlans, loadPlanDetailsCache, selectedWorkArea])
+
+  // Generate hourly time options (00:00 to 23:00)
+  const timeOptions = useMemo(() => {
+    const options: string[] = []
+    for (let hour = 0; hour < 24; hour++) {
+      options.push(`${hour.toString().padStart(2, '0')}:00`)
+    }
+    return options
+  }, [])
+
+  // Close time range picker when clicking outside
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (timeRangePickerRef.current && !timeRangePickerRef.current.contains(event.target as Node)) {
+        setShowTimeRangePicker(false)
+      }
+    }
+
+    if (showTimeRangePicker) {
+      document.addEventListener('mousedown', handleClickOutside)
+      return () => {
+        document.removeEventListener('mousedown', handleClickOutside)
+      }
+    }
+  }, [showTimeRangePicker])
+
+  // Filter load plans based on selected shift and custom time range
   const filteredLoadPlans = useMemo(() => {
     return loadPlans.filter(plan => {
       const completion = flightCompletions.get(plan.flight) || calculateFlightCompletion(plan)
       
-      const matchesWorkArea = selectedWorkArea === "All" || completion.workArea === selectedWorkArea
+      // Check shift filter
       const matchesShift = selectedShift === "All" || completion.shift === selectedShift
       
-      return matchesWorkArea && matchesShift
+      // Check custom time range filter
+      let matchesTimeRange = true
+      if (customTimeRange) {
+        const stdTime = plan.std || "00:00"
+        const stdHours = parseStdToHours(stdTime)
+        const startHours = parseStdToHours(customTimeRange.start)
+        const endHours = parseStdToHours(customTimeRange.end)
+        
+        // Handle overnight ranges (e.g., 22:00 to 06:00)
+        if (endHours < startHours) {
+          // Overnight range: flight time must be >= start OR <= end
+          matchesTimeRange = stdHours >= startHours || stdHours <= endHours
+        } else {
+          // Normal range: flight time must be >= start AND <= end
+          matchesTimeRange = stdHours >= startHours && stdHours <= endHours
+        }
+      }
+      
+      return matchesShift && matchesTimeRange
     })
-  }, [loadPlans, flightCompletions, selectedWorkArea, selectedShift])
+  }, [loadPlans, flightCompletions, selectedShift, customTimeRange])
 
-  // Count flights by work area and shift for filter badges
+  // Count flights by shift for filter badges (work area filtering is at ULD section level, not flight level)
   const filterCounts = useMemo(() => {
     const counts = {
-      workAreas: { All: 0, GCR: 0, PER: 0, PIL: 0 } as Record<WorkArea, number>,
       shifts: {} as Record<Shift, number>,
     }
     
@@ -240,8 +514,6 @@ export default function FlightsViewScreen() {
     
     loadPlans.forEach(plan => {
       const completion = flightCompletions.get(plan.flight) || calculateFlightCompletion(plan)
-      counts.workAreas.All++
-      counts.workAreas[completion.workArea]++
       counts.shifts.All++
       counts.shifts[completion.shift]++
     })
@@ -249,25 +521,136 @@ export default function FlightsViewScreen() {
     return counts
   }, [loadPlans, flightCompletions])
 
-  const handleRowDoubleClick = async (loadPlan: LoadPlan) => {
+  // Track selected flight for blank view
+  const [selectedFlight, setSelectedFlight] = useState<string | null>(null)
+  const [isLoadingDetail, setIsLoadingDetail] = useState(false)
+
+  const handleRowClick = async (loadPlan: LoadPlan) => {
+    setSelectedFlight(loadPlan.flight)
+    setIsLoadingDetail(true)
     try {
+      // Check cache first
+      const cachedDetail = loadPlanDetailsCache.get(loadPlan.flight)
+      if (cachedDetail) {
+        setSelectedLoadPlan(cachedDetail)
+        setIsLoadingDetail(false)
+        return
+      }
+      
+      // Fetch if not in cache
       const supabaseDetail = await getLoadPlanDetailFromSupabase(loadPlan.flight)
       if (supabaseDetail) {
+        // Update cache
+        setLoadPlanDetailsCache(prev => {
+          const updated = new Map(prev)
+          updated.set(loadPlan.flight, supabaseDetail)
+          return updated
+        })
         setSelectedLoadPlan(supabaseDetail)
+      } else {
+        // If no load plan detail found, show blank view
+        setSelectedLoadPlan(null)
       }
     } catch (err) {
       console.error("[FlightsViewScreen] Error fetching load plan detail:", err)
+      setSelectedLoadPlan(null)
+    } finally {
+      setIsLoadingDetail(false)
     }
   }
 
-  if (selectedLoadPlan) {
-    return (
-      <LoadPlanDetailScreen
-        loadPlan={selectedLoadPlan}
-        onBack={() => setSelectedLoadPlan(null)}
-        // No onSave - makes it read-only
-      />
-    )
+  // Read-only view with progress bar
+  if (selectedFlight) {
+    // Show loading state while fetching
+    if (isLoadingDetail) {
+      return (
+        <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#D71A21] mx-auto mb-4"></div>
+            <p className="text-sm text-gray-500">Loading flight details...</p>
+          </div>
+        </div>
+      )
+    }
+    
+    // If we have a load plan detail, show it with progress bar
+    if (selectedLoadPlan) {
+      const totalPlannedULDs = calculateTotalPlannedULDs(selectedLoadPlan, selectedWorkArea)
+      const totalMarkedULDs = calculateTotalMarkedULDs(selectedLoadPlan.flight, selectedLoadPlan, selectedWorkArea)
+      const completionPercentage = totalPlannedULDs > 0 
+        ? Math.round((totalMarkedULDs / totalPlannedULDs) * 100) 
+        : 0
+      const status = getCompletionStatus(completionPercentage)
+      
+      return (
+        <div className="min-h-screen bg-gray-50">
+          {/* Progress Bar */}
+          <div className="bg-white border-b border-gray-200 px-4 py-3">
+            <div className="max-w-full">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-4">
+                  <h3 className="text-sm font-semibold text-gray-900">
+                    ULD Progress: {selectedLoadPlan.flight}
+                  </h3>
+                  <span className={`text-sm font-medium ${
+                    status === "green" ? "text-green-600" :
+                    status === "amber" ? "text-amber-600" :
+                    "text-red-600"
+                  }`}>
+                    {completionPercentage}% ({totalMarkedULDs}/{totalPlannedULDs})
+                  </span>
+                </div>
+              </div>
+              <div className="w-full h-4 bg-gray-200 rounded-full overflow-hidden">
+                <div 
+                  className={`h-full transition-all duration-300 ${
+                    status === "green" ? "bg-green-500" :
+                    status === "amber" ? "bg-amber-500" :
+                    "bg-red-500"
+                  }`}
+                  style={{ width: `${Math.min(completionPercentage, 100)}%` }}
+                />
+              </div>
+            </div>
+          </div>
+          
+          {/* Read-only Load Plan Detail Screen */}
+          <LoadPlanDetailScreen
+            loadPlan={selectedLoadPlan}
+            onBack={() => {
+              setSelectedLoadPlan(null)
+              setSelectedFlight(null)
+            }}
+            enableBulkCheckboxes={true}
+            workAreaFilter={selectedWorkArea}
+            // No onSave - makes it read-only (like BuildupStaffScreen)
+          />
+        </div>
+      )
+    } else {
+      // Blank view when no load plan detail is found
+      return (
+        <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+          <div className="text-center">
+            <h2 className="text-lg font-semibold text-gray-900 mb-2">
+              Flight {selectedFlight}
+            </h2>
+            <p className="text-sm text-gray-500 mb-4">
+              No load plan detail available
+            </p>
+            <button
+              onClick={() => {
+                setSelectedFlight(null)
+                setSelectedLoadPlan(null)
+              }}
+              className="px-4 py-2 bg-[#D71A21] text-white rounded-md hover:bg-[#B0151A] transition-colors"
+            >
+              Back to Flights View
+            </button>
+          </div>
+        </div>
+      )
+    }
   }
 
   return (
@@ -308,10 +691,9 @@ export default function FlightsViewScreen() {
               onChange={(e) => setSelectedWorkArea(e.target.value as WorkArea)}
               className="px-3 py-1.5 text-sm border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-[#D71A21] focus:border-transparent"
             >
-              <option value="All">All ({filterCounts.workAreas.All})</option>
-              <option value="GCR">GCR ({filterCounts.workAreas.GCR})</option>
-              <option value="PER">PER ({filterCounts.workAreas.PER})</option>
-              <option value="PIL">PIL ({filterCounts.workAreas.PIL})</option>
+              <option value="All">All</option>
+              <option value="GCR">GCR</option>
+              <option value="PIL and PER">PIL and PER</option>
             </select>
           </div>
 
@@ -322,7 +704,13 @@ export default function FlightsViewScreen() {
             <select
               id="shift-filter"
               value={selectedShift}
-              onChange={(e) => setSelectedShift(e.target.value as Shift)}
+              onChange={(e) => {
+                setSelectedShift(e.target.value as Shift)
+                // Clear custom time range when shift changes
+                if (e.target.value !== "All") {
+                  setCustomTimeRange(null)
+                }
+              }}
               className="px-3 py-1.5 text-sm border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-[#D71A21] focus:border-transparent"
             >
               {SHIFTS.map(shift => (
@@ -331,6 +719,123 @@ export default function FlightsViewScreen() {
                 </option>
               ))}
             </select>
+          </div>
+
+          {/* Custom Time Range Filter */}
+          <div className="flex items-center gap-2 relative" ref={timeRangePickerRef}>
+            <label className="text-sm font-medium text-gray-700">
+              Time Range:
+            </label>
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setShowTimeRangePicker(!showTimeRangePicker)}
+                className={`px-3 py-1.5 text-sm border rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-[#D71A21] focus:border-transparent transition-colors ${
+                  customTimeRange 
+                    ? "border-[#D71A21] text-[#D71A21]" 
+                    : "border-gray-300 text-gray-700 hover:border-gray-400"
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <Clock className="w-4 h-4" />
+                  <span>
+                    {customTimeRange 
+                      ? `${customTimeRange.start} - ${customTimeRange.end}`
+                      : "Custom"}
+                  </span>
+                  {customTimeRange && (
+                    <X 
+                      className="w-3 h-3 ml-1" 
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setCustomTimeRange(null)
+                        setShowTimeRangePicker(false)
+                      }}
+                    />
+                  )}
+                </div>
+              </button>
+              
+              {showTimeRangePicker && (
+                <div className="absolute top-full left-0 mt-1 z-50 bg-white border border-gray-200 rounded-lg shadow-lg p-4 min-w-[280px]">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-sm font-semibold text-gray-900">Select Time Range</h3>
+                    <button
+                      onClick={() => setShowTimeRangePicker(false)}
+                      className="text-gray-400 hover:text-gray-600 transition-colors"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                  
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="flex-1">
+                      <label className="block text-xs font-medium text-gray-700 mb-1">
+                        Start Time
+                      </label>
+                      <select
+                        value={customTimeRange?.start || "00:00"}
+                        onChange={(e) => {
+                          setCustomTimeRange(prev => ({
+                            start: e.target.value,
+                            end: prev?.end || e.target.value
+                          }))
+                        }}
+                        className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-[#D71A21] focus:border-transparent"
+                      >
+                        {timeOptions.map(time => (
+                          <option key={time} value={time}>{time}</option>
+                        ))}
+                      </select>
+                    </div>
+                    
+                    <div className="flex-1">
+                      <label className="block text-xs font-medium text-gray-700 mb-1">
+                        End Time
+                      </label>
+                      <select
+                        value={customTimeRange?.end || "23:00"}
+                        onChange={(e) => {
+                          setCustomTimeRange(prev => ({
+                            start: prev?.start || "00:00",
+                            end: e.target.value
+                          }))
+                        }}
+                        className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-[#D71A21] focus:border-transparent"
+                      >
+                        {timeOptions.map(time => (
+                          <option key={time} value={time}>{time}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => {
+                        setCustomTimeRange(null)
+                        setShowTimeRangePicker(false)
+                      }}
+                      className="flex-1 px-3 py-1.5 text-sm border border-gray-300 rounded-md bg-white text-gray-700 hover:bg-gray-50 transition-colors"
+                    >
+                      Clear
+                    </button>
+                    <button
+                      onClick={() => setShowTimeRangePicker(false)}
+                      className="flex-1 px-3 py-1.5 text-sm bg-[#D71A21] text-white rounded-md hover:bg-[#B0151A] transition-colors"
+                    >
+                      Apply
+                    </button>
+                  </div>
+                  
+                  {customTimeRange && customTimeRange.start === customTimeRange.end && (
+                    <p className="mt-2 text-xs text-amber-600">
+                      Start and end times are the same
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Show filtered count */}
@@ -430,7 +935,7 @@ export default function FlightsViewScreen() {
                         key={index} 
                         loadPlan={loadPlan} 
                         completion={completion}
-                        onDoubleClick={handleRowDoubleClick} 
+                        onClick={handleRowClick} 
                       />
                     )
                   })
@@ -447,14 +952,14 @@ export default function FlightsViewScreen() {
 type FlightRowProps = {
   loadPlan: LoadPlan
   completion: FlightCompletion
-  onDoubleClick: (loadPlan: LoadPlan) => void
+  onClick: (loadPlan: LoadPlan) => void
 }
 
-function FlightRow({ loadPlan, completion, onDoubleClick }: FlightRowProps) {
+function FlightRow({ loadPlan, completion, onClick }: FlightRowProps) {
   return (
     <tr
-      onDoubleClick={() => onDoubleClick(loadPlan)}
-      className="border-b border-gray-100 last:border-b-0 cursor-pointer group relative"
+      onClick={() => onClick(loadPlan)}
+      className="border-b border-gray-100 last:border-b-0 cursor-pointer group relative hover:bg-gray-50 transition-colors"
       style={{ 
         background: `linear-gradient(to right, ${
           completion.status === "green" ? "rgba(34, 197, 94, 0.12)" :
@@ -507,4 +1012,5 @@ function FlightRow({ loadPlan, completion, onDoubleClick }: FlightRowProps) {
     </tr>
   )
 }
+
 

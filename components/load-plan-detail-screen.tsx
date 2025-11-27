@@ -12,10 +12,11 @@ import { FlightHeaderRow } from "./flight-header-row"
 import { EditableField } from "./editable-field"
 import { useLoadPlanState, type AWBAssignment } from "./use-load-plan-state"
 import { useLoadPlans } from "@/lib/load-plan-context"
-import type { LoadPlanDetail, AWBRow } from "./load-plan-types"
-import { ULDNumberModal } from "./uld-number-modal"
-import { parseULDSection, formatULDSection } from "@/lib/uld-parser"
+import type { LoadPlanDetail, AWBRow, ULDSection } from "./load-plan-types"
+import { ULDNumberModal, type ULDEntry } from "./uld-number-modal"
+import { parseULDSection, formatULDSection, formatULDSectionFromEntries, formatULDSectionFromCheckedEntries } from "@/lib/uld-parser"
 import { AWBQuickActionModal } from "./awb-quick-action-modal"
+import { uldSectionHasPilPerShc, type WorkArea } from "./flights-view-screen"
 
 /**
  * Calculate total PMC and AKE from all ULD sections in the load plan
@@ -60,9 +61,10 @@ interface LoadPlanDetailScreenProps {
   onSave?: (updatedPlan: LoadPlanDetail) => void
   onNavigateToBuildupStaff?: (staffName: string) => void
   enableBulkCheckboxes?: boolean // Enable bulk checkbox functionality (default: false, true for Buildup Staff)
+  workAreaFilter?: WorkArea // Filter ULD sections based on work area (SHC codes)
 }
 
-export default function LoadPlanDetailScreen({ loadPlan, onBack, onSave, onNavigateToBuildupStaff, enableBulkCheckboxes = false }: LoadPlanDetailScreenProps) {
+export default function LoadPlanDetailScreen({ loadPlan, onBack, onSave, onNavigateToBuildupStaff, enableBulkCheckboxes = false, workAreaFilter }: LoadPlanDetailScreenProps) {
   const [showBCRModal, setShowBCRModal] = useState(false)
   const [showHandoverModal, setShowHandoverModal] = useState(false)
   const [awbComments, setAwbComments] = useState<AWBComment[]>([])
@@ -82,14 +84,38 @@ export default function LoadPlanDetailScreen({ loadPlan, onBack, onSave, onNavig
   const [selectedAWBKeys, setSelectedAWBKeys] = useState<Set<string>>(new Set())
   const { sendToFlightAssignment, flightAssignments } = useLoadPlans()
   
-  // Load ULD numbers from localStorage on mount
-  const [uldNumbersFromStorage, setUldNumbersFromStorage] = useState<Map<string, string[]>>(() => {
+  // Load ULD entries from localStorage on mount (supports both old format string[] and new format ULDEntry[])
+  const [uldEntriesFromStorage, setUldEntriesFromStorage] = useState<Map<string, ULDEntry[]>>(() => {
     if (typeof window !== 'undefined') {
       const stored = localStorage.getItem(`uld-numbers-${loadPlan.flight}`)
       if (stored) {
         try {
           const parsed = JSON.parse(stored)
-          return new Map(Object.entries(parsed))
+          const entriesMap = new Map<string, ULDEntry[]>()
+          
+          Object.entries(parsed).forEach(([key, value]) => {
+            if (Array.isArray(value)) {
+              // Check if it's new format (ULDEntry[]) or old format (string[])
+              if (value.length > 0 && typeof value[0] === 'object' && 'checked' in value[0]) {
+                // New format: ULDEntry[]
+                entriesMap.set(key, value as ULDEntry[])
+              } else {
+                // Old format: string[] - convert to ULDEntry[]
+                const numbers = value as string[]
+                const { expandedTypes } = parseULDSection(
+                  loadPlan.sectors[parseInt(key.split('-')[0])]?.uldSections[parseInt(key.split('-')[1])]?.uld || ""
+                )
+                const entries: ULDEntry[] = numbers.map((number, index) => ({
+                  number: number || "",
+                  checked: number.trim() !== "", // Legacy: checked if number is filled
+                  type: expandedTypes[index] || "PMC"
+                }))
+                entriesMap.set(key, entries)
+              }
+            }
+          })
+          
+          return entriesMap
         } catch (e) {
           return new Map()
         }
@@ -128,23 +154,43 @@ export default function LoadPlanDetailScreen({ loadPlan, onBack, onSave, onNavig
     updateULDField,
   } = useLoadPlanState(loadPlan)
   
-  // Merge stored ULD numbers with component state
-  const mergedUldNumbers = new Map(uldNumbers)
-  uldNumbersFromStorage.forEach((value, key) => {
-    if (!mergedUldNumbers.has(key)) {
-      mergedUldNumbers.set(key, value)
-    }
+  // Merge stored ULD entries with component state (convert uldNumbers Map to entries format)
+  const mergedUldEntries = new Map<string, ULDEntry[]>()
+  
+  // Convert uldNumbers (Map<string, string[]>) to entries format
+  uldNumbers.forEach((numbers, key) => {
+    const [sectorIndexStr, uldSectionIndexStr] = key.split('-')
+    const sectorIndex = parseInt(sectorIndexStr, 10)
+    const uldSectionIndex = parseInt(uldSectionIndexStr, 10)
+    const sector = loadPlan.sectors[sectorIndex]
+    const uldSection = sector?.uldSections[uldSectionIndex]
+    const { expandedTypes } = parseULDSection(uldSection?.uld || "")
+    
+    const entries: ULDEntry[] = numbers.map((number, index) => ({
+      number: number || "",
+      checked: number.trim() !== "", // Legacy: checked if number is filled
+      type: expandedTypes[index] || "PMC"
+    }))
+    mergedUldEntries.set(key, entries)
+  })
+  
+  // Merge with stored entries
+  uldEntriesFromStorage.forEach((value, key) => {
+    mergedUldEntries.set(key, value)
   })
   
   const isReadOnly = !onSave
   
   // Enhanced updateULDNumbers that also saves to localStorage
-  const handleUpdateULDNumbers = (sectorIndex: number, uldSectionIndex: number, numbers: string[]) => {
+  const handleUpdateULDNumbers = (sectorIndex: number, uldSectionIndex: number, entries: ULDEntry[]) => {
+    // Convert entries back to numbers array for backward compatibility with useLoadPlanState
+    const numbers = entries.map(e => e.number)
     updateULDNumbers(sectorIndex, uldSectionIndex, numbers)
+    
     const key = `${sectorIndex}-${uldSectionIndex}`
-    setUldNumbersFromStorage((prev) => {
+    setUldEntriesFromStorage((prev) => {
       const updated = new Map(prev)
-      updated.set(key, numbers)
+      updated.set(key, entries)
       // Save to localStorage
       if (typeof window !== 'undefined') {
         const toStore = Object.fromEntries(updated)
@@ -463,7 +509,7 @@ export default function LoadPlanDetailScreen({ loadPlan, onBack, onSave, onNavig
             editedPlan={editedPlan}
             awbAssignments={awbAssignments}
             hoveredUld={hoveredUld}
-            uldNumbers={mergedUldNumbers}
+            uldEntries={mergedUldEntries}
             isReadOnly={isReadOnly}
             awbComments={awbComments}
             enableBulkCheckboxes={enableBulkCheckboxes}
@@ -494,6 +540,7 @@ export default function LoadPlanDetailScreen({ loadPlan, onBack, onSave, onNavig
             onUpdateSectorField={updateSectorField}
             onUpdateSectorTotals={updateSectorTotals}
             setEditedPlan={setEditedPlan}
+            workAreaFilter={workAreaFilter}
           />
 
           {/* Bottom Footer */}
@@ -524,7 +571,13 @@ export default function LoadPlanDetailScreen({ loadPlan, onBack, onSave, onNavig
           isOpen={showBCRModal}
           onClose={() => setShowBCRModal(false)}
           loadPlan={editedPlan}
-          bcrData={generateBCRData(editedPlan, awbComments, awbAssignments, mergedUldNumbers)}
+          bcrData={generateBCRData(
+            editedPlan, 
+            awbComments, 
+            awbAssignments, 
+            // Convert entries back to numbers map for backward compatibility
+            new Map(Array.from(mergedUldEntries.entries()).map(([key, entries]) => [key, entries.map(e => e.number)]))
+          )}
         />
       )}
 
@@ -585,9 +638,11 @@ export default function LoadPlanDetailScreen({ loadPlan, onBack, onSave, onNavig
           uldSection={selectedULDSection.uld}
           sectorIndex={selectedULDSection.sectorIndex}
           uldSectionIndex={selectedULDSection.uldSectionIndex}
-          initialNumbers={mergedUldNumbers.get(`${selectedULDSection.sectorIndex}-${selectedULDSection.uldSectionIndex}`) || []}
-          onSave={(numbers) => {
-            handleUpdateULDNumbers(selectedULDSection.sectorIndex, selectedULDSection.uldSectionIndex, numbers)
+          initialNumbers={mergedUldEntries.get(`${selectedULDSection.sectorIndex}-${selectedULDSection.uldSectionIndex}`)?.map(e => e.number) || []}
+          initialChecked={mergedUldEntries.get(`${selectedULDSection.sectorIndex}-${selectedULDSection.uldSectionIndex}`)?.map(e => e.checked)}
+          initialTypes={mergedUldEntries.get(`${selectedULDSection.sectorIndex}-${selectedULDSection.uldSectionIndex}`)?.map(e => e.type)}
+          onSave={(entries) => {
+            handleUpdateULDNumbers(selectedULDSection.sectorIndex, selectedULDSection.uldSectionIndex, entries)
           }}
         />
       )}
@@ -625,7 +680,7 @@ interface CombinedTableProps {
   editedPlan: LoadPlanDetail
   awbAssignments: Map<string, AWBAssignment>
   hoveredUld: string | null
-  uldNumbers: Map<string, string[]>
+  uldEntries: Map<string, ULDEntry[]>
   isReadOnly: boolean
   awbComments: AWBComment[]
   enableBulkCheckboxes: boolean
@@ -650,13 +705,14 @@ interface CombinedTableProps {
   onUpdateSectorField: (sectorIndex: number, field: string, value: string) => void
   onUpdateSectorTotals: (sectorIndex: number, field: string, value: string) => void
   setEditedPlan: (updater: (prev: LoadPlanDetail) => LoadPlanDetail) => void
+  workAreaFilter?: WorkArea // Filter ULD sections based on work area (SHC codes)
 }
 
 function CombinedTable({
   editedPlan,
   awbAssignments,
   hoveredUld,
-  uldNumbers,
+  uldEntries,
   isReadOnly,
   awbComments,
   enableBulkCheckboxes,
@@ -681,6 +737,7 @@ function CombinedTable({
   onUpdateSectorField,
   onUpdateSectorTotals,
   setEditedPlan,
+  workAreaFilter,
 }: CombinedTableProps) {
   // Group AWBs by sector first, then flatten within each sector
   // Structure: Map<sectorName, { regular: [], rampTransfer: [] }>
@@ -710,12 +767,29 @@ function CombinedTable({
     
     const group = sectorGroups.get(sectorName)!
     
-    sector.uldSections.forEach((uldSection, uldSectionIndex) => {
+    // Filter ULD sections based on workAreaFilter, tracking original indices
+    const filteredUldSectionsWithIndices = sector.uldSections
+      .map((uldSection, originalIndex) => ({ uldSection, originalIndex }))
+      .filter(({ uldSection }) => {
+        // If no filter or filter is "All" or "GCR", show all sections
+        if (!workAreaFilter || workAreaFilter === "All" || workAreaFilter === "GCR") {
+          return true
+        }
+        
+        // For "PIL and PER" filter, only show sections that have PIL/PER SHC codes
+        if (workAreaFilter === "PIL and PER") {
+          return uldSectionHasPilPerShc(uldSection)
+        }
+        
+        return true
+      })
+    
+    filteredUldSectionsWithIndices.forEach(({ uldSection, originalIndex }) => {
       uldSection.awbs.forEach((awb, awbIndex) => {
         const item = {
           awb,
           sectorIndex,
-          uldSectionIndex,
+          uldSectionIndex: originalIndex,
           awbIndex,
           uld: uldSection.uld || "",
         }
@@ -896,7 +970,7 @@ function CombinedTable({
                               uld={uld}
                               sectorIndex={sectorIndex}
                               uldSectionIndex={uldSectionIndex}
-                              uldNumbers={uldNumbers.get(`${sectorIndex}-${uldSectionIndex}`) || []}
+                              uldEntries={uldEntries.get(`${sectorIndex}-${uldSectionIndex}`) || []}
                               isReadOnly={isReadOnly}
                               enableBulkCheckboxes={enableBulkCheckboxes}
                               sectionKeys={enableBulkCheckboxes ? getULDSectionAWBKeys(sectorIndex, uldSectionIndex) : new Set()}
@@ -960,7 +1034,7 @@ function CombinedTable({
                                   uld={uld}
                                   sectorIndex={sectorIndex}
                                   uldSectionIndex={uldSectionIndex}
-                                  uldNumbers={uldNumbers.get(`${sectorIndex}-${uldSectionIndex}`) || []}
+                                  uldEntries={uldEntries.get(`${sectorIndex}-${uldSectionIndex}`) || []}
                                   isReadOnly={isReadOnly}
                                   enableBulkCheckboxes={enableBulkCheckboxes}
                                   sectionKeys={enableBulkCheckboxes ? getULDSectionAWBKeys(sectorIndex, uldSectionIndex) : new Set()}
@@ -1339,7 +1413,7 @@ interface ULDRowProps {
   uld: string
   sectorIndex: number
   uldSectionIndex: number
-  uldNumbers: string[]
+  uldEntries: ULDEntry[]
   isReadOnly: boolean
   enableBulkCheckboxes: boolean
   sectionKeys: Set<string>
@@ -1353,11 +1427,21 @@ interface ULDRowProps {
   isRampTransfer?: boolean
 }
 
-function ULDRow({ uld, uldNumbers, isReadOnly, enableBulkCheckboxes, sectionKeys, isAllSelected, isSomeSelected, onToggleSection, onUpdate, onAddAWB, onDelete, onClick, isRampTransfer }: ULDRowProps) {
+function ULDRow({ uld, uldEntries, isReadOnly, enableBulkCheckboxes, sectionKeys, isAllSelected, isSomeSelected, onToggleSection, onUpdate, onAddAWB, onDelete, onClick, isRampTransfer }: ULDRowProps) {
   const { count, types } = parseULDSection(uld)
-  const hasULDNumbers = uldNumbers.length > 0 && uldNumbers.some(n => n.trim() !== "")
-  const displayNumbers = uldNumbers.filter(n => n.trim() !== "").join(", ")
-  const finalSection = hasULDNumbers ? formatULDSection(uldNumbers, uld) : null
+  const checkedEntries = uldEntries.filter(e => e.checked)
+  const hasCheckedEntries = checkedEntries.length > 0
+  
+  // Left side: Show checked entries as {type}{number}EK format
+  const displayNumbers = checkedEntries
+    .filter(e => e.number.trim() !== "")
+    .map(e => `${e.type}${e.number.trim()}EK`)
+    .join(", ")
+  
+  // Right side: Use old formatULDSection format (XX 02PMC XX) with checked entries
+  const finalSection = hasCheckedEntries 
+    ? formatULDSectionFromCheckedEntries(uldEntries, uld) 
+    : null
   
   return (
     <tr className={isRampTransfer ? "bg-gray-50" : ""}>
@@ -1388,7 +1472,7 @@ function ULDRow({ uld, uldNumbers, isReadOnly, enableBulkCheckboxes, sectionKeys
       )}
       <td colSpan={enableBulkCheckboxes ? 19 : 20} className="px-2 py-1 font-semibold text-gray-900 text-center relative">
         <div className="flex items-center justify-center gap-4">
-          {hasULDNumbers && (
+          {displayNumbers && (
             <div className="group relative flex-shrink-0">
               <div className="text-xs font-normal text-gray-500 max-w-[200px] truncate pr-3 border-r border-gray-200">
                 {displayNumbers}
