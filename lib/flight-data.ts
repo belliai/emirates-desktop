@@ -149,7 +149,21 @@ export async function getFlightData(): Promise<Flight[]> {
       .order("eta", { ascending: true })
 
     if (flightsError) {
-      console.log("[v0] Supabase tables not found, falling back to CSV data")
+      console.error("[v0] Supabase query error:", {
+        code: flightsError.code,
+        message: flightsError.message,
+        details: flightsError.details,
+        hint: flightsError.hint
+      })
+      
+      // Check if it's an RLS/permission error
+      if (flightsError.code === '42501' || flightsError.message?.includes('permission denied') || flightsError.message?.includes('row-level security')) {
+        console.error("[v0] RLS Policy Error: Row Level Security is blocking SELECT queries")
+        console.error("[v0] Fix: Go to Supabase Dashboard > Authentication > Policies")
+        console.error("[v0] Create a policy that allows SELECT for the anon role")
+      }
+      
+      console.log("[v0] Falling back to CSV data")
       return await getFlightDataFromCSV()
     }
 

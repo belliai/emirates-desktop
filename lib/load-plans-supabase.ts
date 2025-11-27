@@ -95,7 +95,20 @@ export async function getLoadPlansFromSupabase(): Promise<LoadPlan[]> {
       .order("flight_number", { ascending: true })
 
     if (error) {
-      console.error("[LoadPlans] Error fetching load plans:", error)
+      console.error("[LoadPlans] Error fetching load plans:", {
+        code: error.code,
+        message: error.message,
+        details: error.details,
+        hint: error.hint
+      })
+      
+      // Check if it's an RLS/permission error
+      if (error.code === '42501' || error.message?.includes('permission denied') || error.message?.includes('row-level security')) {
+        console.error("[LoadPlans] RLS Policy Error: Row Level Security is blocking SELECT queries")
+        console.error("[LoadPlans] Fix: Go to Supabase Dashboard > Authentication > Policies")
+        console.error("[LoadPlans] Create a policy that allows SELECT for the anon role")
+      }
+      
       return []
     }
 
@@ -163,7 +176,20 @@ export async function getLoadPlanDetailFromSupabase(flightNumber: string): Promi
       .single()
 
     if (loadPlanError || !loadPlan) {
-      console.error("[LoadPlans] Error fetching load plan detail:", loadPlanError)
+      console.error("[LoadPlans] Error fetching load plan detail:", {
+        code: loadPlanError?.code,
+        message: loadPlanError?.message,
+        details: loadPlanError?.details,
+        hint: loadPlanError?.hint
+      })
+      
+      // Check if it's an RLS/permission error
+      if (loadPlanError && (loadPlanError.code === '42501' || loadPlanError.message?.includes('permission denied') || loadPlanError.message?.includes('row-level security'))) {
+        console.error("[LoadPlans] RLS Policy Error: Row Level Security is blocking SELECT queries")
+        console.error("[LoadPlans] Fix: Go to Supabase Dashboard > Authentication > Policies")
+        console.error("[LoadPlans] Create a policy that allows SELECT for the anon role")
+      }
+      
       return null
     }
 
@@ -175,7 +201,20 @@ export async function getLoadPlanDetailFromSupabase(flightNumber: string): Promi
       .order("serial_number", { ascending: true })
 
     if (itemsError) {
-      console.error("[LoadPlans] Error fetching load plan items:", itemsError)
+      console.error("[LoadPlans] Error fetching load plan items:", {
+        code: itemsError.code,
+        message: itemsError.message,
+        details: itemsError.details,
+        hint: itemsError.hint
+      })
+      
+      // Check if it's an RLS/permission error
+      if (itemsError.code === '42501' || itemsError.message?.includes('permission denied') || itemsError.message?.includes('row-level security')) {
+        console.error("[LoadPlans] RLS Policy Error: Row Level Security is blocking SELECT queries")
+        console.error("[LoadPlans] Fix: Go to Supabase Dashboard > Authentication > Policies")
+        console.error("[LoadPlans] Create a policy that allows SELECT for the anon role")
+      }
+      
       return null
     }
 
