@@ -33,7 +33,7 @@ export function FlightHeaderRow({ plan, onFieldUpdate, isReadOnly }: FlightHeade
         </div>
         <div className="flex items-center gap-2">
           <Users className="w-4 h-4 text-gray-500" />
-          <span className="text-xs font-semibold text-gray-700">PAX</span>
+          <span className="text-xs font-semibold text-gray-700">Route</span>
         </div>
         <div className="flex items-center gap-2">
           <Clock className="w-4 h-4 text-gray-500" />

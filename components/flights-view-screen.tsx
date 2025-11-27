@@ -7,6 +7,7 @@ import type { LoadPlanDetail, AWBRow, ULDSection } from "./load-plan-types"
 import { useLoadPlans, type LoadPlan } from "@/lib/load-plan-context"
 import { getLoadPlansFromSupabase, getLoadPlanDetailFromSupabase } from "@/lib/load-plans-supabase"
 import { parseULDSection } from "@/lib/uld-parser"
+import { getULDEntriesFromStorage } from "@/lib/uld-storage"
 
 // Types for completion tracking
 type CompletionStatus = "green" | "amber" | "red"
@@ -166,13 +167,14 @@ function calculateTotalPlannedULDs(loadPlanDetail: LoadPlanDetail, workAreaFilte
   // Check if ULD numbers have been saved (modified via modal)
   if (typeof window !== 'undefined') {
     try {
-      const stored = localStorage.getItem(`uld-numbers-${loadPlanDetail.flight}`)
-      if (stored) {
-        const parsed = JSON.parse(stored)
-        
+      // Use utility function to get entries with checked state
+      const entriesMap = getULDEntriesFromStorage(loadPlanDetail.flight, loadPlanDetail.sectors)
+      
+      if (entriesMap.size > 0) {
         // Filter ULD sections based on workAreaFilter
         let totalSlots = 0
-        Object.entries(parsed).forEach(([key, value]) => {
+        
+        entriesMap.forEach((entries, key) => {
           // Parse sectorIndex and uldSectionIndex from key format: "sectorIndex-uldSectionIndex"
           const [sectorIndexStr, uldSectionIndexStr] = key.split('-')
           const sectorIndex = parseInt(sectorIndexStr, 10)
@@ -193,15 +195,9 @@ function calculateTotalPlannedULDs(loadPlanDetail: LoadPlanDetail, workAreaFilte
             }
             // "All" or undefined = include everything
             
-            if (shouldInclude && Array.isArray(value)) {
-              // Handle both old format (string[]) and new format (ULDEntry[])
-              if (value.length > 0 && typeof value[0] === 'object' && 'checked' in value[0]) {
-                // New format: ULDEntry[] - count all entries (checked or not)
-                totalSlots += value.length
-              } else {
-                // Old format: string[] - count all entries
-                totalSlots += value.length
-              }
+            if (shouldInclude) {
+              // Count all entries (checked or not) - this is the total planned slots
+              totalSlots += entries.length
             }
           }
         })
@@ -260,14 +256,13 @@ function calculateTotalMarkedULDs(flightNumber: string, loadPlanDetail: LoadPlan
   if (typeof window === 'undefined') return 0
   
   try {
-    const stored = localStorage.getItem(`uld-numbers-${flightNumber}`)
-    if (!stored) return 0
+    // Use utility function to get entries with checked state
+    const entriesMap = getULDEntriesFromStorage(flightNumber, loadPlanDetail.sectors)
     
-    const parsed = JSON.parse(stored)
     let markedCount = 0
     
     // Count checked ULD entries, filtered by work area
-    Object.entries(parsed).forEach(([key, value]) => {
+    entriesMap.forEach((entries, key) => {
       // Parse sectorIndex and uldSectionIndex from key format: "sectorIndex-uldSectionIndex"
       const [sectorIndexStr, uldSectionIndexStr] = key.split('-')
       const sectorIndex = parseInt(sectorIndexStr, 10)
@@ -288,23 +283,13 @@ function calculateTotalMarkedULDs(flightNumber: string, loadPlanDetail: LoadPlan
         }
         // "All" or undefined = include everything
         
-        if (shouldInclude && Array.isArray(value)) {
-          // Handle both old format (string[]) and new format (ULDEntry[])
-          if (value.length > 0 && typeof value[0] === 'object' && 'checked' in value[0]) {
-            // New format: ULDEntry[] - count only checked entries
-            value.forEach((entry: { checked: boolean }) => {
-              if (entry.checked) {
-                markedCount++
-              }
-            })
-          } else {
-            // Old format: string[] - count non-empty numbers (backward compatibility)
-            value.forEach((uldNumber: string) => {
-              if (typeof uldNumber === 'string' && uldNumber.trim() !== '') {
-                markedCount++
-              }
-            })
-          }
+        if (shouldInclude) {
+          // Count only checked entries
+          entries.forEach((entry) => {
+            if (entry.checked) {
+              markedCount++
+            }
+          })
         }
       }
     })

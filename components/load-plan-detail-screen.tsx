@@ -15,6 +15,7 @@ import { useLoadPlans } from "@/lib/load-plan-context"
 import type { LoadPlanDetail, AWBRow, ULDSection } from "./load-plan-types"
 import { ULDNumberModal, type ULDEntry } from "./uld-number-modal"
 import { parseULDSection, formatULDSection, formatULDSectionFromEntries, formatULDSectionFromCheckedEntries } from "@/lib/uld-parser"
+import { getULDEntriesFromStorage, saveULDEntriesToStorage } from "@/lib/uld-storage"
 import { AWBQuickActionModal } from "./awb-quick-action-modal"
 import { uldSectionHasPilPerShc, type WorkArea } from "./flights-view-screen"
 
@@ -85,43 +86,9 @@ export default function LoadPlanDetailScreen({ loadPlan, onBack, onSave, onNavig
   const { sendToFlightAssignment, flightAssignments } = useLoadPlans()
   
   // Load ULD entries from localStorage on mount (supports both old format string[] and new format ULDEntry[])
+  // Uses utility function to ensure checked state is preserved
   const [uldEntriesFromStorage, setUldEntriesFromStorage] = useState<Map<string, ULDEntry[]>>(() => {
-    if (typeof window !== 'undefined') {
-      const stored = localStorage.getItem(`uld-numbers-${loadPlan.flight}`)
-      if (stored) {
-        try {
-          const parsed = JSON.parse(stored)
-          const entriesMap = new Map<string, ULDEntry[]>()
-          
-          Object.entries(parsed).forEach(([key, value]) => {
-            if (Array.isArray(value)) {
-              // Check if it's new format (ULDEntry[]) or old format (string[])
-              if (value.length > 0 && typeof value[0] === 'object' && 'checked' in value[0]) {
-                // New format: ULDEntry[]
-                entriesMap.set(key, value as ULDEntry[])
-              } else {
-                // Old format: string[] - convert to ULDEntry[]
-                const numbers = value as string[]
-                const { expandedTypes } = parseULDSection(
-                  loadPlan.sectors[parseInt(key.split('-')[0])]?.uldSections[parseInt(key.split('-')[1])]?.uld || ""
-                )
-                const entries: ULDEntry[] = numbers.map((number, index) => ({
-                  number: number || "",
-                  checked: number.trim() !== "", // Legacy: checked if number is filled
-                  type: expandedTypes[index] || "PMC"
-                }))
-                entriesMap.set(key, entries)
-              }
-            }
-          })
-          
-          return entriesMap
-        } catch (e) {
-          return new Map()
-        }
-      }
-    }
-    return new Map()
+    return getULDEntriesFromStorage(loadPlan.flight, loadPlan.sectors)
   })
   
   const {
@@ -182,6 +149,7 @@ export default function LoadPlanDetailScreen({ loadPlan, onBack, onSave, onNavig
   const isReadOnly = !onSave
   
   // Enhanced updateULDNumbers that also saves to localStorage
+  // Preserves checked state using utility function
   const handleUpdateULDNumbers = (sectorIndex: number, uldSectionIndex: number, entries: ULDEntry[]) => {
     // Convert entries back to numbers array for backward compatibility with useLoadPlanState
     const numbers = entries.map(e => e.number)
@@ -191,11 +159,8 @@ export default function LoadPlanDetailScreen({ loadPlan, onBack, onSave, onNavig
     setUldEntriesFromStorage((prev) => {
       const updated = new Map(prev)
       updated.set(key, entries)
-      // Save to localStorage
-      if (typeof window !== 'undefined') {
-        const toStore = Object.fromEntries(updated)
-        localStorage.setItem(`uld-numbers-${loadPlan.flight}`, JSON.stringify(toStore))
-      }
+      // Save to localStorage using utility function to ensure checked state is preserved
+      saveULDEntriesToStorage(loadPlan.flight, updated)
       return updated
     })
   }
@@ -575,8 +540,7 @@ export default function LoadPlanDetailScreen({ loadPlan, onBack, onSave, onNavig
             editedPlan, 
             awbComments, 
             awbAssignments, 
-            // Convert entries back to numbers map for backward compatibility
-            new Map(Array.from(mergedUldEntries.entries()).map(([key, entries]) => [key, entries.map(e => e.number)]))
+            mergedUldEntries // Pass full entries with checked state for future use
           )}
         />
       )}

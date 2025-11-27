@@ -900,7 +900,7 @@ export function generateBCRData(
   loadPlan: LoadPlanDetail,
   comments?: AWBComment[],
   awbAssignments?: Map<string, { awbNo: string; isLoaded: boolean }>,
-  uldNumbers?: Map<string, string[]>
+  uldEntries?: Map<string, Array<{ number: string; checked: boolean; type: string }>>
 ): BCRData {
   // Extract all AWBs from the load plan with their sector/uldSection info
   const allAWBsWithContext: Array<{
@@ -980,7 +980,7 @@ export function generateBCRData(
   // Units unable to update - leave blank by default
   // unitsUnableToUpdate remains empty array
 
-  // Extract destination from PAX field (e.g., "DXB/MXP" -> "MXP")
+  // Extract destination from Route field (e.g., "DXB/MXP" -> "MXP")
   const destination = loadPlan.pax.split("/")[1] || loadPlan.pax.split("/")[0] || "N/A"
 
   return {
