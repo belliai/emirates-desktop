@@ -43,7 +43,7 @@ export function UploadModal({
       <Card className="max-w-2xl w-full">
         <div className="border-b border-gray-200 px-6 py-4 relative">
           <h2 className="text-xl font-semibold text-gray-900">Upload Load Plan</h2>
-          <p className="text-sm text-gray-500 mt-1">Upload your load plan file in Markdown, Word, or PDF format</p>
+          <p className="text-sm text-gray-500 mt-1">Upload your load plan file in Markdown, Word, RTF, or PDF format</p>
           <button
             onClick={() => !isProcessing && onClose()}
             disabled={isProcessing}
@@ -83,12 +83,12 @@ export function UploadModal({
                   <Upload className="w-12 h-12 text-gray-400" />
                   <div>
                     <p className="text-gray-700 font-medium mb-1">Click to upload or drag and drop</p>
-                    <p className="text-sm text-gray-500">.md, .docx, .doc, .pdf - Maximum file size 10 MB (multiple files supported)</p>
+                    <p className="text-sm text-gray-500">.md, .docx, .doc, .rtf, .pdf - Maximum file size 10 MB (multiple files supported)</p>
                   </div>
                   <input
                     ref={fileInputRef}
                     type="file"
-                    accept=".md,.docx,.doc,.pdf"
+                    accept=".md,.docx,.doc,.rtf,.pdf"
                     onChange={onFileInputChange}
                     className="hidden"
                     id="lists-file-upload"

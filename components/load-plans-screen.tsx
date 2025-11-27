@@ -115,7 +115,7 @@ export default function LoadPlansScreen({ onLoadPlanSelect }: { onLoadPlanSelect
       for (const f of fileArray) {
         const hasValidExtension = validExtensions.some((ext) => f.name.toLowerCase().endsWith(ext))
         if (!hasValidExtension) {
-          throw new Error(`Invalid file type: ${f.name}. Please upload MD, DOCX, DOC, or PDF files.`)
+          throw new Error(`Invalid file type: ${f.name}. Please upload MD, DOCX, DOC, RTF, or PDF files.`)
         }
         if (f.size > 10 * 1024 * 1024) {
           throw new Error(`File size exceeds 10MB: ${f.name}`)
