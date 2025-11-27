@@ -63,6 +63,7 @@ export default function SideNavigation({ currentScreen, onNavigate }: SideNaviga
       defaultOpen: true,
       items: [
         { id: "staff", label: "Staff Performance", icon: Users },
+        { id: "shift-summary-report", label: "Shift Summary Report", icon: FileText },
         { id: "bdn-dashboard", label: "Workload Visibility", icon: ClipboardList },
         { id: "situational-awareness", label: "Situational Awareness", icon: Activity },
       ],
