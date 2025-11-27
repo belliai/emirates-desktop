@@ -3,7 +3,7 @@
 import type React from "react"
 
 import { useState } from "react"
-import { Home, List, BarChart3, FileText, Bell, Users, ChevronDown, ChevronRight, Settings, ChevronsLeft, ChevronsRight, TrendingUp, AlertTriangle, ClipboardList, Clipboard, Plane, LayoutDashboard, Activity, Package } from 'lucide-react'
+import { Home, List, BarChart3, FileText, Bell, Users, ChevronDown, ChevronRight, Settings, ChevronsLeft, ChevronsRight, TrendingUp, AlertTriangle, ClipboardList, Clipboard, Plane, LayoutDashboard, Activity, Package, Upload, Download, Search } from 'lucide-react'
 import Image from "next/image"
 
 interface SideNavigationProps {
@@ -28,7 +28,7 @@ interface NavSection {
 export default function SideNavigation({ currentScreen, onNavigate }: SideNavigationProps) {
   const [isCollapsed, setIsCollapsed] = useState(false)
   const [expandedSections, setExpandedSections] = useState<Set<string>>(
-    new Set(["data-tables", "staff", "dashboards"]), // "dashboards" is open by default
+    new Set(["data-tables", "operations", "reports"]), // All sections open by default
   )
 
   const navSections: NavSection[] = [
@@ -38,54 +38,33 @@ export default function SideNavigation({ currentScreen, onNavigate }: SideNaviga
       icon: FileText,
       defaultOpen: true,
       items: [
-        { id: "buildup-staff", label: "Buildup Staff", icon: Clipboard },
-        { id: "desktop", label: "Dashboard", icon: Home },
-        { id: "load-plans", label: "Load Plans", icon: Clipboard },
-        { id: "lists", label: "Lists", icon: List },
-        { id: "custom-reports", label: "Custom Reports", icon: FileText },
+        { id: "flights-view", label: "Flights View", icon: Plane },
+        { id: "bup-allocation-list", label: "BUP Allocation List", icon: Clipboard },
       ],
     },
     {
-      id: "dashboards",
-      label: "Dashboards",
-      icon: LayoutDashboard,
+      id: "operations",
+      label: "Operations",
+      icon: Activity,
       defaultOpen: true,
       items: [
-        { id: "flights-view", label: "Flights View", icon: Plane },
+        { id: "load-plans", label: "Upload Load Plans", icon: Upload },
+        { id: "lists", label: "Export Lists", icon: Download },
+        { id: "flight-assignment", label: "Flight Assignment", icon: Plane },
+        { id: "buildup-staff", label: "Buildup Staff", icon: Users },
+        { id: "screening", label: "Screening", icon: Search },
+        { id: "incoming-workload", label: "Incoming Workload", icon: TrendingUp },
+      ],
+    },
+    {
+      id: "reports",
+      label: "Reports",
+      icon: BarChart3,
+      defaultOpen: true,
+      items: [
+        { id: "staff", label: "Staff Performance", icon: Users },
         { id: "bdn-dashboard", label: "Workload Visibility", icon: ClipboardList },
         { id: "situational-awareness", label: "Situational Awareness", icon: Activity },
-      ],
-    },
-    {
-      id: "work-areas",
-      label: "Work Areas",
-      icon: Package,
-      defaultOpen: false,
-      items: [
-        { id: "work-area-gcr", label: "GCR", icon: Package },
-        { id: "work-area-per", label: "PER", icon: Package },
-        { id: "work-area-pil", label: "PIL", icon: Package },
-      ],
-    },
-    {
-      id: "forecast",
-      label: "Forecast",
-      icon: BarChart3,
-      defaultOpen: false,
-      items: [
-        { id: "flight-risk", label: "Flight Risk", icon: AlertTriangle },
-        { id: "workload-forecast", label: "Workload Forecast", icon: TrendingUp },
-        { id: "threshold-alerts", label: "Threshold Alerts", icon: Bell },
-      ],
-    },
-    {
-      id: "staff",
-      label: "Staff Management",
-      icon: Users,
-      items: [
-        { id: "staff", label: "Performance", icon: Users },
-        { id: "flight-assignment", label: "Flight Assignment", icon: Plane },
-        { id: "shift-summary-report", label: "Shift Summary Report", icon: FileText },
       ],
     },
   ]
