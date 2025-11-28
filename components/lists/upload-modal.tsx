@@ -20,6 +20,10 @@ interface UploadModalProps {
   onDragLeave: (e: React.DragEvent) => void
   onDrop: (e: React.DragEvent) => void
   onFileInputChange: (e: React.ChangeEvent<HTMLInputElement>) => void
+  title?: string
+  description?: string
+  accept?: string
+  fileTypeDescription?: string
 }
 
 export function UploadModal({
@@ -35,6 +39,10 @@ export function UploadModal({
   onDragLeave,
   onDrop,
   onFileInputChange,
+  title = "Upload BUP Allocation List",
+  description = "Upload your BUP allocation CSV files",
+  accept = ".csv",
+  fileTypeDescription = ".csv - Maximum file size 10 MB (multiple files supported)",
 }: UploadModalProps) {
   if (!isOpen) return null
 
@@ -42,8 +50,8 @@ export function UploadModal({
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <Card className="max-w-2xl w-full">
         <div className="border-b border-gray-200 px-6 py-4 relative">
-          <h2 className="text-xl font-semibold text-gray-900">Upload BUP Allocation List</h2>
-          <p className="text-sm text-gray-500 mt-1">Upload your BUP allocation CSV files</p>
+          <h2 className="text-xl font-semibold text-gray-900">{title}</h2>
+          <p className="text-sm text-gray-500 mt-1">{description}</p>
           <button
             onClick={() => !isProcessing && onClose()}
             disabled={isProcessing}
@@ -83,12 +91,12 @@ export function UploadModal({
                   <Upload className="w-12 h-12 text-gray-400" />
                   <div>
                     <p className="text-gray-700 font-medium mb-1">Click to upload or drag and drop</p>
-                    <p className="text-sm text-gray-500">.csv - Maximum file size 10 MB (multiple files supported)</p>
+                    <p className="text-sm text-gray-500">{fileTypeDescription}</p>
                   </div>
                   <input
                     ref={fileInputRef}
                     type="file"
-                    accept=".csv"
+                    accept={accept}
                     onChange={onFileInputChange}
                     className="hidden"
                     id="lists-file-upload"

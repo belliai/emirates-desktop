@@ -390,6 +390,10 @@ export default function LoadPlansScreen({ onLoadPlanSelect }: { onLoadPlanSelect
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
         onFileInputChange={handleFileInputChange}
+        title="Upload Load Plans"
+        description="Upload your load plan files (DOCX, DOC, RTF, PDF, MD, TXT)"
+        accept=".docx,.doc,.rtf,.pdf,.md,.txt"
+        fileTypeDescription="DOCX, DOC, RTF, PDF, MD, TXT - Maximum file size 10 MB (multiple files supported)"
       />
     </div>
   )
