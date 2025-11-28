@@ -1,1532 +1,1316 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { Clock, Plane, ChevronDown, ChevronRight } from "lucide-react"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell, LineChart, Line, Rectangle } from "recharts"
+import { useState, useEffect, useMemo, useRef } from "react"
+import { ChevronRight, ChevronDown, Plane, Calendar, Package, Users, Clock, FileText, Phone, User, Filter, X } from "lucide-react"
+import LoadPlanDetailScreen from "./load-plan-detail-screen"
+import type { LoadPlanDetail, AWBRow, ULDSection } from "./load-plan-types"
+import { useLoadPlans, type LoadPlan, type SentBCR } from "@/lib/load-plan-context"
+import { getLoadPlansFromSupabase, getLoadPlanDetailFromSupabase } from "@/lib/load-plans-supabase"
+import { parseULDSection } from "@/lib/uld-parser"
+import { getULDEntriesFromStorage } from "@/lib/uld-storage"
+import { uldSectionHasPilPerShc, type WorkArea } from "./flights-view-screen"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
-import { useLoadPlans, type LoadPlan } from "@/lib/load-plan-context"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from "recharts"
+import BCRModal from "./bcr-modal"
+import { BUP_ALLOCATION_DATA } from "@/lib/bup-allocation-data"
 
-// Enhanced work area data with date-time and shift support
-const workAreaDataByShift: Record<string, Record<string, Record<string, { total: number; remaining: number; completed: number }>>> = {
-  "0600-0900": {
-    overall: {
-      GCR: { total: 85, remaining: 45, completed: 40 },
-      PER: { total: 62, remaining: 28, completed: 34 },
-      PIL: { total: 48, remaining: 22, completed: 26 },
-    },
-    E75: {
-      GCR: { total: 35, remaining: 18, completed: 17 },
-      PER: { total: 25, remaining: 12, completed: 13 },
-      PIL: { total: 20, remaining: 9, completed: 11 },
-    },
-    L22: {
-      GCR: { total: 28, remaining: 15, completed: 13 },
-      PER: { total: 20, remaining: 8, completed: 12 },
-      PIL: { total: 15, remaining: 7, completed: 8 },
-    },
-  },
-  "0901-1259": {
-    overall: {
-      GCR: { total: 92, remaining: 38, completed: 54 },
-      PER: { total: 68, remaining: 25, completed: 43 },
-      PIL: { total: 52, remaining: 18, completed: 34 },
-    },
-    E75: {
-      GCR: { total: 38, remaining: 15, completed: 23 },
-      PER: { total: 28, remaining: 10, completed: 18 },
-      PIL: { total: 22, remaining: 8, completed: 14 },
-    },
-    L22: {
-      GCR: { total: 30, remaining: 12, completed: 18 },
-      PER: { total: 22, remaining: 8, completed: 14 },
-      PIL: { total: 18, remaining: 6, completed: 12 },
-    },
-  },
+// Types for completion tracking
+type CompletionStatus = "green" | "amber" | "red"
+type Shift = "All" | "9am to 9pm" | "9pm to 9am"
+
+// Two 9-9 shifts
+const SHIFTS: Shift[] = ["All", "9am to 9pm", "9pm to 9am"]
+
+const SHIFT_MAP: Record<string, { start: number; end: number; overnight?: boolean }> = {
+  "9am to 9pm": { start: 9, end: 21 },
+  "9pm to 9am": { start: 21, end: 9, overnight: true },
 }
 
-// AWB Status Types
-type AWBStatus = "completed" | "pending" | "split" | "offloaded" | "in-progress"
+// Parse STD time (e.g., "02:50", "09:35") to hours
+function parseStdToHours(std: string): number {
+  const [hours, minutes] = std.split(":").map(Number)
+  return hours + (minutes || 0) / 60
+}
 
-type AWBProgress = {
-  ser: string
-  awbNo: string
-  orgDes: string
-  pcs: string
-  wgt: string
-  uld: string
-  status: AWBStatus
-  splitDetails?: {
-    parts: number
-    loadedInto: string[]
-    remainingPcs: number
+// Determine which shift a flight belongs to based on STD
+function getShiftFromStd(std: string): Shift {
+  const hours = parseStdToHours(std)
+  
+  // 9am to 9pm: 9:00 - 20:59
+  if (hours >= 9 && hours < 21) {
+    return "9am to 9pm"
   }
-  offloadDetails?: {
-    flight: string
-    pcs: number
-    reason: string
+  // 9pm to 9am: 21:00 - 8:59 (overnight)
+  return "9pm to 9am"
+}
+
+type FlightCompletion = {
+  flight: string
+  totalPlannedULDs: number
+  completedULDs: number
+  completionPercentage: number
+  status: CompletionStatus
+  staffName: string
+  staffContact: string
+  shift: Shift
+}
+
+// Hardcoded staff data for demo
+const STAFF_DATA: Record<string, { name: string; contact: string }> = {
+  "EK0544": { name: "David Belisario", contact: "+971 50 123 4567" },
+  "EK0205": { name: "Harley Quinn", contact: "+971 50 987 6543" },
+  "EK0301": { name: "John Smith", contact: "+971 50 456 7890" },
+  "EK0402": { name: "Sarah Connor", contact: "+971 50 321 0987" },
+  "EK0112": { name: "Mike Ross", contact: "+971 50 654 3210" },
+  "EK0618": { name: "Rachel Green", contact: "+971 50 111 2222" },
+  "EK0720": { name: "Joey Tribbiani", contact: "+971 50 333 4444" },
+  "EK0832": { name: "Monica Geller", contact: "+971 50 555 6666" },
+  "EK0915": { name: "Ross Geller", contact: "+971 50 777 8888" },
+  "EK1024": { name: "Chandler Bing", contact: "+971 50 999 0000" },
+}
+
+const COMPLETION_DATA: Record<string, { completedULDs: number }> = {
+  "EK0544": { completedULDs: 8 },
+  "EK0205": { completedULDs: 3 },
+  "EK0301": { completedULDs: 0 },
+  "EK0402": { completedULDs: 12 },
+  "EK0112": { completedULDs: 5 },
+  "EK0618": { completedULDs: 7 },
+  "EK0720": { completedULDs: 2 },
+  "EK0832": { completedULDs: 9 },
+  "EK0915": { completedULDs: 4 },
+  "EK1024": { completedULDs: 6 },
+}
+
+const SHIFT_DATA: Record<string, string> = {
+  "EK0544": "02:50",
+  "EK0720": "03:15",
+  "EK0205": "06:30",
+  "EK1024": "22:30",
+  "EK0301": "09:45",
+  "EK0402": "10:35",
+  "EK0112": "11:20",
+  "EK0618": "14:45",
+  "EK0832": "16:30",
+  "EK0915": "19:00",
+}
+
+function getCompletionStatus(percentage: number): CompletionStatus {
+  if (percentage >= 80) return "green"
+  if (percentage >= 50) return "amber"
+  return "red"
+}
+
+function getStatusColor(status: CompletionStatus): string {
+  switch (status) {
+    case "green": return "bg-green-500"
+    case "amber": return "bg-amber-500"
+    case "red": return "bg-red-500"
   }
-  progress: number // 0-100
 }
 
-// EK0544 Load Plan Detail - Based on actual data structure
-const ek0544LoadPlanDetail = {
-  flight: "EK0544",
-  date: "01Mar",
-  acftType: "77WER",
-  acftReg: "A6-ENT",
-  std: "02:50",
-  pax: "DXB/MAA/0/23/251",
-  ttlPlnUld: "06PMC/07AKE",
-  uldVersion: "06/26",
-  sectors: [
-    {
-      sector: "DXBMAA",
-      uldSections: [
-        {
-          uld: "XX 02PMC XX",
-          awbs: [
-            {
-              ser: "001",
-              awbNo: "176-92065120",
-              orgDes: "FRAMAA",
-              pcs: "31",
-              wgt: "1640.2",
-            },
-          ],
-        },
-        {
-          uld: "XX BULK XX",
-          awbs: [
-            {
-              ser: "002",
-              awbNo: "176-98208961",
-              orgDes: "DXBMAA",
-              pcs: "1",
-              wgt: "10.0",
-            },
-          ],
-        },
-        {
-          uld: "XX 02PMC XX",
-          awbs: [
-            {
-              ser: "003",
-              awbNo: "176-93627586",
-              orgDes: "MNLMAA",
-              pcs: "13",
-              wgt: "2690.0",
-            },
-          ],
-        },
-        {
-          uld: "XX 06AKE XX",
-          awbs: [
-            {
-              ser: "008",
-              awbNo: "176-93270542",
-              orgDes: "FRAMAA",
-              pcs: "11",
-              wgt: "145.5",
-            },
-          ],
-        },
-        {
-          uld: "",
-          awbs: [
-            {
-              ser: "004",
-              awbNo: "176-99699530",
-              orgDes: "PEKMAA",
-              pcs: "9",
-              wgt: "643.0",
-            },
-          ],
-        },
-        {
-          uld: "XX 01AKE XX",
-          awbs: [
-            {
-              ser: "013",
-              awbNo: "176-91073931",
-              orgDes: "KRKMAA",
-              pcs: "1",
-              wgt: "363.0",
-            },
-          ],
-        },
-        {
-          uld: "",
-          awbs: [
-            {
-              ser: "009",
-              awbNo: "176-92388321",
-              orgDes: "MIAMAA",
-              pcs: "57",
-              wgt: "1499.0",
-            },
-            {
-              ser: "010",
-              awbNo: "176-92388332",
-              orgDes: "MIAMAA",
-              pcs: "57",
-              wgt: "1499.0",
-            },
-          ],
-          isRampTransfer: true,
-        },
-        {
-          uld: "XX BULK XX",
-          awbs: [
-            {
-              ser: "011",
-              awbNo: "176-91628773",
-              orgDes: "DARMAA",
-              pcs: "1",
-              wgt: "20.0",
-            },
-            {
-              ser: "012",
-              awbNo: "176-91629020",
-              orgDes: "DARMAA",
-              pcs: "1",
-              wgt: "20.0",
-            },
-          ],
-          isRampTransfer: true,
-        },
-      ],
-    },
-  ],
+function parseTTLPlnUld(ttlPlnUld: string): number {
+  let total = 0
+  const pmcMatch = ttlPlnUld.match(/(\d+)PMC/i)
+  const akeMatch = ttlPlnUld.match(/(\d+)AKE/i)
+  
+  if (pmcMatch) total += parseInt(pmcMatch[1], 10)
+  if (akeMatch) total += parseInt(akeMatch[1], 10)
+  
+  if (total === 0) {
+    const anyNumber = ttlPlnUld.match(/(\d+)/)
+    if (anyNumber) total = parseInt(anyNumber[1], 10)
+  }
+  
+  return total || 1
 }
 
-// Create AWB progress tracking with complex statuses
-const createAWBProgressData = (): AWBProgress[] => {
-  const awbs: AWBProgress[] = []
-  let sequence = 0
-
-  ek0544LoadPlanDetail.sectors.forEach((sector) => {
-    sector.uldSections.forEach((uldSection) => {
-      uldSection.awbs.forEach((awb) => {
-        sequence++
-        let status: AWBStatus = "pending"
-        let progress = 0
-        let splitDetails
-        let offloadDetails
-
-        // Simulate different statuses based on sequence
-        if (sequence <= 3) {
-          status = "completed"
-          progress = 100
-        } else if (sequence === 4) {
-          status = "in-progress"
-          progress = 65
-        } else if (sequence === 5) {
-          status = "split"
-          progress = 40
-          splitDetails = {
-            parts: 2,
-            loadedInto: ["02PMC", "03PMC"],
-            remainingPcs: parseInt(awb.pcs) - Math.floor(parseInt(awb.pcs) * 0.4),
+function calculateTotalPlannedULDs(loadPlanDetail: LoadPlanDetail, workAreaFilter?: WorkArea): number {
+  if (typeof window !== 'undefined') {
+    try {
+      const entriesMap = getULDEntriesFromStorage(loadPlanDetail.flight, loadPlanDetail.sectors)
+      
+      if (entriesMap.size > 0) {
+        let totalSlots = 0
+        
+        entriesMap.forEach((entries, key) => {
+          const [sectorIndexStr, uldSectionIndexStr] = key.split('-')
+          const sectorIndex = parseInt(sectorIndexStr, 10)
+          const uldSectionIndex = parseInt(uldSectionIndexStr, 10)
+          
+          const sector = loadPlanDetail.sectors[sectorIndex]
+          if (sector && sector.uldSections[uldSectionIndex]) {
+            const uldSection = sector.uldSections[uldSectionIndex]
+            
+            let shouldInclude = true
+            if (workAreaFilter === "PIL and PER") {
+              shouldInclude = uldSectionHasPilPerShc(uldSection)
+            } else if (workAreaFilter === "GCR") {
+              shouldInclude = !uldSectionHasPilPerShc(uldSection)
+            }
+            
+            if (shouldInclude) {
+              totalSlots += entries.length
+            }
           }
-        } else if (sequence === 6) {
-          status = "offloaded"
-          progress = 0
-          offloadDetails = {
-            flight: "EK0214",
-            pcs: parseInt(awb.pcs),
-            reason: "Capacity constraint",
-          }
-        } else if (sequence === 7 || sequence === 8) {
-          status = "split"
-          progress = 30
-          splitDetails = {
-            parts: 3,
-            loadedInto: ["01AKE", "02AKE", "BULK"],
-            remainingPcs: parseInt(awb.pcs) - Math.floor(parseInt(awb.pcs) * 0.3),
-          }
-        } else {
-          status = "pending"
-          progress = 0
-        }
-
-        awbs.push({
-          ser: awb.ser,
-          awbNo: awb.awbNo,
-          orgDes: awb.orgDes,
-          pcs: awb.pcs,
-          wgt: awb.wgt,
-          uld: uldSection.uld || "BULK",
-          status,
-          progress,
-          splitDetails,
-          offloadDetails,
         })
-      })
-    })
-  })
-
-  return awbs
-}
-
-const awbProgressData = createAWBProgressData()
-
-// Calculate flight-level stats
-const calculateFlightStats = () => {
-  const totalAWBs = awbProgressData.length
-  const completed = awbProgressData.filter((a) => a.status === "completed").length
-  const inProgress = awbProgressData.filter((a) => a.status === "in-progress").length
-  const split = awbProgressData.filter((a) => a.status === "split").length
-  const offloaded = awbProgressData.filter((a) => a.status === "offloaded").length
-  const pending = awbProgressData.filter((a) => a.status === "pending").length
-
-  const totalPcs = awbProgressData.reduce((sum, a) => sum + parseInt(a.pcs), 0)
-  const completedPcs = awbProgressData
-    .filter((a) => a.status === "completed")
-    .reduce((sum, a) => sum + parseInt(a.pcs), 0)
-  const splitPcs = awbProgressData
-    .filter((a) => a.status === "split")
-    .reduce((sum, a) => sum + (a.splitDetails?.remainingPcs || 0), 0)
-
-  return {
-    totalAWBs,
-    completed,
-    inProgress,
-    split,
-    offloaded,
-    pending,
-    totalPcs,
-    completedPcs,
-    splitPcs,
-    completionRate: totalPcs > 0 ? ((completedPcs / totalPcs) * 100).toFixed(1) : "0",
-  }
-}
-
-const flightStats = calculateFlightStats()
-
-// Custom bar shapes to adjust positioning
-const AKEBar = (props: any) => {
-  const { fill, x, y, width, height } = props
-  // Shift AKE bar left by 15px to better center it
-  return <Rectangle x={(x || 0) - 15} y={y} width={width} height={height} fill={fill} radius={[4, 4, 0, 0]} />
-}
-
-const TotalBar = (props: any) => {
-  const { fill, x, y, width, height, payload } = props
-  // Shift Total bar right by 15px to better center it
-  const isBulk = payload?.type === "Total" && fill === "#F59E0B"
-  return <Rectangle x={(x || 0) + 15} y={y} width={width} height={height} fill={fill} radius={isBulk ? [4, 4, 0, 0] : [0, 0, 0, 0]} />
-}
-
-// Calculate total planned PCS
-const totalPlannedPcs = awbProgressData.reduce((sum, a) => sum + parseInt(a.pcs), 0)
-
-// Prepare line chart data - remaining, completed, offloaded (numbers add up)
-const createLineChartData = (showSplit: boolean) => {
-  let cumulativeCompleted = 0
-  let cumulativeOffloaded = 0
-  let cumulativeSplit = 0
-
-  return awbProgressData.map((awb, index) => {
-    const awbPcs = parseInt(awb.pcs)
-    
-    // Update cumulative values based on status
-    if (awb.status === "completed") {
-      cumulativeCompleted += awbPcs
-    } else if (awb.status === "offloaded") {
-      cumulativeOffloaded += awbPcs
-    } else if (awb.status === "split") {
-      const splitLoaded = awb.splitDetails?.remainingPcs || 0
-      if (showSplit) {
-        cumulativeSplit += splitLoaded
-      } else {
-        // If not showing split, treat loaded portion as completed
-        cumulativeCompleted += splitLoaded
+        
+        if (totalSlots > 0) {
+          return totalSlots
+        }
       }
+    } catch (e) {
+      // Fall through
     }
-
-    // Remaining = Total - Completed - Offloaded - Split (if shown)
-    const remaining = totalPlannedPcs - cumulativeCompleted - cumulativeOffloaded - (showSplit ? cumulativeSplit : 0)
-
-    return {
-      sequence: index + 1,
-      awbNo: awb.awbNo,
-      ser: awb.ser,
-      orgDes: awb.orgDes,
-      pcs: awbPcs,
-      wgt: parseFloat(awb.wgt),
-      uld: awb.uld,
-      status: awb.status,
-      progress: awb.progress,
-      remaining: Math.max(0, remaining),
-      completed: cumulativeCompleted,
-      offloaded: cumulativeOffloaded,
-      split: showSplit ? cumulativeSplit : 0,
-      splitDetails: awb.splitDetails,
-      offloadDetails: awb.offloadDetails,
-    }
-  })
-}
-
-// Custom Tooltip for complex line chart
-const ComplexTooltip = ({ active, payload }: any) => {
-  if (active && payload && payload.length) {
-    const data = payload[0].payload
-    return (
-      <div className="bg-white border border-gray-300 rounded-lg shadow-lg p-3 text-xs max-w-xs">
-        <div className="font-semibold text-gray-900 mb-2">AWB: {data.awbNo}</div>
-        <div className="space-y-1 text-gray-700">
-          <div><span className="font-medium">SER:</span> {data.ser}</div>
-          <div><span className="font-medium">Origin/Dest:</span> {data.orgDes}</div>
-          <div><span className="font-medium">ULD:</span> {data.uld || "BULK"}</div>
-          <div><span className="font-medium">PCS:</span> {data.pcs}</div>
-          <div><span className="font-medium">Weight:</span> {data.wgt} kg</div>
-          <div className="mt-2 pt-2 border-t border-gray-200">
-            <div className="font-semibold text-gray-900">Status: <span className={`${
-              data.status === "completed" ? "text-green-600" :
-              data.status === "in-progress" ? "text-amber-600" :
-              data.status === "split" ? "text-blue-600" :
-              data.status === "offloaded" ? "text-red-600" :
-              "text-gray-600"
-            }`}>{data.status.toUpperCase()}</span></div>
-            <div className="font-medium">Progress: {data.progress}%</div>
-          </div>
-          {data.splitDetails && (
-            <div className="mt-2 pt-2 border-t border-gray-200 bg-blue-50 p-2 rounded">
-              <div className="font-semibold text-blue-900">SPLIT DETAILS:</div>
-              <div>Split into {data.splitDetails.parts} parts</div>
-              <div>Loaded into: {data.splitDetails.loadedInto.join(", ")}</div>
-              <div>Remaining PCS: {data.splitDetails.remainingPcs}</div>
-            </div>
-          )}
-          {data.offloadDetails && (
-            <div className="mt-2 pt-2 border-t border-gray-200 bg-red-50 p-2 rounded">
-              <div className="font-semibold text-red-900">OFFLOAD DETAILS:</div>
-              <div>Offloaded to: {data.offloadDetails.flight}</div>
-              <div>PCS: {data.offloadDetails.pcs}</div>
-              <div>Reason: {data.offloadDetails.reason}</div>
-            </div>
-          )}
-        </div>
-      </div>
-    )
   }
-  return null
-}
-
-// Calculate ULD type breakdown from EK0544 load plan
-const calculateULDBreakdown = () => {
-  // Count ULD types from actual EK0544 data
-  let pmcCount = 0
-  let akeCount = 0
-  let bulkCount = 0
-
-  ek0544LoadPlanDetail.sectors.forEach((sector) => {
+  
+  let total = 0
+  loadPlanDetail.sectors.forEach((sector) => {
     sector.uldSections.forEach((uldSection) => {
-      const uld = uldSection.uld || ""
-      if (uld.includes("PMC")) {
-        pmcCount++
-      } else if (uld.includes("AKE")) {
-        akeCount++
-      } else if (uld.includes("BULK") || (uld === "" && uldSection.awbs.length > 0)) {
-        bulkCount++
+      let shouldInclude = true
+      if (workAreaFilter === "PIL and PER") {
+        shouldInclude = uldSectionHasPilPerShc(uldSection)
+      } else if (workAreaFilter === "GCR") {
+        shouldInclude = !uldSectionHasPilPerShc(uldSection)
+      }
+      
+      if (shouldInclude && uldSection.uld) {
+        const { count } = parseULDSection(uldSection.uld)
+        total += count
       }
     })
   })
+  
+  if (total === 0 && (!workAreaFilter || workAreaFilter === "All")) {
+    const fromTtlPlnUld = parseTTLPlnUld(loadPlanDetail.ttlPlnUld || "")
+    if (fromTtlPlnUld > 0) {
+      return fromTtlPlnUld
+    }
+  }
+  
+  return total || 1
+}
 
-  // Use ttlPlnUld as source of truth: "06PMC/07AKE"
-  const pmcMatch = ek0544LoadPlanDetail.ttlPlnUld.match(/(\d+)PMC/)
-  const akeMatch = ek0544LoadPlanDetail.ttlPlnUld.match(/(\d+)AKE/)
-  const plannedPMC = pmcMatch ? parseInt(pmcMatch[1]) : pmcCount
-  const plannedAKE = akeMatch ? parseInt(akeMatch[1]) : akeCount
-
-  return {
-    PMC: plannedPMC,
-    AKE: plannedAKE,
-    BULK: bulkCount,
-    total: plannedPMC + plannedAKE + bulkCount,
+function calculateTotalMarkedULDs(flightNumber: string, loadPlanDetail: LoadPlanDetail, workAreaFilter?: WorkArea): number {
+  if (typeof window === 'undefined') return 0
+  
+  try {
+    const entriesMap = getULDEntriesFromStorage(flightNumber, loadPlanDetail.sectors)
+    
+    let markedCount = 0
+    
+    entriesMap.forEach((entries, key) => {
+      const [sectorIndexStr, uldSectionIndexStr] = key.split('-')
+      const sectorIndex = parseInt(sectorIndexStr, 10)
+      const uldSectionIndex = parseInt(uldSectionIndexStr, 10)
+      
+      const sector = loadPlanDetail.sectors[sectorIndex]
+      if (sector && sector.uldSections[uldSectionIndex]) {
+        const uldSection = sector.uldSections[uldSectionIndex]
+        
+        let shouldInclude = true
+        if (workAreaFilter === "PIL and PER") {
+          shouldInclude = uldSectionHasPilPerShc(uldSection)
+        } else if (workAreaFilter === "GCR") {
+          shouldInclude = !uldSectionHasPilPerShc(uldSection)
+        }
+        
+        if (shouldInclude) {
+          entries.forEach((entry) => {
+            if (entry.checked) {
+              markedCount++
+            }
+          })
+        }
+      }
+    })
+    
+    return markedCount
+  } catch (e) {
+    return 0
   }
 }
 
-const uldBreakdownData = calculateULDBreakdown()
+function calculateFlightCompletion(loadPlan: LoadPlan, loadedAWBCount?: number): FlightCompletion {
+  const totalPlannedULDs = parseTTLPlnUld(loadPlan.ttlPlnUld)
+  
+  const completionInfo = COMPLETION_DATA[loadPlan.flight]
+  const completedULDs = loadedAWBCount !== undefined 
+    ? Math.min(loadedAWBCount, totalPlannedULDs)
+    : (completionInfo?.completedULDs || 0)
+  
+  const completionPercentage = Math.round((completedULDs / totalPlannedULDs) * 100)
+  const status = getCompletionStatus(completionPercentage)
+  
+  const staffInfo = STAFF_DATA[loadPlan.flight] || { name: "Unassigned", contact: "-" }
+  const stdTime = SHIFT_DATA[loadPlan.flight] || loadPlan.std || "00:00"
+  const shift = getShiftFromStd(stdTime)
+  
+  return {
+    flight: loadPlan.flight,
+    totalPlannedULDs,
+    completedULDs,
+    completionPercentage,
+    status,
+    staffName: staffInfo.name,
+    staffContact: staffInfo.contact,
+    shift,
+  }
+}
 
-// Prepare bar chart data for ULD types - 3rd bar is total with BULK highlighted
-const uldTypeChartData = [
-  {
-    type: "PMC",
-    pmc: uldBreakdownData.PMC,
-    ake: 0,
-    pmcAke: 0,
-    bulk: 0,
-    total: uldBreakdownData.PMC,
-    color: "#DC2626",
+// Work area data for workload section
+const workAreaData = {
+  overall: {
+    GCR: { total: 85, remaining: 45 },
+    PER: { total: 62, remaining: 28 },
+    PIL: { total: 48, remaining: 22 },
   },
-  {
-    type: "AKE",
-    pmc: 0,
-    ake: uldBreakdownData.AKE,
-    pmcAke: 0,
-    bulk: 0,
-    total: uldBreakdownData.AKE,
-    color: "#EF4444", // Slightly lighter red for AKE
+  E75: {
+    GCR: { total: 35, remaining: 18 },
+    PER: { total: 25, remaining: 12 },
+    PIL: { total: 20, remaining: 9 },
   },
-  {
-    type: "Total",
-    pmc: 0,
-    ake: 0,
-    pmcAke: uldBreakdownData.PMC + uldBreakdownData.AKE,
-    bulk: uldBreakdownData.BULK,
-    total: uldBreakdownData.PMC + uldBreakdownData.AKE + uldBreakdownData.BULK,
-    color: "#DC2626",
+  L22: {
+    GCR: { total: 28, remaining: 15 },
+    PER: { total: 20, remaining: 8 },
+    PIL: { total: 15, remaining: 7 },
   },
-]
-
-// Prepare chart data for anticipated flights
-const getAnticipatedChartData = (loadPlans: LoadPlan[]) => {
-  const tomorrowFlights = loadPlans.filter((plan) => {
-    // Filter for flights scheduled tomorrow (EK0205 and any others)
-    return plan.flight === "EK0205" || plan.flight === "EK0789"
-  })
-
-  return tomorrowFlights.map((plan) => {
-    const pmcMatch = plan.ttlPlnUld.match(/(\d+)PMC/)
-    const akeMatch = plan.ttlPlnUld.match(/(\d+)AKE/)
-    const pmc = pmcMatch ? parseInt(pmcMatch[1]) : 0
-    const ake = akeMatch ? parseInt(akeMatch[1]) : 0
-    const destination = plan.pax.split("/")[1] || "JFK"
-    
-    return {
-      flight: plan.flight,
-      PMC: pmc,
-      AKE: ake,
-      destination: `DXB-${destination}`,
-    }
-  })
 }
 
-type CSVRow = {
-  Date: string
-  Day: string
-  Shift: string
-  "Duty Hrs": string
-  "Peak A/F"?: string
-  "Peak E/M"?: string
-  "Early Morning First Wave"?: string
-  "Early Morning Second Wave"?: string
-  "Early Morning Total"?: string
-  "Late Morning"?: string
-  "Advance First Wave": string
-  "Advance Second Wave": string
-  "Total Advance": string
-  "Total DX BUP"?: string
-  "Total  NI BUP"?: string
-  "Planned PMC F/W": string
-  "Planned ALF F/W": string
-  "Planned AKE F/W": string
-  "Total Planned F/W": string
-  "Planned PMC S/W": string
-  "Planned ALF S/W": string
-  "Planned AKE S/W": string
-  "Total Palnned S/W": string
-  "Build PMC": string
-  "Build ALF": string
-  "Build AKE": string
-  "Total Build": string
-  "Pending  PMC": string
-  "Pending ALF": string
-  "Pending AKE": string
-  "Total Pending": string
-  [key: string]: string | undefined
+// Parse ULD count for incoming workload
+function parseULDCount(ttlPlnUld: string): { pmc: number; ake: number; bulk: number; total: number } {
+  if (!ttlPlnUld) return { pmc: 0, ake: 0, bulk: 0, total: 0 }
+  const pmcMatch = ttlPlnUld.match(/(\d+)PMC/i)
+  const akeMatch = ttlPlnUld.match(/(\d+)AKE/i)
+  const bulkMatch = ttlPlnUld.match(/(\d+)BULK/i)
+  const pmc = pmcMatch ? parseInt(pmcMatch[1]) : 0
+  const ake = akeMatch ? parseInt(akeMatch[1]) : 0
+  const bulk = bulkMatch ? parseInt(bulkMatch[1]) : 0
+  return { pmc, ake, bulk, total: pmc + ake + bulk }
 }
 
-type ChartDataPoint = {
-  date: string
-  dateFormatted: string
-  advance: number
-  planned: number
-  built: number
-  pending: number
-  efficiency: number
-  staffRequired: number
-  shift: "Day" | "Night"
+function extractDestination(pax: string): string {
+  if (!pax) return "DXB-JFK"
+  const parts = pax.split("/")
+  const origin = parts[0] || "DXB"
+  const destination = parts[1] || "JFK"
+  return `${origin}-${destination}`
 }
 
-
-interface SituationalAwarenessScreenProps {
-  onNavigate?: (screen: string) => void
-}
-
-export default function SituationalAwarenessScreen({ onNavigate }: SituationalAwarenessScreenProps = {}) {
-  const { loadPlans } = useLoadPlans()
-  const [selectedShift, setSelectedShift] = useState<"0600-0900" | "0901-1259">("0600-0900")
+export default function SituationalAwarenessScreen() {
+  const { loadPlans, setLoadPlans, sentBCRs } = useLoadPlans()
+  const [selectedLoadPlan, setSelectedLoadPlan] = useState<LoadPlanDetail | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
+  const [flightCompletions, setFlightCompletions] = useState<Map<string, FlightCompletion>>(new Map())
+  const [loadPlanDetailsCache, setLoadPlanDetailsCache] = useState<Map<string, LoadPlanDetail>>(new Map())
+  const [selectedWorkArea, setSelectedWorkArea] = useState<WorkArea>("All")
+  const [selectedShift, setSelectedShift] = useState<Shift>("All" as Shift)
+  const [customTimeRange, setCustomTimeRange] = useState<{ start: string; end: string } | null>(null)
+  const [showTimeRangePicker, setShowTimeRangePicker] = useState(false)
+  const timeRangePickerRef = useRef<HTMLDivElement>(null)
+  const [selectedFlight, setSelectedFlight] = useState<string | null>(null)
+  const [isLoadingDetail, setIsLoadingDetail] = useState(false)
   const [workAreaFilter, setWorkAreaFilter] = useState<"overall" | "sortByWorkArea">("overall")
-  const [selectedWorkArea, setSelectedWorkArea] = useState<string>("E75")
-  const [showSplit, setShowSplit] = useState<boolean>(false)
-  const [chartData, setChartData] = useState<ChartDataPoint[]>([])
-  const [dayShiftData, setDayShiftData] = useState<CSVRow[]>([])
-  const [nightShiftData, setNightShiftData] = useState<CSVRow[]>([])
-  const [isTableOpen, setIsTableOpen] = useState(false)
-  const [recommendations, setRecommendations] = useState<string[]>([])
+  const [selectedWorkAreaForWorkload, setSelectedWorkAreaForWorkload] = useState<string>("E75")
+  const [selectedBCR, setSelectedBCR] = useState<SentBCR | null>(null)
+  const [showBCRModal, setShowBCRModal] = useState(false)
 
-  // Parse CSV function - handles duplicate column names by using array indices
-  const parseCSV = (csvText: string): CSVRow[] => {
-    const lines = csvText.trim().split("\n")
-    if (lines.length < 2) return []
-    
-    const headers = lines[0].split(",").map((h) => h.trim())
-    
-    return lines.slice(1).map((line) => {
-      const values = line.split(",").map((v) => v.trim())
-      const obj: any = {}
-      
-      // Map headers by index, handling duplicates
-      headers.forEach((header, index) => {
-        const value = values[index] || ""
-        
-        // Handle duplicate column names by position
-        if (header === "Planned PMC") {
-          if (index === 12) obj["Planned PMC F/W"] = value
-          else if (index === 18) obj["Planned PMC S/W"] = value
-          obj[header] = value // Keep original for compatibility
-        } else if (header === "Planned ALF") {
-          if (index === 13) obj["Planned ALF F/W"] = value
-          else if (index === 19) obj["Planned ALF S/W"] = value
-          obj[header] = value
-        } else if (header === "Planned AKE") {
-          if (index === 14) obj["Planned AKE F/W"] = value
-          else if (index === 20) obj["Planned AKE S/W"] = value
-          obj[header] = value
-        } else {
-          obj[header] = value
-        }
-      })
-      
-      return obj as CSVRow
-    })
-  }
-
-  // Fetch and parse CSV files
+  // Fetch load plans from Supabase on mount
   useEffect(() => {
-    const fetchCSVData = async () => {
+    const fetchLoadPlans = async () => {
+      setIsLoading(true)
       try {
-        // Fetch Day shift data
-        const dayResponse = await fetch("/bdn-sheet1.csv")
-        const dayText = await dayResponse.text()
-        const dayRows = parseCSV(dayText)
-        setDayShiftData(dayRows)
-
-        // Fetch Night shift data
-        const nightResponse = await fetch("/bdn-sheet2.csv")
-        const nightText = await nightResponse.text()
-        const nightRows = parseCSV(nightText)
-        setNightShiftData(nightRows)
-
-        // Process chart data
-        const processedData: ChartDataPoint[] = []
-        
-        // Process Day shift data
-        dayRows.forEach((row) => {
-          const advance = parseInt(row["Total Advance"]) || 0
-          const plannedFW = parseInt(row["Total Planned F/W"]) || 0
-          const plannedSW = parseInt(row["Total Palnned S/W"]) || 0
-          const planned = plannedFW + plannedSW
-          const built = parseInt(row["Total Build"]) || 0
-          const pending = parseInt(row["Total Pending"]) || 0
-          const efficiency = planned > 0 ? (built / planned) * 100 : 0
-          const staffRequired = Math.ceil(planned / 50) // Estimate: ~50 ULDs per staff member
-
-          // Format date: "1-Jan-23" -> "01-Jan"
-          const dateParts = row.Date.split("-")
-          const dateFormatted = dateParts.length >= 2 
-            ? `${dateParts[0].padStart(2, "0")}-${dateParts[1].substring(0, 3)}`
-            : row.Date
-
-          processedData.push({
-            date: row.Date,
-            dateFormatted,
-            advance,
-            planned,
-            built,
-            pending,
-            efficiency: Math.round(efficiency * 10) / 10,
-            staffRequired,
-            shift: "Day",
+        const supabaseLoadPlans = await getLoadPlansFromSupabase()
+        if (supabaseLoadPlans.length > 0) {
+          setLoadPlans(supabaseLoadPlans)
+          
+          const detailsCache = new Map<string, LoadPlanDetail>()
+          const completions = new Map<string, FlightCompletion>()
+          
+          await Promise.all(
+            supabaseLoadPlans.map(async (plan) => {
+              try {
+                const detail = await getLoadPlanDetailFromSupabase(plan.flight)
+                if (detail) {
+                  detailsCache.set(plan.flight, detail)
+                }
+              } catch (err) {
+                console.error(`[SituationalAwarenessScreen] Error fetching detail for ${plan.flight}:`, err)
+              }
+            })
+          )
+          
+          setLoadPlanDetailsCache(detailsCache)
+          
+          supabaseLoadPlans.forEach(plan => {
+            completions.set(plan.flight, calculateFlightCompletion(plan))
           })
-        })
-
-        // Process Night shift data
-        nightRows.forEach((row) => {
-          const advance = parseInt(row["Total Advance"]) || 0
-          const plannedFW = parseInt(row["Total Planned F/W"]) || 0
-          const plannedSW = parseInt(row["Total Palnned S/W"]) || 0
-          const planned = plannedFW + plannedSW
-          const built = parseInt(row["Total Build"]) || 0
-          const pending = parseInt(row["Total Pending"]) || 0
-          const efficiency = planned > 0 ? (built / planned) * 100 : 0
-          const staffRequired = Math.ceil(planned / 50)
-
-          // Format date: "1-Jan-23" -> "01-Jan"
-          const dateParts = row.Date.split("-")
-          const dateFormatted = dateParts.length >= 2 
-            ? `${dateParts[0].padStart(2, "0")}-${dateParts[1].substring(0, 3)}`
-            : row.Date
-
-          processedData.push({
-            date: row.Date,
-            dateFormatted,
-            advance,
-            planned,
-            built,
-            pending,
-            efficiency: Math.round(efficiency * 10) / 10,
-            staffRequired,
-            shift: "Night",
-          })
-        })
-
-        // Sort by date
-        processedData.sort((a, b) => {
-          const dateA = new Date(a.date.split("-").reverse().join("-"))
-          const dateB = new Date(b.date.split("-").reverse().join("-"))
-          return dateA.getTime() - dateB.getTime()
-        })
-
-        setChartData(processedData)
-
-        // Calculate recommendations
-        const avgEfficiencyDay = dayRows.reduce((sum, row) => {
-          const plannedFW = parseInt(row["Total Planned F/W"]) || 0
-          const plannedSW = parseInt(row["Total Palnned S/W"]) || 0
-          const planned = plannedFW + plannedSW
-          const built = parseInt(row["Total Build"]) || 0
-          return sum + (planned > 0 ? (built / planned) * 100 : 0)
-        }, 0) / dayRows.length
-
-        const avgEfficiencyNight = nightRows.reduce((sum, row) => {
-          const plannedFW = parseInt(row["Total Planned F/W"]) || 0
-          const plannedSW = parseInt(row["Total Palnned S/W"]) || 0
-          const planned = plannedFW + plannedSW
-          const built = parseInt(row["Total Build"]) || 0
-          return sum + (planned > 0 ? (built / planned) * 100 : 0)
-        }, 0) / nightRows.length
-
-        const recs: string[] = []
-        if (avgEfficiencyDay < 80) {
-          recs.push(`Day shift efficiency (${avgEfficiencyDay.toFixed(1)}%) is below target. Consider increasing advance build allocation.`)
+          setFlightCompletions(completions)
+        } else {
+          setLoadPlans([])
         }
-        if (avgEfficiencyNight < 80) {
-          recs.push(`Night shift efficiency (${avgEfficiencyNight.toFixed(1)}%) is below target. Review staff allocation during peak hours.`)
-        }
-        
-        const avgAdvanceDay = dayRows.reduce((sum, row) => sum + (parseInt(row["Total Advance"]) || 0), 0) / dayRows.length
-        const avgPlannedDay = dayRows.reduce((sum, row) => {
-          const plannedFW = parseInt(row["Total Planned F/W"]) || 0
-          const plannedSW = parseInt(row["Total Palnned S/W"]) || 0
-          return sum + plannedFW + plannedSW
-        }, 0) / dayRows.length
-        
-        if (avgAdvanceDay / avgPlannedDay < 0.3) {
-          recs.push(`Advance build ratio (${((avgAdvanceDay / avgPlannedDay) * 100).toFixed(1)}%) is low. Increase advance allocation to reduce pending workload.`)
-        }
-
-        setRecommendations(recs)
-      } catch (error) {
-        console.error("Error fetching CSV data:", error)
+      } catch (err) {
+        console.error("[SituationalAwarenessScreen] Error fetching load plans:", err)
+        setLoadPlans([])
+      } finally {
+        setIsLoading(false)
       }
     }
 
-    fetchCSVData()
+    fetchLoadPlans()
+  }, [setLoadPlans])
+
+  // Recalculate completions when work area filter changes
+  useEffect(() => {
+    if (loadPlans.length === 0) return
+    
+    const recalculatedCompletions = new Map<string, FlightCompletion>()
+    
+    loadPlans.forEach(plan => {
+      const cachedDetail = loadPlanDetailsCache.get(plan.flight)
+      
+      if (cachedDetail && selectedWorkArea !== "All") {
+        const totalPlannedULDs = calculateTotalPlannedULDs(cachedDetail, selectedWorkArea)
+        const totalMarkedULDs = calculateTotalMarkedULDs(plan.flight, cachedDetail, selectedWorkArea)
+        const completionPercentage = totalPlannedULDs > 0 
+          ? Math.round((totalMarkedULDs / totalPlannedULDs) * 100) 
+          : 0
+        const status = getCompletionStatus(completionPercentage)
+        
+        const staffInfo = STAFF_DATA[plan.flight] || { name: "Unassigned", contact: "-" }
+        const stdTime = SHIFT_DATA[plan.flight] || plan.std || "00:00"
+        const shift = getShiftFromStd(stdTime)
+        
+        recalculatedCompletions.set(plan.flight, {
+          flight: plan.flight,
+          totalPlannedULDs,
+          completedULDs: totalMarkedULDs,
+          completionPercentage,
+          status,
+          staffName: staffInfo.name,
+          staffContact: staffInfo.contact,
+          shift,
+        })
+      } else {
+        recalculatedCompletions.set(plan.flight, calculateFlightCompletion(plan))
+      }
+    })
+    
+    setFlightCompletions(recalculatedCompletions)
+  }, [loadPlans, loadPlanDetailsCache, selectedWorkArea])
+
+  const timeOptions = useMemo(() => {
+    const options: string[] = []
+    for (let hour = 0; hour < 24; hour++) {
+      options.push(`${hour.toString().padStart(2, '0')}:00`)
+    }
+    return options
   }, [])
 
-  // Calculate shift hours
-  const shiftHours = selectedShift === "0600-0900" ? 3.0 : 3.97 // 3 hours (0600-0900) or ~3.97 hours (0901-1259 = 3h 58min)
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (timeRangePickerRef.current && !timeRangePickerRef.current.contains(event.target as Node)) {
+        setShowTimeRangePicker(false)
+      }
+    }
 
-  // Create line chart data based on split toggle
-  const lineChartData = createLineChartData(showSplit)
+    if (showTimeRangePicker) {
+      document.addEventListener('mousedown', handleClickOutside)
+      return () => {
+        document.removeEventListener('mousedown', handleClickOutside)
+      }
+    }
+  }, [showTimeRangePicker])
 
-  // Get current flight (EK0544) from load plans
-  const currentFlightPlan = loadPlans.find((p) => p.flight === "EK0544") || {
-    flight: "EK0544",
-    date: "01Mar",
-    acftType: "77WER",
-    acftReg: "A6-ENT",
-    pax: "DXB/MAA/0/23/251",
-    std: "02:50",
-    uldVersion: "06/26",
-    ttlPlnUld: "06PMC/07AKE",
-  }
-
-  // Get anticipated flights (tomorrow)
-  const anticipatedChartData = getAnticipatedChartData(loadPlans)
-  
-  // If EK0789 doesn't exist, add it
-  if (!loadPlans.find((p) => p.flight === "EK0789")) {
-    anticipatedChartData.push({
-      flight: "EK0789",
-      PMC: 4,
-      AKE: 8,
-      destination: "DXB-LHR",
+  const filteredLoadPlans = useMemo(() => {
+    return loadPlans.filter(plan => {
+      const completion = flightCompletions.get(plan.flight) || calculateFlightCompletion(plan)
+      
+      const matchesShift = selectedShift === "All" || completion.shift === selectedShift
+      
+      let matchesTimeRange = true
+      if (customTimeRange) {
+        const stdTime = plan.std || "00:00"
+        const stdHours = parseStdToHours(stdTime)
+        const startHours = parseStdToHours(customTimeRange.start)
+        const endHours = parseStdToHours(customTimeRange.end)
+        
+        if (endHours < startHours) {
+          matchesTimeRange = stdHours >= startHours || stdHours <= endHours
+        } else {
+          matchesTimeRange = stdHours >= startHours && stdHours <= endHours
+        }
+      }
+      
+      return matchesShift && matchesTimeRange
     })
+  }, [loadPlans, flightCompletions, selectedShift, customTimeRange])
+
+  const filterCounts = useMemo(() => {
+    const counts = {
+      shifts: {} as Record<Shift, number>,
+    }
+    
+    SHIFTS.forEach(shift => {
+      counts.shifts[shift] = 0
+    })
+    
+    loadPlans.forEach(plan => {
+      const completion = flightCompletions.get(plan.flight) || calculateFlightCompletion(plan)
+      counts.shifts.All++
+      counts.shifts[completion.shift]++
+    })
+    
+    return counts
+  }, [loadPlans, flightCompletions])
+
+  const handleRowClick = async (loadPlan: LoadPlan) => {
+    setSelectedFlight(loadPlan.flight)
+    setIsLoadingDetail(true)
+    try {
+      const cachedDetail = loadPlanDetailsCache.get(loadPlan.flight)
+      if (cachedDetail) {
+        setSelectedLoadPlan(cachedDetail)
+        setIsLoadingDetail(false)
+        return
+      }
+      
+      const supabaseDetail = await getLoadPlanDetailFromSupabase(loadPlan.flight)
+      if (supabaseDetail) {
+        setLoadPlanDetailsCache(prev => {
+          const updated = new Map(prev)
+          updated.set(loadPlan.flight, supabaseDetail)
+          return updated
+        })
+        setSelectedLoadPlan(supabaseDetail)
+      } else {
+        setSelectedLoadPlan(null)
+      }
+    } catch (err) {
+      console.error("[SituationalAwarenessScreen] Error fetching load plan detail:", err)
+      setSelectedLoadPlan(null)
+    } finally {
+      setIsLoadingDetail(false)
+    }
   }
 
-  const currentWorkAreaData = workAreaDataByShift[selectedShift][workAreaFilter === "overall" ? "overall" : (selectedWorkArea as keyof typeof workAreaDataByShift[typeof selectedShift])] || workAreaDataByShift[selectedShift].overall
+  // Incoming workload data
+  const allFlights = useMemo(() => {
+    return loadPlans
+      .map((plan) => ({
+        flight: plan.flight,
+        std: plan.std,
+        destination: extractDestination(plan.pax),
+        uldBreakdown: parseULDCount(plan.ttlPlnUld),
+        ttlPlnUld: plan.ttlPlnUld,
+      }))
+      .sort((a, b) => {
+        const [aHours, aMinutes] = a.std.split(":").map(Number)
+        const [bHours, bMinutes] = b.std.split(":").map(Number)
+        const aTime = aHours * 60 + (aMinutes || 0)
+        const bTime = bHours * 60 + (bMinutes || 0)
+        return aTime - bTime
+      })
+  }, [loadPlans])
+
+  const incomingFlightsLogic = useMemo(() => {
+    const bupFlightNumbers = new Set(
+      BUP_ALLOCATION_DATA.map((a) => {
+        return a.flightNo.startsWith("EK") ? a.flightNo : `EK${a.flightNo}`
+      })
+    )
+
+    return allFlights.filter((flight) => {
+      const normalizedFlight = flight.flight.startsWith("EK") ? flight.flight : `EK${flight.flight}`
+      return !bupFlightNumbers.has(normalizedFlight)
+    })
+  }, [allFlights])
+
+  const displayFlights = allFlights
+
+  const uldBreakdownData = useMemo(() => {
+    let totalPMC = 0
+    let totalAKE = 0
+    let totalBulk = 0
+
+    displayFlights.forEach((flight) => {
+      const parsed = parseULDCount(flight.ttlPlnUld)
+      totalPMC += parsed.pmc
+      totalAKE += parsed.ake
+      totalBulk += parsed.bulk
+      if (parsed.pmc === 0 && parsed.ake === 0 && parsed.bulk === 0) {
+        const totalMatch = flight.ttlPlnUld.match(/(\d+)/)
+        if (totalMatch) {
+          totalBulk += parseInt(totalMatch[1])
+        }
+      }
+    })
+
+    return {
+      PMC: totalPMC,
+      AKE: totalAKE,
+      BULK: totalBulk,
+      total: totalPMC + totalAKE + totalBulk,
+    }
+  }, [displayFlights])
+
+  const uldTypeChartData = useMemo(() => [
+    {
+      type: "PMC",
+      value: uldBreakdownData.PMC,
+      color: "#DC2626",
+    },
+    {
+      type: "AKE",
+      value: uldBreakdownData.AKE,
+      color: "#EF4444",
+    },
+    {
+      type: "Total",
+      pmcAke: uldBreakdownData.PMC + uldBreakdownData.AKE,
+      bulk: uldBreakdownData.BULK,
+      total: uldBreakdownData.total,
+      color: "#DC2626",
+    },
+  ], [uldBreakdownData])
+
+  const currentWorkAreaData = workAreaData[workAreaFilter === "overall" ? "overall" : (selectedWorkAreaForWorkload as keyof typeof workAreaData)] || workAreaData.overall
   const maxBarValue = 100
 
-  // Calculate statistics
-  const totalWork = Object.values(currentWorkAreaData).reduce((sum, area) => sum + area.total, 0)
-  const totalCompleted = Object.values(currentWorkAreaData).reduce((sum, area) => sum + area.completed, 0)
-  const totalRemaining = Object.values(currentWorkAreaData).reduce((sum, area) => sum + area.remaining, 0)
-  const completionRate = totalWork > 0 ? ((totalCompleted / totalWork) * 100).toFixed(1) : "0"
-
-  // Custom tooltip for multi-axis chart - shows accurate values from the data
-  const CustomTooltip = ({ active, payload, label }: any) => {
-    if (active && payload && payload.length) {
-      // Get the data point - all payloads share the same payload object
-      const data = payload[0].payload
-      
-      // Verify calculations match what's displayed
-      const planned = data.planned || 0
-      const built = data.built || 0
-      const advance = data.advance || 0
-      const pending = data.pending || 0
-      const efficiency = planned > 0 ? Math.round((built / planned) * 100 * 10) / 10 : 0
-      const staffRequired = data.staffRequired || 0
-      
+  // Read-only view with progress bar
+  if (selectedFlight) {
+    if (isLoadingDetail) {
       return (
-        <div className="bg-white border border-gray-300 rounded-lg shadow-lg p-3 text-xs">
-          <div className="font-semibold text-gray-900 mb-2">{data.dateFormatted || label}</div>
-          <div className="space-y-1">
-            <div className="flex justify-between gap-4">
-              <span className="text-gray-600">Advance:</span>
-              <span className="font-semibold text-blue-600">{advance.toLocaleString()}</span>
-            </div>
-            <div className="flex justify-between gap-4">
-              <span className="text-gray-600">Planned:</span>
-              <span className="font-semibold text-gray-700">{planned.toLocaleString()}</span>
-            </div>
-            <div className="flex justify-between gap-4">
-              <span className="text-gray-600">Built:</span>
-              <span className="font-semibold text-green-600">{built.toLocaleString()}</span>
-            </div>
-            <div className="flex justify-between gap-4">
-              <span className="text-gray-600">Pending:</span>
-              <span className="font-semibold text-red-600">{pending.toLocaleString()}</span>
-            </div>
-            <div className="flex justify-between gap-4 border-t border-gray-200 pt-1 mt-1">
-              <span className="text-gray-600">Efficiency:</span>
-              <span className="font-semibold text-orange-600">{efficiency}%</span>
-            </div>
-            <div className="flex justify-between gap-4">
-              <span className="text-gray-600">Staff Required:</span>
-              <span className="font-semibold text-purple-600">{staffRequired}</span>
-            </div>
-            <div className="flex justify-between gap-4">
-              <span className="text-gray-600">Shift:</span>
-              <span className="font-semibold">{data.shift}</span>
-            </div>
+        <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#D71A21] mx-auto mb-4"></div>
+            <p className="text-sm text-gray-500">Loading flight details...</p>
           </div>
         </div>
       )
     }
-    return null
-  }
-
-  return (
-    <div className="min-h-screen bg-gray-50 p-3">
-      <div className="max-w-full">
-        {/* Header */}
-        <div className="mb-3">
-          <h1 className="text-lg font-bold text-gray-900">Situational Awareness</h1>
-        </div>
-
-        {/* Statistics Cards - No borders, no gaps, information dense */}
-        <div className="grid grid-cols-4 gap-0 mb-0 bg-white border border-gray-200 divide-x divide-gray-200">
-          <div className="p-2.5">
-            <p className="text-[10px] text-gray-600 mb-0.5 leading-tight">Total ULDs</p>
-            <p className="text-xl font-bold text-gray-900 leading-tight">{totalWork}</p>
-            <p className="text-[10px] text-gray-500 mt-0.5 leading-tight">Across all areas</p>
-          </div>
-          <div className="p-2.5">
-            <p className="text-[10px] text-gray-600 mb-0.5 leading-tight">Completed</p>
-            <p className="text-xl font-bold text-green-600 leading-tight">{totalCompleted}</p>
-            <p className="text-[10px] text-gray-500 mt-0.5 leading-tight">{completionRate}% completion rate</p>
-          </div>
-          <div className="p-2.5">
-            <p className="text-[10px] text-gray-600 mb-0.5 leading-tight">Remaining</p>
-            <p className="text-xl font-bold text-amber-600 leading-tight">{totalRemaining}</p>
-            <p className="text-[10px] text-gray-500 mt-0.5 leading-tight">Pending completion</p>
-          </div>
-          <div className="p-2.5">
-            <p className="text-[10px] text-gray-600 mb-0.5 leading-tight">Shift</p>
-            <p className="text-lg font-bold text-gray-900 leading-tight">{selectedShift}</p>
-            <p className="text-[10px] text-gray-500 mt-0.5 leading-tight">Current selection</p>
-          </div>
-        </div>
-
-        {/* Enhanced Work Area Timeline - No border, connected to stats */}
-        <div className="bg-white border-x border-b border-gray-200 p-4">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-base font-semibold text-gray-900">Workload</h3>
-            
-            {/* Filters in Top Right */}
-            <div className="flex gap-2 items-center">
-              <Select
-                value={selectedShift}
-                onValueChange={(value) => setSelectedShift(value as "0600-0900" | "0901-1259")}
-              >
-                <SelectTrigger className="h-7 w-[120px] text-xs">
-                  <Clock className="w-3 h-3 mr-1" />
-                  <SelectValue>{selectedShift}</SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="0600-0900">0600-0900</SelectItem>
-                  <SelectItem value="0901-1259">0901-1259</SelectItem>
-                </SelectContent>
-              </Select>
-              <Select
-                value={workAreaFilter}
-                onValueChange={(value) => {
-                  setWorkAreaFilter(value as "overall" | "sortByWorkArea")
-                  if (value === "overall") {
-                    setSelectedWorkArea("E75")
-                  }
-                }}
-              >
-                <SelectTrigger className="h-7 w-[130px] text-xs">
-                  <SelectValue>
-                    {workAreaFilter === "overall" ? "Overall" : "Sort by work area"}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="overall">Overall</SelectItem>
-                  <SelectItem value="sortByWorkArea">Sort by work area</SelectItem>
-                </SelectContent>
-              </Select>
-              {workAreaFilter === "sortByWorkArea" && (
-                <Select value={selectedWorkArea} onValueChange={setSelectedWorkArea}>
-                  <SelectTrigger className="h-7 w-[70px] text-xs">
-                    <SelectValue>{selectedWorkArea}</SelectValue>
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="E75">E75</SelectItem>
-                    <SelectItem value="L22">L22</SelectItem>
-                  </SelectContent>
-                </Select>
-              )}
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            {(["GCR", "PER", "PIL"] as const).map((area) => {
-              const data = currentWorkAreaData[area]
-              const completed = data.completed
-              const totalPercentage = (data.total / maxBarValue) * 100
-              const completedPercentage = (completed / data.total) * 100
-              const remainingPercentage = (data.remaining / data.total) * 100
-              const efficiency = data.total > 0 ? ((completed / data.total) * 100).toFixed(1) : "0"
-
-              const handleAreaClick = () => {
-                if (onNavigate) {
-                  const workAreaMap: Record<string, string> = {
-                    GCR: "work-area-gcr",
-                    PER: "work-area-per",
-                    PIL: "work-area-pil",
-                  }
-                  onNavigate(workAreaMap[area] || "desktop")
-                }
-              }
-
-              return (
+    
+    if (selectedLoadPlan) {
+      const totalPlannedULDs = calculateTotalPlannedULDs(selectedLoadPlan, selectedWorkArea)
+      const totalMarkedULDs = calculateTotalMarkedULDs(selectedLoadPlan.flight, selectedLoadPlan, selectedWorkArea)
+      const completionPercentage = totalPlannedULDs > 0 
+        ? Math.round((totalMarkedULDs / totalPlannedULDs) * 100) 
+        : 0
+      const status = getCompletionStatus(completionPercentage)
+      
+      return (
+        <div className="min-h-screen bg-gray-50">
+          <div className="bg-white border-b border-gray-200 px-4 py-3">
+            <div className="max-w-full">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-4">
+                  <h3 className="text-sm font-semibold text-gray-900">
+                    ULD Progress: {selectedLoadPlan.flight}
+                  </h3>
+                  <span className={`text-sm font-medium ${
+                    status === "green" ? "text-green-600" :
+                    status === "amber" ? "text-amber-600" :
+                    "text-red-600"
+                  }`}>
+                    {completionPercentage}% ({totalMarkedULDs}/{totalPlannedULDs})
+                  </span>
+                </div>
+              </div>
+              <div className="w-full h-4 bg-gray-200 rounded-full overflow-hidden">
                 <div 
-                  key={area} 
-                  className="border-b border-gray-100 last:border-b-0 pb-2 last:pb-0 cursor-pointer hover:bg-gray-50 transition-colors rounded px-2 py-1"
-                  onClick={handleAreaClick}
-                >
-                  <div className="flex items-center justify-between mb-1.5">
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-10 text-xs font-semibold text-gray-900">{area}</div>
-                      <div className="text-[10px] text-gray-500">
-                        Efficiency: <span className="font-semibold text-gray-900">{efficiency}%</span>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <div className="text-[10px] text-gray-500">Total</div>
-                      <div className="text-sm font-bold text-gray-900">{data.total}</div>
-                    </div>
-                  </div>
-                  
-                  <div className="flex-1 relative">
-                    <div className="w-full bg-gray-200 rounded-full h-7 relative overflow-hidden">
-                      {/* Bar container with width based on total out of 100 */}
-                      <div
-                        className="absolute left-0 top-0 h-7 flex transition-all duration-300"
-                        style={{ width: `${totalPercentage}%` }}
-                      >
-                        {/* Completed portion (red) */}
-                        <div
-                          className="bg-[#DC2626] h-7 flex items-center justify-start px-2.5 transition-all duration-300"
-                          style={{ width: `${completedPercentage}%` }}
-                        >
-                          <span className="text-white text-[10px] font-semibold">{completed}</span>
-                        </div>
-                        {/* Remaining portion (translucent red) */}
-                        <div
-                          className="h-7 flex items-center justify-end px-2.5 transition-all duration-300"
-                          style={{
-                            width: `${remainingPercentage}%`,
-                            backgroundColor: "rgba(220, 38, 38, 0.4)",
-                          }}
-                        >
-                          <span className="text-white text-[10px] font-semibold">{data.remaining}</span>
-                        </div>
-                      </div>
-                    </div>
-                    
-                    {/* Progress indicators - More compact */}
-                    <div className="flex justify-between mt-1 text-[10px] text-gray-600">
-                      <span>Completed: {completed}</span>
-                      <span>Remaining: {data.remaining}</span>
-                    </div>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        </div>
-
-        {/* Left and Right Halves - Flight Progress Sections */}
-        <div className="flex gap-3 mt-3">
-          {/* Left Half - Flights in Progress */}
-          <div className="w-1/2 bg-white border border-gray-200">
-            <div className="p-2.5 border-b border-gray-200">
-              <h3 className="text-sm font-semibold text-gray-900">Flights in Progress</h3>
-              <p className="text-[10px] text-gray-500 mt-0.5">Completion rates against planned ULDs – At a ULD level by flight</p>
-            </div>
-            
-            {/* Flight List */}
-            <div className="p-2 border-b border-gray-100">
-              <div className="grid grid-cols-[1fr_0.8fr_1.2fr_0.8fr_0.8fr_0.8fr] gap-2 text-[10px]">
-                <div className="font-semibold text-gray-700">Flight</div>
-                <div className="font-semibold text-gray-700">STD</div>
-                <div className="font-semibold text-gray-700">Destination</div>
-                <div className="font-semibold text-gray-700">Planned</div>
-                <div className="font-semibold text-gray-700">Completed</div>
-                <div className="font-semibold text-gray-700">%</div>
-              </div>
-              <div className="grid grid-cols-[1fr_0.8fr_1.2fr_0.8fr_0.8fr_0.8fr] gap-2 mt-1.5 text-xs">
-                <div className="font-semibold text-[#D71A21]">{currentFlightPlan.flight}</div>
-                <div className="text-gray-900">{currentFlightPlan.std}</div>
-                <div className="text-gray-900">{currentFlightPlan.pax.split("/")[1] ? `DXB-${currentFlightPlan.pax.split("/")[1]}` : "DXB-MAA"}</div>
-                <div className="text-gray-900">{flightStats.totalAWBs}</div>
-                <div className="text-green-600 font-semibold">{flightStats.completed}</div>
-                <div className="text-gray-900 font-semibold">{flightStats.completionRate}%</div>
-              </div>
-            </div>
-            
-            {/* Complex Line Chart - AWB Level Progress */}
-            <div className="p-3 relative" style={{ height: "320px" }}>
-              {/* Shift Selector - Top Right */}
-              <div className="absolute top-3 right-3 z-10">
-                <Select
-                  value={selectedShift}
-                  onValueChange={(value) => setSelectedShift(value as "0600-0900" | "0901-1259")}
-                >
-                  <SelectTrigger className="h-7 w-[140px] text-xs bg-white">
-                    <Clock className="w-3 h-3 mr-1" />
-                    <SelectValue>{selectedShift} ({shiftHours}h)</SelectValue>
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="0600-0900">0600-0900 (3.0h)</SelectItem>
-                    <SelectItem value="0901-1259">0901-1259 (3.97h)</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {lineChartData && lineChartData.length > 0 ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={lineChartData} margin={{ top: 5, right: 20, left: 0, bottom: 50 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
-                  <XAxis
-                    dataKey="sequence"
-                    tick={{ fontSize: 9, fill: "#6B7280" }}
-                    stroke="#9CA3AF"
-                    label={{ value: "AWB Sequence", position: "insideBottom", offset: -5, style: { fontSize: "10px", fill: "#6B7280" } }}
-                  />
-                  <YAxis
-                    tick={{ fontSize: 9, fill: "#6B7280" }}
-                    stroke="#9CA3AF"
-                    label={{ value: "PCS", angle: -90, position: "insideLeft", style: { fontSize: "10px", fill: "#6B7280" } }}
-                  />
-                  <Tooltip 
-                    content={<ComplexTooltip />} 
-                    position={{ x: undefined, y: undefined }}
-                    allowEscapeViewBox={true}
-                  />
-                  <Legend wrapperStyle={{ fontSize: "10px", paddingTop: "10px", pointerEvents: "none" }} iconSize={10} />
-                  <Line
-                    type="monotone"
-                    dataKey="remaining"
-                    stroke="#F59E0B"
-                    strokeWidth={2}
-                    name="Remaining"
-                    dot={{ fill: "#F59E0B", r: 3 }}
-                    activeDot={{ r: 5 }}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="completed"
-                    stroke="#10B981"
-                    strokeWidth={2}
-                    name="Completed"
-                    dot={{ fill: "#10B981", r: 3 }}
-                    activeDot={{ r: 5 }}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="offloaded"
-                    stroke="#EF4444"
-                    strokeWidth={2}
-                    strokeDasharray="3 3"
-                    name="Offloaded"
-                    dot={{ fill: "#EF4444", r: 3 }}
-                    activeDot={{ r: 5 }}
-                  />
-                  {showSplit && (
-                    <Line
-                      type="monotone"
-                      dataKey="split"
-                      stroke="#3B82F6"
-                      strokeWidth={2}
-                      strokeDasharray="5 5"
-                      name="Split (Partial)"
-                      dot={{ fill: "#3B82F6", r: 3 }}
-                      activeDot={{ r: 5 }}
-                    />
-                  )}
-                  </LineChart>
-                </ResponsiveContainer>
-              ) : (
-                <div className="flex items-center justify-center h-full text-gray-500 text-sm">
-                  No data available
-                </div>
-              )}
-
-              {/* Split Toggle - Bottom Right */}
-              <div className="absolute bottom-3 right-3 z-10">
-                <button
-                  onClick={() => setShowSplit(!showSplit)}
-                  className={`px-3 py-1.5 text-xs rounded border transition-colors ${
-                    showSplit
-                      ? "bg-blue-50 border-blue-300 text-blue-700 font-semibold"
-                      : "bg-white border-gray-300 text-gray-700 hover:bg-gray-50"
+                  className={`h-full transition-all duration-300 ${
+                    status === "green" ? "bg-green-500" :
+                    status === "amber" ? "bg-amber-500" :
+                    "bg-red-500"
                   }`}
-                >
-                  {showSplit ? "✓" : ""} Show Split (Partial)
-                </button>
+                  style={{ width: `${Math.min(completionPercentage, 100)}%` }}
+                />
               </div>
             </div>
           </div>
           
-          {/* Right Half - Anticipated Incoming Workload */}
-          <div className="w-1/2 bg-white border border-gray-200">
-            <div className="p-2.5 border-b border-gray-200">
-              <h3 className="text-sm font-semibold text-gray-900">Anticipated Incoming Workload</h3>
-              <p className="text-[10px] text-gray-500 mt-0.5">Based on upcoming flights</p>
-            </div>
-            
-            {/* Flight List */}
-            <div className="p-2 border-b border-gray-100">
-              <div className="grid grid-cols-[1fr_0.8fr_1.2fr_0.8fr] gap-2 text-[10px]">
-                <div className="font-semibold text-gray-700">Flight</div>
-                <div className="font-semibold text-gray-700">STD</div>
-                <div className="font-semibold text-gray-700">Destination</div>
-                <div className="font-semibold text-gray-700">Planned ULDs</div>
-              </div>
-              {anticipatedChartData.map((flight) => {
-                const flightPlan = loadPlans.find((p) => p.flight === flight.flight) || {
-                  flight: flight.flight,
-                  std: flight.flight === "EK0205" ? "09:35" : "14:20",
-                  date: "",
-                  acftType: "",
-                  acftReg: "",
-                  pax: "",
-                  uldVersion: "",
-                  ttlPlnUld: "",
-                }
-                return (
-                  <div key={flight.flight} className="grid grid-cols-[1fr_0.8fr_1.2fr_0.8fr] gap-2 mt-1.5 text-xs">
-                    <div className="font-semibold text-[#D71A21]">{flight.flight}</div>
-                    <div className="text-gray-900">{flightPlan.std}</div>
-                    <div className="text-gray-900">{flight.destination}</div>
-                    <div className="text-gray-900 font-semibold">{flight.PMC + flight.AKE}</div>
-                  </div>
-                )
-              })}
-            </div>
-            
-            {/* Graph - ULD Type Breakdown */}
-            <div className="p-3 h-64 relative">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={uldTypeChartData} margin={{ top: 5, right: 5, left: 0, bottom: 5 }} barCategoryGap="35%" barGap={0}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
-                  <XAxis
-                    dataKey="type"
-                    tick={{ fontSize: 10, fill: "#6B7280" }}
-                    stroke="#9CA3AF"
-                    type="category"
-                    interval={0}
-                  />
-                  <YAxis
-                    tick={{ fontSize: 9, fill: "#6B7280" }}
-                    stroke="#9CA3AF"
-                  />
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: "white",
-                      border: "1px solid #E5E7EB",
-                      borderRadius: "4px",
-                      fontSize: "11px",
-                    }}
-                    position={{ x: undefined, y: undefined }}
-                    allowEscapeViewBox={true}
-                    formatter={(value: number, name: string, props: any) => {
-                      if (props.payload.type === "Total") {
-                        if (name === "pmcAke") {
-                          return [`${value} ULDs (PMC + AKE)`, "PMC + AKE"]
-                        } else if (name === "bulk") {
-                          return [`${value} ULDs`, "Bulk"]
-                        } else if (name === "total") {
-                          return [`${value} ULDs`, "Total"]
-                        }
-                      } else {
-                        // PMC or AKE
-                        return [`${value} ULDs`, props.payload.type]
-                      }
-                      return null
-                    }}
-                    labelFormatter={(label) => {
-                      if (label === "Total") {
-                        return `Total: ${uldBreakdownData.total} ULDs`
-                      }
-                      return `ULD Type: ${label}`
-                    }}
-                  />
-                  <Legend 
-                    wrapperStyle={{ fontSize: "10px", paddingTop: "10px", pointerEvents: "none" }} 
-                    iconSize={10}
-                    content={() => {
-                      return (
-                        <ul className="flex justify-center gap-4 text-[10px]">
-                          {/* PMC */}
-                          <li className="flex items-center gap-1">
-                            <span 
-                              style={{ 
-                                display: "inline-block",
-                                width: "10px",
-                                height: "10px",
-                                backgroundColor: "#DC2626",
-                                borderRadius: "2px"
-                              }}
-                            />
-                            <span>PMC</span>
-                          </li>
-                          
-                          {/* AKE */}
-                          <li className="flex items-center gap-1">
-                            <span 
-                              style={{ 
-                                display: "inline-block",
-                                width: "10px",
-                                height: "10px",
-                                backgroundColor: "#EF4444",
-                                borderRadius: "2px"
-                              }}
-                            />
-                            <span>AKE</span>
-                          </li>
-                          
-                          {/* Bulk */}
-                          <li className="flex items-center gap-1">
-                            <span 
-                              style={{ 
-                                display: "inline-block",
-                                width: "10px",
-                                height: "10px",
-                                backgroundColor: "#F59E0B",
-                                borderRadius: "2px"
-                              }}
-                            />
-                            <span>Bulk</span>
-                          </li>
-                        </ul>
-                      )
-                    }}
-                  />
-                  {/* PMC bar */}
-                  <Bar dataKey="pmc" fill="#DC2626" name="PMC" barSize={50} radius={[4, 4, 0, 0]}>
-                    {uldTypeChartData.map((entry, index) => {
-                      if (entry.type === "PMC") {
-                        return <Cell key={`cell-pmc-${index}`} fill="#DC2626" />
-                      }
-                      return <Cell key={`cell-empty-pmc-${index}`} fill="transparent" />
-                    })}
-                  </Bar>
-                  {/* AKE bar - shifted left */}
-                  <Bar dataKey="ake" fill="#EF4444" name="AKE" barSize={50} shape={AKEBar}>
-                    {uldTypeChartData.map((entry, index) => {
-                      if (entry.type === "AKE") {
-                        return <Cell key={`cell-ake-${index}`} fill="#EF4444" />
-                      }
-                      return <Cell key={`cell-empty-ake-${index}`} fill="transparent" />
-                    })}
-                  </Bar>
-                  {/* Total bar with stacked PMC+AKE (bottom) and BULK (top) - shifted right */}
-                  <Bar dataKey="pmcAke" stackId="total" fill="#DC2626" name="" barSize={50} shape={TotalBar}>
-                    {uldTypeChartData.map((entry, index) => {
-                      if (entry.type === "Total") {
-                        return <Cell key={`cell-total-pmcake-${index}`} fill="#DC2626" />
-                      }
-                      return <Cell key={`cell-empty-pmcake-${index}`} fill="transparent" />
-                    })}
-                  </Bar>
-                  <Bar dataKey="bulk" stackId="total" fill="#F59E0B" name="Bulk" shape={TotalBar}>
-                    {uldTypeChartData.map((entry, index) => {
-                      if (entry.type === "Total") {
-                        return <Cell key={`cell-total-bulk-${index}`} fill="#F59E0B" />
-                      }
-                      return <Cell key={`cell-empty-bulk-${index}`} fill="transparent" />
-                    })}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
+          <LoadPlanDetailScreen
+            loadPlan={selectedLoadPlan}
+            onBack={() => {
+              setSelectedLoadPlan(null)
+              setSelectedFlight(null)
+            }}
+            enableBulkCheckboxes={true}
+            workAreaFilter={selectedWorkArea}
+          />
+        </div>
+      )
+    } else {
+      return (
+        <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+          <div className="text-center">
+            <h2 className="text-lg font-semibold text-gray-900 mb-2">
+              Flight {selectedFlight}
+            </h2>
+            <p className="text-sm text-gray-500 mb-4">
+              No load plan detail available
+            </p>
+            <button
+              onClick={() => {
+                setSelectedFlight(null)
+                setSelectedLoadPlan(null)
+              }}
+              className="px-4 py-2 bg-[#D71A21] text-white rounded-md hover:bg-[#B0151A] transition-colors"
+            >
+              Back to Situational Awareness
+            </button>
           </div>
         </div>
+      )
+    }
+  }
 
-        {/* Multi-Axis Line Chart */}
-        {chartData.length > 0 && (
-          <div className="bg-white border border-gray-200 rounded-lg p-4 mb-3 mt-3">
-            <h2 className="text-base font-semibold text-gray-900 mb-4">Advance vs Planned - Efficiency & Staff Analysis</h2>
-            <ResponsiveContainer width="100%" height={400}>
-              <LineChart data={chartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
-                <XAxis
-                  dataKey="dateFormatted"
-                  tick={{ fontSize: 10, fill: "#6B7280" }}
-                  stroke="#9CA3AF"
-                  angle={-45}
-                  textAnchor="end"
-                  height={80}
-                />
-                <YAxis
-                  yAxisId="left"
-                  label={{ value: "Count", angle: -90, position: "insideLeft", style: { fontSize: 11 } }}
-                  tick={{ fontSize: 10, fill: "#6B7280" }}
-                  stroke="#9CA3AF"
-                />
-                <YAxis
-                  yAxisId="right"
-                  orientation="right"
-                  label={{ value: "Efficiency % / Staff", angle: 90, position: "insideRight", style: { fontSize: 11 } }}
-                  tick={{ fontSize: 10, fill: "#6B7280" }}
-                  stroke="#9CA3AF"
-                />
-                <Tooltip 
-                  content={<CustomTooltip />} 
-                  position={{ x: undefined, y: undefined }}
-                  allowEscapeViewBox={true}
-                />
-                <Legend wrapperStyle={{ fontSize: "10px", paddingTop: "10px" }} iconSize={10} />
-                <Line
-                  yAxisId="left"
-                  type="basis"
-                  dataKey="advance"
-                  stroke="#3B82F6"
-                  strokeWidth={2.5}
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  name="Advance"
-                  dot={false}
-                  activeDot={{ r: 4 }}
-                />
-                <Line
-                  yAxisId="left"
-                  type="basis"
-                  dataKey="planned"
-                  stroke="#6B7280"
-                  strokeWidth={2.5}
-                  strokeDasharray="5 5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  name="Planned"
-                  dot={false}
-                  activeDot={{ r: 4 }}
-                />
-                <Line
-                  yAxisId="left"
-                  type="basis"
-                  dataKey="built"
-                  stroke="#10B981"
-                  strokeWidth={2.5}
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  name="Built"
-                  dot={false}
-                  activeDot={{ r: 4 }}
-                />
-                <Line
-                  yAxisId="left"
-                  type="basis"
-                  dataKey="pending"
-                  stroke="#EF4444"
-                  strokeWidth={2.5}
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  name="Pending"
-                  dot={false}
-                  activeDot={{ r: 4 }}
-                />
-                <Line
-                  yAxisId="right"
-                  type="basis"
-                  dataKey="efficiency"
-                  stroke="#F59E0B"
-                  strokeWidth={2.5}
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  name="Efficiency %"
-                  dot={false}
-                  activeDot={{ r: 4 }}
-                />
-                <Line
-                  yAxisId="right"
-                  type="basis"
-                  dataKey="staffRequired"
-                  stroke="#A855F7"
-                  strokeWidth={2.5}
-                  strokeDasharray="5 5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  name="Staff Required"
-                  dot={false}
-                  activeDot={{ r: 4 }}
-                />
-              </LineChart>
-            </ResponsiveContainer>
-
-            {/* Raw Data Tables Dropdown */}
-            <Collapsible open={isTableOpen} onOpenChange={setIsTableOpen} className="mt-4">
-              <CollapsibleTrigger className="w-full">
-                <div className="bg-gray-50 rounded-lg border border-gray-200 p-3 flex items-center justify-between hover:bg-gray-100 transition-colors">
-                  <h3 className="text-sm font-semibold text-gray-900">Raw Data Tables</h3>
-                  {isTableOpen ? (
-                    <ChevronDown className="w-4 h-4 text-gray-600" />
-                  ) : (
-                    <ChevronRight className="w-4 h-4 text-gray-600" />
-                  )}
-                </div>
-              </CollapsibleTrigger>
-              <CollapsibleContent>
-                <div className="mt-3 space-y-4">
-                  {/* Day Shift Table */}
-                  <div>
-                    <h4 className="text-sm font-semibold text-gray-900 mb-2">Day Shift</h4>
-                    <div className="overflow-x-auto border border-gray-200 rounded-lg">
-                      <table className="w-full text-xs">
-                        <thead className="bg-gray-50">
-                          <tr>
-                            <th className="px-2 py-1.5 text-left font-semibold text-gray-700 border-b">Date</th>
-                            <th className="px-2 py-1.5 text-left font-semibold text-gray-700 border-b">Day</th>
-                            <th className="px-2 py-1.5 text-left font-semibold text-gray-700 border-b">Advance F/W</th>
-                            <th className="px-2 py-1.5 text-left font-semibold text-gray-700 border-b">Advance S/W</th>
-                            <th className="px-2 py-1.5 text-left font-semibold text-gray-700 border-b">Total Advance</th>
-                            <th className="px-2 py-1.5 text-left font-semibold text-gray-700 border-b">Planned F/W</th>
-                            <th className="px-2 py-1.5 text-left font-semibold text-gray-700 border-b">Planned S/W</th>
-                            <th className="px-2 py-1.5 text-left font-semibold text-gray-700 border-b">Total Build</th>
-                            <th className="px-2 py-1.5 text-left font-semibold text-gray-700 border-b">Total Pending</th>
-                            <th className="px-2 py-1.5 text-left font-semibold text-gray-700 border-b">Duty Hrs</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {dayShiftData.slice(0, 20).map((row, idx) => (
-                            <tr key={idx} className={idx % 2 === 0 ? "bg-white" : "bg-gray-50"}>
-                              <td className="px-2 py-1.5 border-b">{row.Date}</td>
-                              <td className="px-2 py-1.5 border-b">{row.Day}</td>
-                              <td className="px-2 py-1.5 border-b">{row["Advance First Wave"]}</td>
-                              <td className="px-2 py-1.5 border-b">{row["Advance Second Wave"]}</td>
-                              <td className="px-2 py-1.5 border-b font-semibold">{row["Total Advance"]}</td>
-                              <td className="px-2 py-1.5 border-b">{row["Total Planned F/W"]}</td>
-                              <td className="px-2 py-1.5 border-b">{row["Total Palnned S/W"]}</td>
-                              <td className="px-2 py-1.5 border-b font-semibold text-green-600">{row["Total Build"]}</td>
-                              <td className="px-2 py-1.5 border-b font-semibold text-red-600">{row["Total Pending"]}</td>
-                              <td className="px-2 py-1.5 border-b">{row["Duty Hrs"]}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-
-                  {/* Night Shift Table */}
-                  <div>
-                    <h4 className="text-sm font-semibold text-gray-900 mb-2">Night Shift</h4>
-                    <div className="overflow-x-auto border border-gray-200 rounded-lg">
-                      <table className="w-full text-xs">
-                        <thead className="bg-gray-50">
-                          <tr>
-                            <th className="px-2 py-1.5 text-left font-semibold text-gray-700 border-b">Date</th>
-                            <th className="px-2 py-1.5 text-left font-semibold text-gray-700 border-b">Day</th>
-                            <th className="px-2 py-1.5 text-left font-semibold text-gray-700 border-b">Advance F/W</th>
-                            <th className="px-2 py-1.5 text-left font-semibold text-gray-700 border-b">Advance S/W</th>
-                            <th className="px-2 py-1.5 text-left font-semibold text-gray-700 border-b">Total Advance</th>
-                            <th className="px-2 py-1.5 text-left font-semibold text-gray-700 border-b">Planned F/W</th>
-                            <th className="px-2 py-1.5 text-left font-semibold text-gray-700 border-b">Planned S/W</th>
-                            <th className="px-2 py-1.5 text-left font-semibold text-gray-700 border-b">Total Build</th>
-                            <th className="px-2 py-1.5 text-left font-semibold text-gray-700 border-b">Total Pending</th>
-                            <th className="px-2 py-1.5 text-left font-semibold text-gray-700 border-b">Duty Hrs</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {nightShiftData.slice(0, 20).map((row, idx) => (
-                            <tr key={idx} className={idx % 2 === 0 ? "bg-white" : "bg-gray-50"}>
-                              <td className="px-2 py-1.5 border-b">{row.Date}</td>
-                              <td className="px-2 py-1.5 border-b">{row.Day}</td>
-                              <td className="px-2 py-1.5 border-b">{row["Advance First Wave"]}</td>
-                              <td className="px-2 py-1.5 border-b">{row["Advance Second Wave"]}</td>
-                              <td className="px-2 py-1.5 border-b font-semibold">{row["Total Advance"]}</td>
-                              <td className="px-2 py-1.5 border-b">{row["Total Planned F/W"]}</td>
-                              <td className="px-2 py-1.5 border-b">{row["Total Palnned S/W"]}</td>
-                              <td className="px-2 py-1.5 border-b font-semibold text-green-600">{row["Total Build"]}</td>
-                              <td className="px-2 py-1.5 border-b font-semibold text-red-600">{row["Total Pending"]}</td>
-                              <td className="px-2 py-1.5 border-b">{row["Duty Hrs"]}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                </div>
-              </CollapsibleContent>
-            </Collapsible>
-
-            {/* Recommendations */}
-            {recommendations.length > 0 && (
-              <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                <h4 className="text-sm font-semibold text-blue-900 mb-2">Recommendations</h4>
-                <ul className="space-y-1 text-xs text-blue-800">
-                  {recommendations.map((rec, idx) => (
-                    <li key={idx} className="flex items-start">
-                      <span className="mr-2">•</span>
-                      <span>{rec}</span>
-                    </li>
-                  ))}
-                </ul>
+  return (
+    <>
+      <div className="min-h-screen bg-gray-50 p-4">
+        <div className="max-w-full">
+          {/* Header */}
+          <div className="flex justify-between items-center mb-4 px-2">
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900">Flights View</h2>
+              <p className="text-sm text-gray-500">Shift-level at-a-glance view with completion tracking</p>
+            </div>
+            {/* Legend */}
+            <div className="flex items-center gap-4 text-xs">
+              <div className="flex items-center gap-1.5">
+                <div className="w-3 h-3 rounded bg-green-500"></div>
+                <span className="text-gray-600">≥80% Complete</span>
               </div>
-            )}
+              <div className="flex items-center gap-1.5">
+                <div className="w-3 h-3 rounded bg-amber-500"></div>
+                <span className="text-gray-600">50-79% Complete</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <div className="w-3 h-3 rounded bg-red-500"></div>
+                <span className="text-gray-600">&lt;50% Complete</span>
+              </div>
+            </div>
           </div>
-        )}
+
+          {/* Filters */}
+          <div className="flex items-center gap-4 mb-4 px-2">
+            <div className="flex items-center gap-2">
+              <label htmlFor="work-area-filter" className="text-sm font-medium text-gray-700">
+                Work Area:
+              </label>
+              <select
+                id="work-area-filter"
+                value={selectedWorkArea}
+                onChange={(e) => setSelectedWorkArea(e.target.value as WorkArea)}
+                className="px-3 py-1.5 text-sm border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-[#D71A21] focus:border-transparent"
+              >
+                <option value="All">All</option>
+                <option value="GCR">GCR</option>
+                <option value="PIL and PER">PIL and PER</option>
+              </select>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <label htmlFor="shift-filter" className="text-sm font-medium text-gray-700">
+                Shift:
+              </label>
+              <select
+                id="shift-filter"
+                value={selectedShift}
+                onChange={(e) => {
+                  setSelectedShift(e.target.value as Shift)
+                  if (e.target.value !== "All") {
+                    setCustomTimeRange(null)
+                  }
+                }}
+                className="px-3 py-1.5 text-sm border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-[#D71A21] focus:border-transparent"
+              >
+                {SHIFTS.map(shift => (
+                  <option key={shift} value={shift}>
+                    {shift} ({filterCounts.shifts[shift] || 0})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex items-center gap-2 relative" ref={timeRangePickerRef}>
+              <label className="text-sm font-medium text-gray-700">
+                Time Range:
+              </label>
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setShowTimeRangePicker(!showTimeRangePicker)}
+                  className={`px-3 py-1.5 text-sm border rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-[#D71A21] focus:border-transparent transition-colors ${
+                    customTimeRange 
+                      ? "border-[#D71A21] text-[#D71A21]" 
+                      : "border-gray-300 text-gray-700 hover:border-gray-400"
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <Clock className="w-4 h-4" />
+                    <span>
+                      {customTimeRange 
+                        ? `${customTimeRange.start} - ${customTimeRange.end}`
+                        : "Custom"}
+                    </span>
+                    {customTimeRange && (
+                      <X 
+                        className="w-3 h-3 ml-1" 
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setCustomTimeRange(null)
+                          setShowTimeRangePicker(false)
+                        }}
+                      />
+                    )}
+                  </div>
+                </button>
+                
+                {showTimeRangePicker && (
+                  <div className="absolute top-full left-0 mt-1 z-50 bg-white border border-gray-200 rounded-lg shadow-lg p-4 min-w-[280px]">
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className="text-sm font-semibold text-gray-900">Select Time Range</h3>
+                      <button
+                        onClick={() => setShowTimeRangePicker(false)}
+                        className="text-gray-400 hover:text-gray-600 transition-colors"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                    
+                    <div className="flex items-center gap-3 mb-3">
+                      <div className="flex-1">
+                        <label className="block text-xs font-medium text-gray-700 mb-1">
+                          Start Time
+                        </label>
+                        <select
+                          value={customTimeRange?.start || "00:00"}
+                          onChange={(e) => {
+                            setCustomTimeRange(prev => ({
+                              start: e.target.value,
+                              end: prev?.end || e.target.value
+                            }))
+                          }}
+                          className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-[#D71A21] focus:border-transparent"
+                        >
+                          {timeOptions.map(time => (
+                            <option key={time} value={time}>{time}</option>
+                          ))}
+                        </select>
+                      </div>
+                      
+                      <div className="flex-1">
+                        <label className="block text-xs font-medium text-gray-700 mb-1">
+                          End Time
+                        </label>
+                        <select
+                          value={customTimeRange?.end || "23:00"}
+                          onChange={(e) => {
+                            setCustomTimeRange(prev => ({
+                              start: prev?.start || "00:00",
+                              end: e.target.value
+                            }))
+                          }}
+                          className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-[#D71A21] focus:border-transparent"
+                        >
+                          {timeOptions.map(time => (
+                            <option key={time} value={time}>{time}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                    
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => {
+                          setCustomTimeRange(null)
+                          setShowTimeRangePicker(false)
+                        }}
+                        className="flex-1 px-3 py-1.5 text-sm border border-gray-300 rounded-md bg-white text-gray-700 hover:bg-gray-50 transition-colors"
+                      >
+                        Clear
+                      </button>
+                      <button
+                        onClick={() => setShowTimeRangePicker(false)}
+                        className="flex-1 px-3 py-1.5 text-sm bg-[#D71A21] text-white rounded-md hover:bg-[#B0151A] transition-colors"
+                      >
+                        Apply
+                      </button>
+                    </div>
+                    
+                    {customTimeRange && customTimeRange.start === customTimeRange.end && (
+                      <p className="mt-2 text-xs text-amber-600">
+                        Start and end times are the same
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="text-sm text-gray-500">
+              Showing {filteredLoadPlans.length} of {loadPlans.length} flights
+            </div>
+          </div>
+          
+          {/* Flights Table */}
+          <div className="mx-2 rounded-lg border border-gray-200 overflow-x-auto mb-6">
+            <div className="bg-white">
+              <table className="w-full">
+                <thead>
+                  <tr className="bg-[#D71A21] text-white">
+                    <th className="w-1 px-0"></th>
+                    <th className="px-2 py-1 text-left font-semibold text-xs">
+                      <div className="flex items-center gap-2">
+                        <Plane className="w-4 h-4 flex-shrink-0" />
+                        <span className="whitespace-nowrap">Flight</span>
+                      </div>
+                    </th>
+                    <th className="px-2 py-1 text-left font-semibold text-xs">
+                      <div className="flex items-center gap-2">
+                        <Calendar className="w-4 h-4 flex-shrink-0" />
+                        <span className="whitespace-nowrap">Date</span>
+                      </div>
+                    </th>
+                    <th className="px-2 py-1 text-left font-semibold text-xs">
+                      <div className="flex items-center gap-2">
+                        <Package className="w-4 h-4 flex-shrink-0" />
+                        <span className="whitespace-nowrap">ACFT TYPE</span>
+                      </div>
+                    </th>
+                    <th className="px-2 py-1 text-left font-semibold text-xs">
+                      <div className="flex items-center gap-2">
+                        <Package className="w-4 h-4 flex-shrink-0" />
+                        <span className="whitespace-nowrap">ACFT REG</span>
+                      </div>
+                    </th>
+                    <th className="px-2 py-1 text-left font-semibold text-xs">
+                      <div className="flex items-center gap-2">
+                        <Users className="w-4 h-4 flex-shrink-0" />
+                        <span className="whitespace-nowrap">PAX</span>
+                      </div>
+                    </th>
+                    <th className="px-2 py-1 text-left font-semibold text-xs">
+                      <div className="flex items-center gap-2">
+                        <Clock className="w-4 h-4 flex-shrink-0" />
+                        <span className="whitespace-nowrap">STD</span>
+                      </div>
+                    </th>
+                    <th className="px-2 py-1 text-left font-semibold text-xs">
+                      <div className="flex items-center gap-2">
+                        <FileText className="w-4 h-4 flex-shrink-0" />
+                        <span className="whitespace-nowrap">TTL PLN ULD</span>
+                      </div>
+                    </th>
+                    <th className="px-2 py-1 text-left font-semibold text-xs">
+                      <div className="flex items-center gap-2">
+                        <FileText className="w-4 h-4 flex-shrink-0" />
+                        <span className="whitespace-nowrap">Completion</span>
+                      </div>
+                    </th>
+                    <th className="px-2 py-1 text-left font-semibold text-xs">
+                      <div className="flex items-center gap-2">
+                        <User className="w-4 h-4 flex-shrink-0" />
+                        <span className="whitespace-nowrap">Staff</span>
+                      </div>
+                    </th>
+                    <th className="px-2 py-1 text-left font-semibold text-xs">
+                      <div className="flex items-center gap-2">
+                        <Phone className="w-4 h-4 flex-shrink-0" />
+                        <span className="whitespace-nowrap">Contact</span>
+                      </div>
+                    </th>
+                    <th className="px-2 py-1 w-10"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {isLoading ? (
+                    <tr>
+                      <td colSpan={12} className="px-3 py-2 text-center text-gray-500 text-sm">
+                        Loading flights...
+                      </td>
+                    </tr>
+                  ) : filteredLoadPlans.length === 0 ? (
+                    <tr>
+                      <td colSpan={12} className="px-3 py-2 text-center text-gray-500 text-sm">
+                        {loadPlans.length === 0 ? "No flights available" : "No flights match the selected filters"}
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredLoadPlans.map((loadPlan, index) => {
+                      const completion = flightCompletions.get(loadPlan.flight) || calculateFlightCompletion(loadPlan)
+                      return (
+                        <FlightRow 
+                          key={index} 
+                          loadPlan={loadPlan} 
+                          completion={completion}
+                          onClick={handleRowClick} 
+                        />
+                      )
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Section 1: Current Workload by Category/Work Areas */}
+          <Collapsible defaultOpen={false}>
+            <CollapsibleTrigger className="w-full mb-4">
+              <div className="bg-white rounded-lg border border-gray-200 p-4 flex items-center justify-between hover:bg-gray-50 transition-colors">
+                <h3 className="text-lg font-semibold text-gray-900">Current Workload by Category/Work Areas</h3>
+                <ChevronDown className="w-5 h-5 text-gray-600" />
+              </div>
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <div className="bg-white rounded-lg border border-gray-200 border-t-0 p-6 mb-4">
+                <div className="flex items-center justify-between mb-4">
+                  <h4 className="text-base font-semibold text-gray-900">Workload</h4>
+                  <div className="flex gap-2">
+                    <Select
+                      value={workAreaFilter}
+                      onValueChange={(value) => {
+                        setWorkAreaFilter(value as "overall" | "sortByWorkArea")
+                        if (value === "overall") {
+                          setSelectedWorkAreaForWorkload("E75")
+                        }
+                      }}
+                    >
+                      <SelectTrigger className="w-[180px]">
+                        <SelectValue>
+                          {workAreaFilter === "overall" ? "Overall" : "Sort by work area"}
+                        </SelectValue>
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="overall">Overall</SelectItem>
+                        <SelectItem value="sortByWorkArea">Sort by work area</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    {workAreaFilter === "sortByWorkArea" && (
+                      <Select value={selectedWorkAreaForWorkload} onValueChange={setSelectedWorkAreaForWorkload}>
+                        <SelectTrigger className="w-[120px]">
+                          <SelectValue>{selectedWorkAreaForWorkload}</SelectValue>
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="E75">E75</SelectItem>
+                          <SelectItem value="L22">L22</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    )}
+                  </div>
+                </div>
+                <div className="space-y-3">
+                  {(["GCR", "PER", "PIL"] as const).map((area) => {
+                    const data = currentWorkAreaData[area]
+                    const completed = data.total - data.remaining
+                    const totalPercentage = (data.total / maxBarValue) * 100
+                    const completedPercentage = (completed / data.total) * 100
+                    const remainingPercentage = (data.remaining / data.total) * 100
+
+                    return (
+                      <div key={area} className="flex items-center gap-4">
+                        <div className="w-16 text-sm font-medium text-gray-700">{area}</div>
+                        <div className="flex-1 relative">
+                          <div className="w-full bg-gray-200 rounded-full h-8 relative overflow-hidden">
+                            <div
+                              className="absolute left-0 top-0 h-8 flex transition-all"
+                              style={{ width: `${totalPercentage}%` }}
+                            >
+                              <div
+                                className="bg-[#DC2626] h-8 flex items-center justify-start px-3"
+                                style={{ width: `${completedPercentage}%` }}
+                              >
+                                <span className="text-white text-sm font-semibold">{completed}</span>
+                              </div>
+                              <div
+                                className="h-8 flex items-center justify-end px-3"
+                                style={{ width: `${remainingPercentage}%`, backgroundColor: "rgba(220, 38, 38, 0.4)" }}
+                              >
+                                <span className="text-white text-sm font-semibold">{data.remaining}</span>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="absolute right-2 top-1/2 -translate-y-1/2 text-sm font-semibold text-gray-700">
+                            {data.total} Total
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            </CollapsibleContent>
+          </Collapsible>
+
+          {/* Section 2: Anticipated Incoming Workload */}
+          <Collapsible defaultOpen={false}>
+            <CollapsibleTrigger className="w-full mb-4">
+              <div className="bg-white rounded-lg border border-gray-200 p-4 flex items-center justify-between hover:bg-gray-50 transition-colors">
+                <h3 className="text-lg font-semibold text-gray-900">Anticipated Incoming Workload</h3>
+                <ChevronDown className="w-5 h-5 text-gray-600" />
+              </div>
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <div className="bg-white rounded-lg border border-gray-200 border-t-0 p-6 mb-4">
+                <p className="text-sm text-gray-500 mb-4">Based on upcoming flights, load plans released D-12</p>
+                
+                {/* Graph - ULD Type Breakdown */}
+                <div className="mb-6">
+                  <h4 className="text-base font-semibold text-gray-900 mb-4">ULD Type Breakdown</h4>
+                  <div className="h-80">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={uldTypeChartData}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
+                        <XAxis
+                          dataKey="type"
+                          tick={{ fontSize: 12, fill: "#6B7280" }}
+                          stroke="#9CA3AF"
+                        />
+                        <YAxis
+                          tick={{ fontSize: 12, fill: "#6B7280" }}
+                          stroke="#9CA3AF"
+                        />
+                        <Tooltip />
+                        <Legend />
+                        <Bar dataKey="value" fill="#DC2626" name="ULD Count" />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+
+                {/* Flights Table */}
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs border border-gray-300">
+                    <thead>
+                      <tr className="bg-gray-50">
+                        <th className="px-3 py-2 text-left border border-gray-300">Flight</th>
+                        <th className="px-3 py-2 text-left border border-gray-300">STD</th>
+                        <th className="px-3 py-2 text-left border border-gray-300">Destination</th>
+                        <th className="px-3 py-2 text-left border border-gray-300">TTL PLN ULD</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {displayFlights.length === 0 ? (
+                        <tr>
+                          <td colSpan={4} className="px-3 py-2 text-center text-gray-500">
+                            No flights available
+                          </td>
+                        </tr>
+                      ) : (
+                        displayFlights.map((flight, idx) => (
+                          <tr key={idx} className="border-b border-gray-200">
+                            <td className="px-3 py-2 border border-gray-300 font-semibold">{flight.flight}</td>
+                            <td className="px-3 py-2 border border-gray-300">{flight.std}</td>
+                            <td className="px-3 py-2 border border-gray-300">{flight.destination}</td>
+                            <td className="px-3 py-2 border border-gray-300">{flight.ttlPlnUld}</td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </CollapsibleContent>
+          </Collapsible>
+
+          {/* Section 3: Digital Buildup Completion Report */}
+          <Collapsible defaultOpen={false}>
+            <CollapsibleTrigger className="w-full mb-4">
+              <div className="bg-white rounded-lg border border-gray-200 p-4 flex items-center justify-between hover:bg-gray-50 transition-colors">
+                <h3 className="text-lg font-semibold text-gray-900">Digital Buildup Completion Report</h3>
+                <ChevronDown className="w-5 h-5 text-gray-600" />
+              </div>
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <div className="bg-white rounded-lg border border-gray-200 border-t-0 p-6 mb-4">
+                <p className="text-sm text-gray-500 mb-4">At shipment level (pending)</p>
+                
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="bg-[#D71A21] text-white">
+                        <th className="px-2 py-1 text-left font-semibold text-xs">
+                          <div className="flex items-center gap-2">
+                            <Plane className="w-4 h-4 flex-shrink-0" />
+                            <span className="whitespace-nowrap">Flight</span>
+                          </div>
+                        </th>
+                        <th className="px-2 py-1 text-left font-semibold text-xs">
+                          <div className="flex items-center gap-2">
+                            <Calendar className="w-4 h-4 flex-shrink-0" />
+                            <span className="whitespace-nowrap">Date</span>
+                          </div>
+                        </th>
+                        <th className="px-2 py-1 text-left font-semibold text-xs">
+                          <div className="flex items-center gap-2">
+                            <Package className="w-4 h-4 flex-shrink-0" />
+                            <span className="whitespace-nowrap">ACFT TYPE</span>
+                          </div>
+                        </th>
+                        <th className="px-2 py-1 text-left font-semibold text-xs">
+                          <div className="flex items-center gap-2">
+                            <Users className="w-4 h-4 flex-shrink-0" />
+                            <span className="whitespace-nowrap">Sent By</span>
+                          </div>
+                        </th>
+                        <th className="px-2 py-1 text-left font-semibold text-xs">
+                          <div className="flex items-center gap-2">
+                            <Clock className="w-4 h-4 flex-shrink-0" />
+                            <span className="whitespace-nowrap">Sent At</span>
+                          </div>
+                        </th>
+                        <th className="px-2 py-1 w-10"></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {sentBCRs.length === 0 ? (
+                        <tr>
+                          <td colSpan={6} className="px-3 py-2 text-center text-gray-500 text-sm">
+                            No sent BCRs available
+                          </td>
+                        </tr>
+                      ) : (
+                        sentBCRs.map((bcr, index) => (
+                          <BCRRow 
+                            key={index} 
+                            bcr={bcr} 
+                            onClick={() => {
+                              setSelectedBCR(bcr)
+                              setShowBCRModal(true)
+                            }} 
+                          />
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </CollapsibleContent>
+          </Collapsible>
+        </div>
       </div>
-    </div>  
+
+      {/* BCR Modal */}
+      {selectedBCR && (
+        <BCRModal
+          isOpen={showBCRModal}
+          onClose={() => {
+            setShowBCRModal(false)
+            setSelectedBCR(null)
+          }}
+          loadPlan={selectedBCR.loadPlan}
+          bcrData={selectedBCR.bcrData}
+        />
+      )}
+    </>
   )
 }
 
+type FlightRowProps = {
+  loadPlan: LoadPlan
+  completion: FlightCompletion
+  onClick: (loadPlan: LoadPlan) => void
+}
+
+function FlightRow({ loadPlan, completion, onClick }: FlightRowProps) {
+  return (
+    <tr
+      onClick={() => onClick(loadPlan)}
+      className="border-b border-gray-100 last:border-b-0 cursor-pointer group relative hover:bg-gray-50 transition-colors"
+      style={{ 
+        background: `linear-gradient(to right, ${
+          completion.status === "green" ? "rgba(34, 197, 94, 0.12)" :
+          completion.status === "amber" ? "rgba(245, 158, 11, 0.12)" :
+          "rgba(239, 68, 68, 0.12)"
+        } ${completion.completionPercentage}%, transparent ${completion.completionPercentage}%)`
+      }}
+    >
+      <td className="w-1 px-0 relative">
+        <div 
+          className={`absolute left-0 top-0 bottom-0 w-1 ${getStatusColor(completion.status)} opacity-80 group-hover:opacity-100 transition-opacity`}
+        />
+      </td>
+      <td className="px-2 py-1 font-semibold text-gray-900 text-xs whitespace-nowrap truncate">
+        {loadPlan.flight}
+      </td>
+      <td className="px-2 py-1 text-gray-900 text-xs whitespace-nowrap truncate">{loadPlan.date}</td>
+      <td className="px-2 py-1 text-gray-900 text-xs whitespace-nowrap truncate">{loadPlan.acftType}</td>
+      <td className="px-2 py-1 text-gray-900 text-xs whitespace-nowrap truncate">{loadPlan.acftReg}</td>
+      <td className="px-2 py-1 text-gray-900 text-xs whitespace-nowrap truncate">{loadPlan.pax}</td>
+      <td className="px-2 py-1 text-gray-900 text-xs whitespace-nowrap truncate">{loadPlan.std}</td>
+      <td className="px-2 py-1 text-gray-900 text-xs whitespace-nowrap truncate">{loadPlan.ttlPlnUld}</td>
+      <td className="px-2 py-1 text-xs whitespace-nowrap">
+        <div className="flex items-center gap-2">
+          <div className="w-16 h-2 bg-gray-200 rounded-full overflow-hidden">
+            <div 
+              className={`h-full ${getStatusColor(completion.status)} transition-all duration-300`}
+              style={{ width: `${Math.min(completion.completionPercentage, 100)}%` }}
+            />
+          </div>
+          <span className={`font-semibold ${
+            completion.status === "green" ? "text-green-600" :
+            completion.status === "amber" ? "text-amber-600" :
+            "text-red-600"
+          }`}>
+            {completion.completionPercentage}%
+          </span>
+          <span className="text-gray-500 text-[10px]">
+            ({completion.completedULDs}/{completion.totalPlannedULDs})
+          </span>
+        </div>
+      </td>
+      <td className="px-2 py-1 text-gray-900 text-xs whitespace-nowrap truncate">{completion.staffName}</td>
+      <td className="px-2 py-1 text-gray-600 text-xs whitespace-nowrap truncate">{completion.staffContact}</td>
+      <td className="px-2 py-1 w-10">
+        <ChevronRight className="h-4 w-4 text-gray-400 group-hover:text-[#D71A21] transition-colors" />
+      </td>
+    </tr>
+  )
+}
+
+interface BCRRowProps {
+  bcr: SentBCR
+  onClick: () => void
+}
+
+function BCRRow({ bcr, onClick }: BCRRowProps) {
+  const formatDate = (dateString: string) => {
+    try {
+      const date = new Date(dateString)
+      return date.toLocaleString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      })
+    } catch {
+      return dateString
+    }
+  }
+
+  return (
+    <tr
+      onClick={onClick}
+      className="border-b border-gray-100 last:border-b-0 hover:bg-gray-50 cursor-pointer"
+    >
+      <td className="px-2 py-1 font-semibold text-gray-900 text-xs whitespace-nowrap truncate">
+        {bcr.flight}
+      </td>
+      <td className="px-2 py-1 text-gray-900 text-xs whitespace-nowrap truncate">{bcr.date}</td>
+      <td className="px-2 py-1 text-gray-900 text-xs whitespace-nowrap truncate">
+        {bcr.loadPlan?.acftType || '-'}
+      </td>
+      <td className="px-2 py-1 text-gray-900 text-xs whitespace-nowrap truncate">
+        {bcr.sentBy || '-'}
+      </td>
+      <td className="px-2 py-1 text-gray-900 text-xs whitespace-nowrap truncate">
+        {formatDate(bcr.sentAt)}
+      </td>
+      <td className="px-2 py-1 w-10">
+        <ChevronRight className="h-4 w-4 text-gray-600 hover:text-[#D71A21]" />
+      </td>
+    </tr>
+  )
+}

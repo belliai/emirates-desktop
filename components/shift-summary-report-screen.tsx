@@ -1,9 +1,12 @@
 "use client"
 
-import { useState, useMemo } from "react"
+import React, { useState, useMemo } from "react"
 import { EditableField } from "./editable-field"
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
-import { ChevronDown, ChevronRight } from "lucide-react"
+import { ExcelCell } from "./excel-cell"
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
+import { Button } from "@/components/ui/button"
+import { Copy, FileText } from "lucide-react"
+import UWSDelayReportModal from "./uws-delay-report-modal"
 
 // Types
 type ULDBreakdown = {
@@ -127,10 +130,11 @@ export default function ShiftSummaryReportScreen() {
   const [supervisor, setSupervisor] = useState("Roosevelt")
   const [supervisorID, setSupervisorID] = useState("S416437")
 
-  // Toggle states for collapsible sections
-  const [isPlanVsAdvanceOpen, setIsPlanVsAdvanceOpen] = useState(true)
-  const [isBUPDetailsOpen, setIsBUPDetailsOpen] = useState(true)
-  const [isAdvanceReportOpen, setIsAdvanceReportOpen] = useState(true)
+  // Tab state - default to "plan-vs-advance"
+  const [activeTab, setActiveTab] = useState("plan-vs-advance")
+  
+  // UWS Delay Report state
+  const [showUWSDelayReport, setShowUWSDelayReport] = useState(false)
 
   // Shift & Staff Details state
   const [positionals, setPositionals] = useState<StaffDetail[]>([
@@ -601,44 +605,117 @@ export default function ShiftSummaryReportScreen() {
     setStaffList(updated)
   }
 
+  // Copy Total Advance vs Total Pending to clipboard (Google Sheets format)
+  const copyToClipboard = () => {
+    const data = `Total Advance\t\t\t\t\t
+Details\tPMC-AMF\tALF-PLA\tAKE-RKE\tSCLR Pcs\tTotal
+1300-1600\t${time1300_1600.total.pmcAmf}\t${time1300_1600.total.alfPla}\t${time1300_1600.total.akeRke}\t${time1300_1600.total.sclrPcs}\t${getTotal(time1300_1600.total)}
+1601-2359\t${time1601_2359.total.pmcAmf}\t${time1601_2359.total.alfPla}\t${time1601_2359.total.akeRke}\t${time1601_2359.total.sclrPcs}\t${getTotal(time1601_2359.total)}
+TOTAL\t${totalAdvance.pmcAmf}\t${totalAdvance.alfPla}\t${totalAdvance.akeRke}\t${totalAdvance.sclrPcs}\t${getTotal(totalAdvance)}
+Total Pending\t\t\t\t\t
+Details\tPMC-AMF\tALF-PLA\tAKE-RKE\tSCLR Pcs\tTotal
+1300-1600\t${time1300_1600.pending.pmcAmf}\t${time1300_1600.pending.alfPla}\t${time1300_1600.pending.akeRke}\t${time1300_1600.pending.sclrPcs}\t${getTotal(time1300_1600.pending)}
+1601-2359\t${time1601_2359.pending.pmcAmf}\t${time1601_2359.pending.alfPla}\t${time1601_2359.pending.akeRke}\t${time1601_2359.pending.sclrPcs}\t${getTotal(time1601_2359.pending)}
+TOTAL\t${totalPending.pmcAmf}\t${totalPending.alfPla}\t${totalPending.akeRke}\t${totalPending.sclrPcs}\t${getTotal(totalPending)}`
+    
+    navigator.clipboard.writeText(data).then(() => {
+      alert("Data copied to clipboard! You can now paste it into table format like Excel.")
+    }).catch((err) => {
+      console.error("Failed to copy:", err)
+      alert("Failed to copy data to clipboard")
+    })
+  }
+
+  // Generate UWS Delay Report
+  const generateUWSDelayReport = () => {
+    setShowUWSDelayReport(true)
+  }
+
   return (
+    <>
+      {/* UWS Delay Report Modal */}
+      <UWSDelayReportModal
+        isOpen={showUWSDelayReport}
+        onClose={() => setShowUWSDelayReport(false)}
+      />
     <div className="min-h-screen bg-gray-50 p-4">
       <div className="max-w-full space-y-4">
         {/* Header */}
         <div className="mb-4">
-          <h1 className="text-xl font-bold text-gray-900">Shift Summary Report</h1>
-          <div className="flex items-center gap-4 mt-2 text-sm text-gray-600">
-            <EditableField value={date} onChange={setDate} className="text-sm" />
-            <span>|</span>
-            <EditableField value={shift} onChange={setShift} className="text-sm w-16" />
-            <span>|</span>
-            <EditableField value={dutyHours} onChange={setDutyHours} className="text-sm" />
-            <select
-              value={shiftType}
-              onChange={(e) => setShiftType(e.target.value as "Night" | "Day")}
-              className="px-3 py-1 border border-gray-300 rounded text-sm ml-2"
-            >
-              <option value="Night">Night</option>
-              <option value="Day">Day</option>
-            </select>
+          <div className="flex items-start justify-between">
+            <div>
+              <h1 className="text-xl font-bold text-gray-900">Shift Summary Report</h1>
+              <div className="flex items-center gap-4 mt-2 text-sm text-gray-600">
+                <EditableField value={date} onChange={setDate} className="text-sm" />
+                <span>|</span>
+                <EditableField value={shift} onChange={setShift} className="text-sm w-16" />
+                <span>|</span>
+                <EditableField value={dutyHours} onChange={setDutyHours} className="text-sm" />
+                <select
+                  value={shiftType}
+                  onChange={(e) => setShiftType(e.target.value as "Night" | "Day")}
+                  className="px-3 py-1 border border-gray-300 rounded text-sm ml-2"
+                >
+                  <option value="Night">Night</option>
+                  <option value="Day">Day</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Top Right Actions */}
+            <div className="flex items-center gap-2">
+              {/* Generate UWS Delay Report Button */}
+              <Button
+                onClick={generateUWSDelayReport}
+                variant="outline"
+                size="sm"
+              >
+                <FileText className="w-4 h-4" />
+                Generate UWS Delay Report
+              </Button>
+
+              {/* Copy Total Advance vs Total Pending Button */}
+              <Button
+                onClick={copyToClipboard}
+                variant="outline"
+                size="sm"
+              >
+                <Copy className="w-4 h-4" />
+                Copy Total Advance vs Total Pending
+              </Button>
+            </div>
           </div>
         </div>
 
-        {/* TOP SECTION: Advance Planned vs Built */}
-        <Collapsible open={isPlanVsAdvanceOpen} onOpenChange={setIsPlanVsAdvanceOpen}>
-          <CollapsibleTrigger className="w-full">
-            <div className="bg-white rounded-lg border border-gray-200 p-4 flex items-center justify-between hover:bg-gray-50 transition-colors">
-              <h3 className="text-lg font-semibold text-gray-900">Advance planned v/s Built</h3>
-              {isPlanVsAdvanceOpen ? (
-                <ChevronDown className="w-5 h-5 text-gray-600" />
-              ) : (
-                <ChevronRight className="w-5 h-5 text-gray-600" />
-              )}
+        {/* Tab-based Content Area */}
+        <div>
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+            {/* Tabs positioned at top */}
+            <div className="mb-4">
+              <TabsList className="bg-white border-b border-gray-200 rounded-none p-0 h-auto w-full justify-start">
+                <TabsTrigger 
+                  value="bup-shift-details" 
+                  className="rounded-none border-b-2 border-transparent data-[state=active]:border-blue-600 data-[state=active]:text-blue-600 data-[state=active]:bg-transparent px-4 py-3 font-medium"
+                >
+                  BUP Shift Details {shiftType}
+                </TabsTrigger>
+                <TabsTrigger 
+                  value="advance-report" 
+                  className="rounded-none border-b-2 border-transparent data-[state=active]:border-blue-600 data-[state=active]:text-blue-600 data-[state=active]:bg-transparent px-4 py-3 font-medium"
+                >
+                  Advance Report
+                </TabsTrigger>
+                <TabsTrigger 
+                  value="plan-vs-advance" 
+                  className="rounded-none border-b-2 border-transparent data-[state=active]:border-blue-600 data-[state=active]:text-blue-600 data-[state=active]:bg-transparent px-4 py-3 font-medium"
+                >
+                  Plan vs Advance
+                </TabsTrigger>
+              </TabsList>
             </div>
-          </CollapsibleTrigger>
-          <CollapsibleContent>
-            <div className="bg-white rounded-lg border border-gray-200 border-t-0 overflow-hidden">
-              <div className="p-4 space-y-6">
+
+            {/* Plan vs Advance Tab Content */}
+            <TabsContent value="plan-vs-advance" className="bg-white rounded-lg border border-gray-200 overflow-hidden min-h-[600px] p-4 space-y-6 mt-0">
                 {/* 1300-1600 Section */}
                 <div className="space-y-4">
                   <h4 className="text-base font-semibold text-gray-900">1300-1600</h4>
@@ -1014,30 +1091,11 @@ export default function ShiftSummaryReportScreen() {
                     </tbody>
                   </table>
                 </div>
-              </div>
-            </div>
-          </CollapsibleContent>
-        </Collapsible>
+            </TabsContent>
 
-        {/* BOTTOM SECTION: Split into Left and Right */}
-        <div className="grid grid-cols-2 gap-4">
-          {/* BOTTOM LEFT: BUP Shift Details */}
-          <Collapsible open={isBUPDetailsOpen} onOpenChange={setIsBUPDetailsOpen}>
-            <CollapsibleTrigger className="w-full">
-              <div className="bg-white rounded-lg border border-gray-200 p-4 flex items-center justify-between hover:bg-gray-50 transition-colors">
-                <h3 className="text-lg font-semibold text-gray-900">
-                  BUP Shift Details {shiftType}
-                </h3>
-                {isBUPDetailsOpen ? (
-                  <ChevronDown className="w-5 h-5 text-gray-600" />
-                ) : (
-                  <ChevronRight className="w-5 h-5 text-gray-600" />
-                )}
-              </div>
-            </CollapsibleTrigger>
-            <CollapsibleContent>
-              <div className="bg-white rounded-lg border border-gray-200 border-t-0 overflow-hidden">
-                <div className="p-4">
+            {/* BUP Shift Details Tab Content */}
+            <TabsContent value="bup-shift-details" className="bg-white rounded-lg border border-gray-200 overflow-hidden min-h-[600px] p-4 mt-0">
+                <div>
                   <div className="text-sm text-gray-600 mb-2">
                     BUILD UP // {date} // SHIFT : {shift} // {dutyHours}HRS
                   </div>
@@ -1122,67 +1180,55 @@ export default function ShiftSummaryReportScreen() {
                                     className="text-xs"
                                   />
                                 </td>
-                                <td className="px-3 py-2 border border-gray-300 text-center">
-                                  <EditableField
-                                    value={flight.builtPmc.toString()}
+                                <td className="px-1 py-1 border border-gray-300 text-center">
+                                  <ExcelCell
+                                    value={flight.builtPmc}
                                     onChange={(v) =>
-                                      updateFlight(bupFlights, setBupFlights, index, "builtPmc", parseInt(v) || 0)
+                                      updateFlight(bupFlights, setBupFlights, index, "builtPmc", v)
                                     }
-                                    type="number"
-                                    className="w-16 text-center text-xs"
                                   />
                                 </td>
-                                <td className="px-3 py-2 border border-gray-300 text-center">
-                                  <EditableField
-                                    value={flight.builtAlf.toString()}
+                                <td className="px-1 py-1 border border-gray-300 text-center">
+                                  <ExcelCell
+                                    value={flight.builtAlf}
                                     onChange={(v) =>
-                                      updateFlight(bupFlights, setBupFlights, index, "builtAlf", parseInt(v) || 0)
+                                      updateFlight(bupFlights, setBupFlights, index, "builtAlf", v)
                                     }
-                                    type="number"
-                                    className="w-16 text-center text-xs"
                                   />
                                 </td>
-                                <td className="px-3 py-2 border border-gray-300 text-center">
-                                  <EditableField
-                                    value={flight.builtAke.toString()}
+                                <td className="px-1 py-1 border border-gray-300 text-center">
+                                  <ExcelCell
+                                    value={flight.builtAke}
                                     onChange={(v) =>
-                                      updateFlight(bupFlights, setBupFlights, index, "builtAke", parseInt(v) || 0)
+                                      updateFlight(bupFlights, setBupFlights, index, "builtAke", v)
                                     }
-                                    type="number"
-                                    className="w-16 text-center text-xs"
                                   />
                                 </td>
                                 <td className="px-3 py-2 border border-gray-300 text-center font-semibold">
                                   {flight.builtPmc + flight.builtAlf + flight.builtAke}
                                 </td>
-                                <td className="px-3 py-2 border border-gray-300 text-center">
-                                  <EditableField
-                                    value={flight.thruPmc.toString()}
+                                <td className="px-1 py-1 border border-gray-300 text-center">
+                                  <ExcelCell
+                                    value={flight.thruPmc}
                                     onChange={(v) =>
-                                      updateFlight(bupFlights, setBupFlights, index, "thruPmc", parseInt(v) || 0)
+                                      updateFlight(bupFlights, setBupFlights, index, "thruPmc", v)
                                     }
-                                    type="number"
-                                    className="w-16 text-center text-xs"
                                   />
                                 </td>
-                                <td className="px-3 py-2 border border-gray-300 text-center">
-                                  <EditableField
-                                    value={flight.thruAlf.toString()}
+                                <td className="px-1 py-1 border border-gray-300 text-center">
+                                  <ExcelCell
+                                    value={flight.thruAlf}
                                     onChange={(v) =>
-                                      updateFlight(bupFlights, setBupFlights, index, "thruAlf", parseInt(v) || 0)
+                                      updateFlight(bupFlights, setBupFlights, index, "thruAlf", v)
                                     }
-                                    type="number"
-                                    className="w-16 text-center text-xs"
                                   />
                                 </td>
-                                <td className="px-3 py-2 border border-gray-300 text-center">
-                                  <EditableField
-                                    value={flight.thruAke.toString()}
+                                <td className="px-1 py-1 border border-gray-300 text-center">
+                                  <ExcelCell
+                                    value={flight.thruAke}
                                     onChange={(v) =>
-                                      updateFlight(bupFlights, setBupFlights, index, "thruAke", parseInt(v) || 0)
+                                      updateFlight(bupFlights, setBupFlights, index, "thruAke", v)
                                     }
-                                    type="number"
-                                    className="w-16 text-center text-xs"
                                   />
                                 </td>
                                 <td className="px-3 py-2 border border-gray-300 text-center font-semibold">
@@ -1897,25 +1943,10 @@ export default function ShiftSummaryReportScreen() {
                     </div>
                   </div>
                 </div>
-              </div>
-            </CollapsibleContent>
-          </Collapsible>
+            </TabsContent>
 
-          {/* BOTTOM RIGHT: Advance Report */}
-          <Collapsible open={isAdvanceReportOpen} onOpenChange={setIsAdvanceReportOpen}>
-            <CollapsibleTrigger className="w-full">
-              <div className="bg-white rounded-lg border border-gray-200 p-4 flex items-center justify-between hover:bg-gray-50 transition-colors">
-                <h3 className="text-lg font-semibold text-gray-900">Advance Report</h3>
-                {isAdvanceReportOpen ? (
-                  <ChevronDown className="w-5 h-5 text-gray-600" />
-                ) : (
-                  <ChevronRight className="w-5 h-5 text-gray-600" />
-                )}
-              </div>
-            </CollapsibleTrigger>
-            <CollapsibleContent>
-              <div className="bg-white rounded-lg border border-gray-200 border-t-0 overflow-hidden">
-                <div className="p-4 space-y-4">
+            {/* Advance Report Tab Content */}
+            <TabsContent value="advance-report" className="bg-white rounded-lg border border-gray-200 overflow-hidden min-h-[600px] p-4 space-y-4 mt-0">
                   {/* Advance Units and Bonus Units Summary */}
                   <div className="grid grid-cols-2 gap-4">
                     {/* Advance Units */}
@@ -2075,64 +2106,52 @@ export default function ShiftSummaryReportScreen() {
                                   className="text-xs"
                                 />
                               </td>
-                              <td className="px-3 py-2 border border-gray-300 text-center">
-                                <EditableField
-                                  value={flight.thruPmc.toString()}
+                              <td className="px-1 py-1 border border-gray-300 text-center">
+                                <ExcelCell
+                                  value={flight.thruPmc}
                                   onChange={(v) =>
-                                    updateFlight(advanceFlights, setAdvanceFlights, index, "thruPmc", parseInt(v) || 0)
+                                    updateFlight(advanceFlights, setAdvanceFlights, index, "thruPmc", v)
                                   }
-                                  type="number"
-                                  className="w-12 text-center text-xs"
                                 />
                               </td>
-                              <td className="px-3 py-2 border border-gray-300 text-center">
-                                <EditableField
-                                  value={flight.thruAlf.toString()}
+                              <td className="px-1 py-1 border border-gray-300 text-center">
+                                <ExcelCell
+                                  value={flight.thruAlf}
                                   onChange={(v) =>
-                                    updateFlight(advanceFlights, setAdvanceFlights, index, "thruAlf", parseInt(v) || 0)
+                                    updateFlight(advanceFlights, setAdvanceFlights, index, "thruAlf", v)
                                   }
-                                  type="number"
-                                  className="w-12 text-center text-xs"
                                 />
                               </td>
-                              <td className="px-3 py-2 border border-gray-300 text-center">
-                                <EditableField
-                                  value={flight.thruAke.toString()}
+                              <td className="px-1 py-1 border border-gray-300 text-center">
+                                <ExcelCell
+                                  value={flight.thruAke}
                                   onChange={(v) =>
-                                    updateFlight(advanceFlights, setAdvanceFlights, index, "thruAke", parseInt(v) || 0)
+                                    updateFlight(advanceFlights, setAdvanceFlights, index, "thruAke", v)
                                   }
-                                  type="number"
-                                  className="w-12 text-center text-xs"
                                 />
                               </td>
-                              <td className="px-3 py-2 border border-gray-300 text-center">
-                                <EditableField
-                                  value={flight.builtPmc.toString()}
+                              <td className="px-1 py-1 border border-gray-300 text-center">
+                                <ExcelCell
+                                  value={flight.builtPmc}
                                   onChange={(v) =>
-                                    updateFlight(advanceFlights, setAdvanceFlights, index, "builtPmc", parseInt(v) || 0)
+                                    updateFlight(advanceFlights, setAdvanceFlights, index, "builtPmc", v)
                                   }
-                                  type="number"
-                                  className="w-12 text-center text-xs"
                                 />
                               </td>
-                              <td className="px-3 py-2 border border-gray-300 text-center">
-                                <EditableField
-                                  value={flight.builtAlf.toString()}
+                              <td className="px-1 py-1 border border-gray-300 text-center">
+                                <ExcelCell
+                                  value={flight.builtAlf}
                                   onChange={(v) =>
-                                    updateFlight(advanceFlights, setAdvanceFlights, index, "builtAlf", parseInt(v) || 0)
+                                    updateFlight(advanceFlights, setAdvanceFlights, index, "builtAlf", v)
                                   }
-                                  type="number"
-                                  className="w-12 text-center text-xs"
                                 />
                               </td>
-                              <td className="px-3 py-2 border border-gray-300 text-center">
-                                <EditableField
-                                  value={flight.builtAke.toString()}
+                              <td className="px-1 py-1 border border-gray-300 text-center">
+                                <ExcelCell
+                                  value={flight.builtAke}
                                   onChange={(v) =>
-                                    updateFlight(advanceFlights, setAdvanceFlights, index, "builtAke", parseInt(v) || 0)
+                                    updateFlight(advanceFlights, setAdvanceFlights, index, "builtAke", v)
                                   }
-                                  type="number"
-                                  className="w-12 text-center text-xs"
                                 />
                               </td>
                               <td className="px-3 py-2 border border-gray-300 text-center font-semibold bg-orange-100">
@@ -2225,64 +2244,52 @@ export default function ShiftSummaryReportScreen() {
                                   className="text-xs"
                                 />
                               </td>
-                              <td className="px-3 py-2 border border-gray-300 text-center">
-                                <EditableField
-                                  value={flight.thruPmc.toString()}
+                              <td className="px-1 py-1 border border-gray-300 text-center">
+                                <ExcelCell
+                                  value={flight.thruPmc}
                                   onChange={(v) =>
-                                    updateFlight(bonusFlights, setBonusFlights, index, "thruPmc", parseInt(v) || 0)
+                                    updateFlight(bonusFlights, setBonusFlights, index, "thruPmc", v)
                                   }
-                                  type="number"
-                                  className="w-12 text-center text-xs"
                                 />
                               </td>
-                              <td className="px-3 py-2 border border-gray-300 text-center">
-                                <EditableField
-                                  value={flight.thruAlf.toString()}
+                              <td className="px-1 py-1 border border-gray-300 text-center">
+                                <ExcelCell
+                                  value={flight.thruAlf}
                                   onChange={(v) =>
-                                    updateFlight(bonusFlights, setBonusFlights, index, "thruAlf", parseInt(v) || 0)
+                                    updateFlight(bonusFlights, setBonusFlights, index, "thruAlf", v)
                                   }
-                                  type="number"
-                                  className="w-12 text-center text-xs"
                                 />
                               </td>
-                              <td className="px-3 py-2 border border-gray-300 text-center">
-                                <EditableField
-                                  value={flight.thruAke.toString()}
+                              <td className="px-1 py-1 border border-gray-300 text-center">
+                                <ExcelCell
+                                  value={flight.thruAke}
                                   onChange={(v) =>
-                                    updateFlight(bonusFlights, setBonusFlights, index, "thruAke", parseInt(v) || 0)
+                                    updateFlight(bonusFlights, setBonusFlights, index, "thruAke", v)
                                   }
-                                  type="number"
-                                  className="w-12 text-center text-xs"
                                 />
                               </td>
-                              <td className="px-3 py-2 border border-gray-300 text-center">
-                                <EditableField
-                                  value={flight.builtPmc.toString()}
+                              <td className="px-1 py-1 border border-gray-300 text-center">
+                                <ExcelCell
+                                  value={flight.builtPmc}
                                   onChange={(v) =>
-                                    updateFlight(bonusFlights, setBonusFlights, index, "builtPmc", parseInt(v) || 0)
+                                    updateFlight(bonusFlights, setBonusFlights, index, "builtPmc", v)
                                   }
-                                  type="number"
-                                  className="w-12 text-center text-xs"
                                 />
                               </td>
-                              <td className="px-3 py-2 border border-gray-300 text-center">
-                                <EditableField
-                                  value={flight.builtAlf.toString()}
+                              <td className="px-1 py-1 border border-gray-300 text-center">
+                                <ExcelCell
+                                  value={flight.builtAlf}
                                   onChange={(v) =>
-                                    updateFlight(bonusFlights, setBonusFlights, index, "builtAlf", parseInt(v) || 0)
+                                    updateFlight(bonusFlights, setBonusFlights, index, "builtAlf", v)
                                   }
-                                  type="number"
-                                  className="w-12 text-center text-xs"
                                 />
                               </td>
-                              <td className="px-3 py-2 border border-gray-300 text-center">
-                                <EditableField
-                                  value={flight.builtAke.toString()}
+                              <td className="px-1 py-1 border border-gray-300 text-center">
+                                <ExcelCell
+                                  value={flight.builtAke}
                                   onChange={(v) =>
-                                    updateFlight(bonusFlights, setBonusFlights, index, "builtAke", parseInt(v) || 0)
+                                    updateFlight(bonusFlights, setBonusFlights, index, "builtAke", v)
                                   }
-                                  type="number"
-                                  className="w-12 text-center text-xs"
                                 />
                               </td>
                               <td className="px-3 py-2 border border-gray-300 text-center font-semibold bg-orange-100">
@@ -2344,12 +2351,11 @@ export default function ShiftSummaryReportScreen() {
                       </div>
                     </div>
                   </div>
-                </div>
-              </div>
-            </CollapsibleContent>
-          </Collapsible>
+            </TabsContent>
+          </Tabs>
         </div>
       </div>
     </div>
+    </>
   )
 }

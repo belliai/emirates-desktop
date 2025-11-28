@@ -68,18 +68,33 @@ export function parseHeader(content: string): LoadPlanHeader {
     
     // After table header and separator, look for warning lines until we find the first shipment
     if (foundTableHeader && foundSeparator) {
+      // Normalize line for pattern matching (collapse multiple spaces)
+      const normalizedLine = line.replace(/\s+/g, " ")
+      
       // Stop if we find a shipment line (starts with 3 digits followed by AWB)
-      if (line.match(/^\d{3}\s+\d{3}-\d{8}/)) {
+      // Check both original and normalized line
+      const isShipmentLine = line.match(/^\d{3}\s+\d{3}-\d{8}/) || normalizedLine.match(/^\d{3}\s+\d{3}-\d{8}/)
+      if (isShipmentLine) {
+        console.log("[v0] ✅ Found first shipment line, stopping warning collection:", line.substring(0, 80))
         break
       }
       
       // Skip empty lines and separator lines
-      if (!line || line.match(/^[_\-=]+$/)) {
+      if (!line || line.match(/^[_\-=\s]+$/)) {
         continue
       }
       
       // Skip ULD lines (XX ... XX)
-      if (line.match(/xx\s+.*\s+xx/i)) {
+      if (line.match(/xx\s+.*\s+xx/i) || normalizedLine.match(/xx\s+.*\s+xx/i)) {
+        continue
+      }
+      
+      // Skip lines that look like RTF control codes or binary data
+      // (e.g., "List Table 4 Accent 5", long sequences of 0s and fs)
+      if (line.match(/^List\s+Table/i) || 
+          line.match(/^[0f\s]{50,}$/i) || 
+          normalizedLine.match(/^List\s+Table/i) ||
+          normalizedLine.match(/^[0f\s]{50,}$/i)) {
         continue
       }
       
@@ -261,9 +276,11 @@ export function parseShipments(content: string, header: LoadPlanHeader): Shipmen
       // Try standard format first (with SS and FLTIN, PC optional)
       // Handle cases like shipment 010: "PXS    QRT" (PC is empty, THC is QRT)
       // PC can be optional, and there can be multiple spaces between PCODE and THC
-      // Use \s{2,} to match multiple spaces after PCODE when PC is missing
-      let shipmentMatch = line.match(
-        /^(\d{3})\s+(\d{3}-\d{8})\s+([A-Z]{3})([A-Z]{3})\s+(\d+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([A-Z-]+)\s{2,}(.+?)\s{2,}([A-Z]{3})\s+([A-Z]\d)?\s{1,}([A-Z0-9\s]+?)\s+(SS)\s+([YN])\s+([A-Z]+\d+)?\s*(\d{2}[A-Za-z]{3}\d{4})?\s*([\d:\/]+)?\s*([YN])?/i,
+      // Use \s+ to match one or more spaces (more flexible for RTF-extracted text)
+      // Normalize line first: collapse multiple spaces to single space for regex matching
+      const normalizedLine = line.replace(/\s+/g, " ")
+      let shipmentMatch = normalizedLine.match(
+        /^(\d{3})\s+(\d{3}-\d{8})\s+([A-Z]{3})([A-Z]{3})\s+(\d+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([A-Z-]+)\s+(.+?)\s+([A-Z]{3})\s+([A-Z]\d)?\s+([A-Z0-9\s]+?)\s+(SS)\s+([YN])\s+([A-Z]+\d+)?\s*(\d{2}[A-Za-z]{3}\d{4})?\s*([\d:\/]+)?\s*([YN])?/i,
       )
       
       // If first regex doesn't match, try format without FLTIN/ARRDT.TIME (e.g., shipment 002)
@@ -271,7 +288,7 @@ export function parseShipments(content: string, header: LoadPlanHeader): Shipmen
       // Example: 002 176-98208961 DXBMAA 1 10.0 0.1 0.1 VAL GOLD JEWELLERY. VAL P2 NORM NN N N
       if (!shipmentMatch) {
         // Try pattern: SER AWB ORG/DES PCS WGT VOL LVOL SHC MAN.DESC PCODE PC THC ... SI (no SS/BS/PI/FLTIN)
-        const altMatch = line.match(
+        const altMatch = normalizedLine.match(
           /^(\d{3})\s+(\d{3}-\d{8})\s+([A-Z]{3})([A-Z]{3})\s+(\d+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([A-Z-]+)\s+(.+?)\s+([A-Z]{3})\s+([A-Z]\d)\s+(.+?)\s+([YN])?$/i,
         )
         if (altMatch) {
@@ -324,8 +341,8 @@ export function parseShipments(content: string, header: LoadPlanHeader): Shipmen
         } else {
           // Try pattern for shipment 010: PC is missing, format is "PXS    QRT  SS N ..."
           // Pattern: SER AWB ORG/DES PCS WGT VOL LVOL SHC MAN.DESC PCODE (no PC) THC SS PI FLTIN ARRDT.TIME SI
-          const noPCMatch = line.match(
-            /^(\d{3})\s+(\d{3}-\d{8})\s+([A-Z]{3})([A-Z]{3})\s+(\d+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([A-Z-]+)\s{2,}(.+?)\s{2,}([A-Z]{3})\s{2,}([A-Z0-9]+)\s+(SS)\s+([YN])\s+([A-Z]+\d+)?\s*(\d{2}[A-Za-z]{3}\d{4})?\s*([\d:\/]+)?\s*([YN])?/i,
+          const noPCMatch = normalizedLine.match(
+            /^(\d{3})\s+(\d{3}-\d{8})\s+([A-Z]{3})([A-Z]{3})\s+(\d+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([A-Z-]+)\s+(.+?)\s+([A-Z]{3})\s+([A-Z0-9]+)\s+(SS)\s+([YN])\s+([A-Z]+\d+)?\s*(\d{2}[A-Za-z]{3}\d{4})?\s*([\d:\/]+)?\s*([YN])?/i,
           )
           if (noPCMatch) {
             console.log("[v0] Matched with no-PC regex (e.g., shipment 010)")

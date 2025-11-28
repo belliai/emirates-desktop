@@ -123,3 +123,4 @@ export function getCheckedULDCount(
   return getCheckedULDEntries(flightNumber, loadPlanSectors).length
 }
 
+

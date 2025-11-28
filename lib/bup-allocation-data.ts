@@ -263,3 +263,4 @@ export const BUP_ALLOCATION_DATA: BUPAllocationFlight[] = [
   { carrier: "EK", flightNo: "0767", etd: "23:20", routing: "DXB-JNB", staff: "FRED", mobile: "569938594", acType: "77WEP", regnNo: "A6-EGE", shiftType: "day", period: "afternoon", wave: "second-wave", date: "14 OCT 2025" },
 ]
 
+

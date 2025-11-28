@@ -4,96 +4,148 @@
  */
 
 /**
- * Extract text from RTF file using rtf-parser
+ * Light-weight RTF to text converter.
+ * Preserves paragraph boundaries and decodes hex escapes while stripping control words.
+ * IMPORTANT: Preserves spacing for table rows to ensure parser can match shipment patterns.
+ */
+function rtfToPlainText(rtf: string): string {
+  // Normalize common control words to plaintext separators
+  let text = rtf
+    .replace(/\\par[d]?/gi, "\n")
+    .replace(/\\line/gi, "\n")
+    .replace(/\\tab/gi, "\t")
+    .replace(/\\;/g, ";")
+    .replace(/\\\\/g, "\\")
+
+  // Decode hex escapes like \'e9 -> é
+  text = text.replace(/\\'([0-9a-fA-F]{2})/g, (_m, hex) =>
+    String.fromCharCode(parseInt(hex, 16))
+  )
+
+  // Drop remaining control words (e.g., \b, \fs22, \ansi) but keep surrounding text
+  // Skip table-related control words that might produce garbage text
+  text = text.replace(/\\[a-zA-Z]+-?\d*(?:\s|)/g, "")
+
+  // Remove braces that only define groups, but be careful with nested structures
+  // First pass: remove empty braces
+  text = text.replace(/\{[^}]*\}/g, (match) => {
+    // If brace contains only control words or whitespace, remove it
+    const content = match.slice(1, -1)
+    if (!content.trim() || /^\\[a-zA-Z]+\d*\s*$/.test(content)) {
+      return ""
+    }
+    return match
+  })
+  
+  // Second pass: remove remaining braces (but preserve content)
+  text = text.replace(/[{}]/g, "")
+
+  // Split into lines for processing
+  const lines = text.split("\n")
+  const processedLines: string[] = []
+  
+  for (let i = 0; i < lines.length; i++) {
+    let line = lines[i]
+    
+    // Check if this line looks like a table row (starts with 3 digits followed by AWB pattern)
+    // Pattern: 3 digits, spaces, 3 digits-dash-8 digits (e.g., "001 176-92065120")
+    const isTableRow = /^\d{3}\s+\d{3}-\d{8}/.test(line.trim())
+    
+    // Check if this line looks like a table header (contains "SER." and "AWB NO")
+    const isTableHeader = /SER\./i.test(line) && /AWB\s+NO/i.test(line)
+    
+    // Check if this line looks like a separator (dashes, underscores, equals)
+    const isSeparator = /^[_\-=\s]+$/.test(line.trim())
+    
+    if (isTableRow || isTableHeader || isSeparator) {
+      // For table rows, preserve spacing more carefully
+      // Normalize tabs to spaces but preserve multiple spaces
+      line = line.replace(/\t/g, " ")
+      // Only collapse spaces if there are more than 2 consecutive spaces (preserve table alignment)
+      line = line.replace(/ {3,}/g, "  ") // Replace 3+ spaces with 2 spaces
+      processedLines.push(line.trimEnd())
+    } else {
+      // For non-table lines, collapse whitespace normally
+      line = line.trimEnd()
+      line = line.replace(/[ \t]+/g, " ")
+      processedLines.push(line)
+    }
+  }
+  
+  // Join lines and collapse excessive newlines
+  text = processedLines.join("\n").replace(/\n{3,}/g, "\n\n").trim()
+  
+  // Final cleanup: remove any remaining RTF artifacts
+  // Remove lines that are clearly RTF style definitions or binary data
+  const finalLines = text.split("\n")
+  const cleanedLines = finalLines.filter(line => {
+    const trimmed = line.trim()
+    // Skip empty lines (but keep single empty lines between sections)
+    if (!trimmed) return true // Keep empty lines for structure
+    
+    // Skip RTF style table definitions
+    if (trimmed.match(/^List\s+Table\s+\d+/i)) return false
+    
+    // Skip binary-looking data (long sequences of 0s, fs, or hex-like patterns)
+    if (trimmed.match(/^[0f\s]{50,}$/i)) return false
+    if (trimmed.match(/^[0-9a-f]{100,}$/i)) return false
+    
+    // Skip lines that are just RTF control codes
+    if (trimmed.match(/^\\[a-zA-Z]+\d*\s*$/)) return false
+    
+    return true
+  })
+  
+  // Rejoin, preserving structure but removing excessive empty lines
+  text = cleanedLines.join("\n").replace(/\n{4,}/g, "\n\n\n").trim()
+
+  return text
+}
+
+/**
+ * Extract text from RTF file by converting to DOCX first, then using DOCX extraction
+ * This approach is more reliable than direct RTF parsing
  */
 async function extractTextFromRTF(file: File): Promise<string> {
   try {
-    // Dynamic import rtf-parser library
-    const rtfParser = await import('rtf-parser')
-    const text = await file.text()
+    console.log('[v0] Converting RTF to DOCX via API route...')
     
-    // Parse RTF and extract text content
-    return new Promise((resolve, reject) => {
-      try {
-        rtfParser.string(text, (err: Error | null, doc: any) => {
-          if (err) {
-            console.error('[v0] Error parsing RTF with rtf-parser:', err)
-            // Don't reject, fall through to fallback
-            const strippedText = text
-              .replace(/\\[a-z]+\d*\s?/gi, '') // Remove RTF control words
-              .replace(/\{[^}]*\}/g, '') // Remove RTF groups
-              .replace(/[{}]/g, '') // Remove remaining braces
-              .replace(/\s+/g, ' ') // Normalize whitespace
-              .trim()
-            console.log('[v0] RTF fallback extraction after parser error, length:', strippedText.length)
-            resolve(strippedText)
-            return
-          }
-          
-          // Extract text from RTF document structure
-          let extractedText = ''
-          
-          function extractTextFromContent(content: any[]): void {
-            if (!content || !Array.isArray(content)) return
-            
-            for (const item of content) {
-              if (typeof item === 'string') {
-                extractedText += item
-              } else if (item.content) {
-                extractTextFromContent(item.content)
-              } else if (item.text) {
-                extractedText += item.text
-              }
-            }
-          }
-          
-          if (doc && doc.content) {
-            extractTextFromContent(doc.content)
-          }
-          
-          // If no text extracted, try to strip RTF control codes as fallback
-          if (!extractedText || extractedText.trim().length === 0) {
-            // Simple RTF control code stripping fallback
-            extractedText = text
-              .replace(/\\[a-z]+\d*\s?/gi, '') // Remove RTF control words
-              .replace(/\{[^}]*\}/g, '') // Remove RTF groups
-              .replace(/[{}]/g, '') // Remove remaining braces
-              .replace(/\s+/g, ' ') // Normalize whitespace
-              .trim()
-          }
-          
-          console.log('[v0] RTF extraction successful, length:', extractedText.length)
-          resolve(extractedText)
-        })
-      } catch (parseError) {
-        console.error('[v0] Error calling rtf-parser:', parseError)
-        // Fallback to control code stripping
-        const strippedText = text
-          .replace(/\\[a-z]+\d*\s?/gi, '') // Remove RTF control words
-          .replace(/\{[^}]*\}/g, '') // Remove RTF groups
-          .replace(/[{}]/g, '') // Remove remaining braces
-          .replace(/\s+/g, ' ') // Normalize whitespace
-          .trim()
-        console.log('[v0] RTF fallback extraction after exception, length:', strippedText.length)
-        resolve(strippedText)
-      }
+    // Convert RTF to DOCX using API route
+    const formData = new FormData()
+    formData.append('file', file)
+    
+    const response = await fetch('/api/convert-rtf-to-docx', {
+      method: 'POST',
+      body: formData,
     })
+    
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
+      throw new Error(`RTF to DOCX conversion failed: ${errorData.error || response.statusText}`)
+    }
+    
+    // Get DOCX file from response
+    const docxBlob = await response.blob()
+    const docxFile = new File([docxBlob], file.name.replace(/\.rtf$/i, '.docx'), {
+      type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    })
+    
+    console.log('[v0] RTF converted to DOCX, now extracting text using mammoth...')
+    
+    // Use existing DOCX extraction logic
+    return await extractTextFromDOCX(docxFile)
   } catch (error) {
-    console.error('[v0] Error extracting RTF with rtf-parser:', error)
-    // Fallback: try to strip RTF control codes manually
+    console.error('[v0] Error converting RTF to DOCX:', error)
+    // Fallback to direct RTF text extraction if conversion fails
+    console.warn('[v0] Falling back to direct RTF text extraction...')
     try {
       const text = await file.text()
-      const strippedText = text
-        .replace(/\\[a-z]+\d*\s?/gi, '') // Remove RTF control words
-        .replace(/\{[^}]*\}/g, '') // Remove RTF groups
-        .replace(/[{}]/g, '') // Remove remaining braces
-        .replace(/\s+/g, ' ') // Normalize whitespace
-        .trim()
+      const strippedText = rtfToPlainText(text)
       console.log('[v0] RTF fallback extraction, length:', strippedText.length)
       return strippedText
     } catch (fallbackError) {
       console.error('[v0] RTF fallback extraction failed:', fallbackError)
-      return await file.text()
+      throw new Error('Failed to extract text from RTF file')
     }
   }
 }
