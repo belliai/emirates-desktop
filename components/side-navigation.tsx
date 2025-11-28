@@ -50,6 +50,7 @@ export default function SideNavigation({ currentScreen, onNavigate }: SideNaviga
       items: [
         { id: "load-plans", label: "Upload Load Plans", icon: Upload },
         { id: "lists", label: "Export Lists", icon: Download },
+        { id: "qrt-list", label: "QRT List", icon: Download },
         { id: "flight-assignment", label: "Flight Assignment", icon: Plane },
         { id: "buildup-staff", label: "Buildup Staff", icon: Users },
         { id: "screening", label: "Screening", icon: Search },

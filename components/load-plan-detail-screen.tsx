@@ -63,9 +63,10 @@ interface LoadPlanDetailScreenProps {
   onNavigateToBuildupStaff?: (staffName: string) => void
   enableBulkCheckboxes?: boolean // Enable bulk checkbox functionality (default: false, true for Buildup Staff)
   workAreaFilter?: WorkArea // Filter ULD sections based on work area (SHC codes)
+  isQRTList?: boolean // Show Bay Number and Connection Time columns for QRT List
 }
 
-export default function LoadPlanDetailScreen({ loadPlan, onBack, onSave, onNavigateToBuildupStaff, enableBulkCheckboxes = false, workAreaFilter }: LoadPlanDetailScreenProps) {
+export default function LoadPlanDetailScreen({ loadPlan, onBack, onSave, onNavigateToBuildupStaff, enableBulkCheckboxes = false, workAreaFilter, isQRTList = false }: LoadPlanDetailScreenProps) {
   const [showBCRModal, setShowBCRModal] = useState(false)
   const [showHandoverModal, setShowHandoverModal] = useState(false)
   const [awbComments, setAwbComments] = useState<AWBComment[]>([])
@@ -496,6 +497,7 @@ export default function LoadPlanDetailScreen({ loadPlan, onBack, onSave, onNavig
               setSelectedULDSection({ sectorIndex, uldSectionIndex, uld })
               setShowULDModal(true)
             }}
+            isQRTList={isQRTList}
             onUpdateAWBField={updateAWBField}
             onUpdateULDField={updateULDField}
             onAddNewAWBRow={addNewAWBRow}
@@ -670,6 +672,7 @@ interface CombinedTableProps {
   onUpdateSectorTotals: (sectorIndex: number, field: string, value: string) => void
   setEditedPlan: (updater: (prev: LoadPlanDetail) => LoadPlanDetail) => void
   workAreaFilter?: WorkArea // Filter ULD sections based on work area (SHC codes)
+  isQRTList?: boolean // Show Bay Number and Connection Time columns for QRT List
 }
 
 function CombinedTable({
@@ -702,6 +705,7 @@ function CombinedTable({
   onUpdateSectorTotals,
   setEditedPlan,
   workAreaFilter,
+  isQRTList = false,
 }: CombinedTableProps) {
   // Group AWBs by sector first, then flatten within each sector
   // Structure: Map<sectorName, { regular: [], rampTransfer: [] }>
@@ -830,6 +834,12 @@ function CombinedTable({
                 <th className="px-2 py-2 text-left font-semibold">THC</th>
                 <th className="px-2 py-2 text-left font-semibold">BS</th>
                 <th className="px-2 py-2 text-left font-semibold">PI</th>
+                {isQRTList && (
+                  <>
+                    <th className="px-2 py-2 text-left font-semibold">Bay Number</th>
+                    <th className="px-2 py-2 text-left font-semibold">Conn. Time</th>
+                  </>
+                )}
                 <th className="px-2 py-2 text-left font-semibold">FLTIN</th>
                 <th className="px-2 py-2 text-left font-semibold">ARRDT.TIME</th>
                 <th className="px-2 py-2 text-left font-semibold">QNN/AQNN</th>
@@ -842,7 +852,7 @@ function CombinedTable({
               {/* Special Instructions - Note: Remarks update needs setEditedPlan, keeping simple for now */}
               {editedPlan.remarks && editedPlan.remarks.length > 0 && (
                 <tr>
-                  <td colSpan={enableBulkCheckboxes ? 21 : 20} className="px-2 py-2 bg-gray-100 border-b border-gray-200">
+                  <td colSpan={enableBulkCheckboxes ? (isQRTList ? 23 : 21) : (isQRTList ? 22 : 20)} className="px-2 py-2 bg-gray-100 border-b border-gray-200">
                     <div className="space-y-1">
                       {editedPlan.remarks.map((remark, index) => (
                         <EditableField
@@ -872,7 +882,7 @@ function CombinedTable({
                     {/* Sector Header - only show if multiple sectors */}
                     {hasMultipleSectors && (
                       <tr className="bg-blue-50 border-t-2 border-blue-200">
-                        <td colSpan={enableBulkCheckboxes ? 21 : 20} className="px-2 py-2 font-bold text-blue-900 text-center">
+                        <td colSpan={enableBulkCheckboxes ? (isQRTList ? 23 : 21) : (isQRTList ? 22 : 20)} className="px-2 py-2 font-bold text-blue-900 text-center">
                           SECTOR: {sectorName}
                         </td>
                       </tr>
@@ -928,6 +938,7 @@ function CombinedTable({
                             onAddRowAfter={() => onAddNewAWBRow(sectorIndex, uldSectionIndex, awbIndex)}
                             onDeleteRow={() => onDeleteAWBRow(sectorIndex, uldSectionIndex, awbIndex)}
                             hoveredUld={hoveredUld}
+                            isQRTList={isQRTList}
                           />
                           {shouldShowULD && (
                             <ULDRow
@@ -945,6 +956,7 @@ function CombinedTable({
                               onAddAWB={() => onAddNewAWBRow(sectorIndex, uldSectionIndex)}
                               onDelete={() => onDeleteULDSection(sectorIndex, uldSectionIndex)}
                               onClick={() => onULDSectionClick(sectorIndex, uldSectionIndex, uld)}
+                              isQRTList={isQRTList}
                             />
                           )}
                         </React.Fragment>
@@ -955,7 +967,7 @@ function CombinedTable({
                     {group.rampTransfer.length > 0 && (
                       <>
                         <tr className="bg-gray-50">
-                          <td colSpan={enableBulkCheckboxes ? 21 : 20} className="px-2 py-1 font-semibold text-gray-900 text-center">
+                          <td colSpan={enableBulkCheckboxes ? (isQRTList ? 23 : 21) : (isQRTList ? 22 : 20)} className="px-2 py-1 font-semibold text-gray-900 text-center">
                             ***** RAMP TRANSFER *****
                           </td>
                         </tr>
@@ -992,6 +1004,7 @@ function CombinedTable({
                                 onDeleteRow={() => onDeleteAWBRow(sectorIndex, uldSectionIndex, awbIndex)}
                                 isRampTransfer
                                 hoveredUld={hoveredUld}
+                                isQRTList={isQRTList}
                               />
                               {shouldShowULD && (
                                 <ULDRow
@@ -1010,6 +1023,7 @@ function CombinedTable({
                                   onDelete={() => onDeleteULDSection(sectorIndex, uldSectionIndex)}
                                   onClick={() => onULDSectionClick(sectorIndex, uldSectionIndex, uld)}
                                   isRampTransfer
+                                  isQRTList={isQRTList}
                                 />
                               )}
                             </React.Fragment>
@@ -1132,6 +1146,7 @@ interface AWBRowProps {
   onDeleteRow?: () => void
   isRampTransfer?: boolean
   hoveredUld?: string | null
+  isQRTList?: boolean
 }
 
 function AWBRow({
@@ -1154,6 +1169,7 @@ function AWBRow({
   onDeleteRow,
   isRampTransfer,
   hoveredUld,
+  isQRTList = false,
 }: AWBRowProps) {
   const [hoveredSection, setHoveredSection] = useState<"left" | "right" | null>(null)
   
@@ -1185,6 +1201,10 @@ function AWBRow({
     { key: "thc" },
     { key: "bs" },
     { key: "pi" },
+    ...(isQRTList ? [
+      { key: "bayNumber" as keyof AWBRow },
+      { key: "connTime" as keyof AWBRow },
+    ] : []),
     { key: "fltin" },
     { key: "arrdtTime" },
     { key: "qnnAqnn" },
@@ -1333,7 +1353,7 @@ function AWBRow({
       </tr>
       {awb.remarks && (
         <tr>
-          <td colSpan={20} className="px-2 py-1 text-xs text-gray-700 italic">
+          <td colSpan={isQRTList ? 22 : 20} className="px-2 py-1 text-xs text-gray-700 italic">
             <EditableField
               value={awb.remarks}
               onChange={(value) => onUpdateField("remarks", value)}
@@ -1364,7 +1384,7 @@ function AWBRow({
             <td className="px-2 py-1 text-xs text-gray-700 font-semibold">{group.pieces || "-"}</td>
             <td className="px-2 py-1 text-xs text-gray-500">{groupUld || "-"}</td>
             <td className="px-2 py-1 text-xs text-gray-600 font-mono">{group.no || "-"}</td>
-            <td colSpan={14} className="px-2 py-1"></td>
+            <td colSpan={isQRTList ? 16 : 14} className="px-2 py-1"></td>
           </tr>
         )
       })}
@@ -1389,9 +1409,10 @@ interface ULDRowProps {
   onDelete: () => void
   onClick: () => void
   isRampTransfer?: boolean
+  isQRTList?: boolean
 }
 
-function ULDRow({ uld, uldEntries, isReadOnly, enableBulkCheckboxes, sectionKeys, isAllSelected, isSomeSelected, onToggleSection, onUpdate, onAddAWB, onDelete, onClick, isRampTransfer }: ULDRowProps) {
+function ULDRow({ uld, uldEntries, isReadOnly, enableBulkCheckboxes, sectionKeys, isAllSelected, isSomeSelected, onToggleSection, onUpdate, onAddAWB, onDelete, onClick, isRampTransfer, isQRTList = false }: ULDRowProps) {
   const { count, types } = parseULDSection(uld)
   const checkedEntries = uldEntries.filter(e => e.checked)
   const hasCheckedEntries = checkedEntries.length > 0
@@ -1434,7 +1455,7 @@ function ULDRow({ uld, uldEntries, isReadOnly, enableBulkCheckboxes, sectionKeys
           />
         </td>
       )}
-      <td colSpan={enableBulkCheckboxes ? 19 : 20} className="px-2 py-1 font-semibold text-gray-900 text-center relative">
+      <td colSpan={enableBulkCheckboxes ? (isQRTList ? 21 : 19) : (isQRTList ? 20 : 20)} className="px-2 py-1 font-semibold text-gray-900 text-center relative">
         <div className="flex items-center justify-center gap-4">
           {displayNumbers && (
             <div className="group relative flex-shrink-0">

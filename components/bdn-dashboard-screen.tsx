@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useMemo } from "react"
 import { ChevronDown, ChevronRight } from "lucide-react"
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from "recharts"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
@@ -240,6 +240,91 @@ export default function BDNDashboardScreen() {
   const [screeningFilter, setScreeningFilter] = useState<"overall" | "usaCaScreening" | "usaCaNoScreening" | "otherSectorScreening">("overall")
   const [workAreaFilter, setWorkAreaFilter] = useState<"overall" | "sortByWorkArea">("overall")
   const [selectedWorkArea, setSelectedWorkArea] = useState<string>("E75")
+  
+  // State for editable screening data
+  const [editableScreeningData, setEditableScreeningData] = useState(screeningData)
+  
+  // State for editable flight details
+  const [editableFlightDetails, setEditableFlightDetails] = useState(flightDetails)
+  
+  // Recalculate overall totals automatically
+  const recalculatedScreeningData = useMemo(() => {
+    const newOverall = {
+      totalBooked: {
+        pcs: editableScreeningData.usaCaScreening.totalBooked.pcs + 
+             editableScreeningData.usaCaNoScreening.totalBooked.pcs + 
+             editableScreeningData.otherSectorScreening.totalBooked.pcs,
+        grWt: editableScreeningData.usaCaScreening.totalBooked.grWt + 
+              editableScreeningData.usaCaNoScreening.totalBooked.grWt + 
+              editableScreeningData.otherSectorScreening.totalBooked.grWt,
+        mABase: editableScreeningData.usaCaScreening.totalBooked.mABase + 
+                editableScreeningData.usaCaNoScreening.totalBooked.mABase + 
+                editableScreeningData.otherSectorScreening.totalBooked.mABase,
+        lBase: editableScreeningData.usaCaScreening.totalBooked.lBase + 
+               editableScreeningData.usaCaNoScreening.totalBooked.lBase + 
+               editableScreeningData.otherSectorScreening.totalBooked.lBase,
+        kBase: editableScreeningData.usaCaScreening.totalBooked.kBase + 
+               editableScreeningData.usaCaNoScreening.totalBooked.kBase + 
+               editableScreeningData.otherSectorScreening.totalBooked.kBase,
+      },
+      totalPending: {
+        pcs: editableScreeningData.usaCaScreening.totalPending.pcs + 
+             editableScreeningData.usaCaNoScreening.totalPending.pcs + 
+             editableScreeningData.otherSectorScreening.totalPending.pcs,
+        grWt: editableScreeningData.usaCaScreening.totalPending.grWt + 
+              editableScreeningData.usaCaNoScreening.totalPending.grWt + 
+              editableScreeningData.otherSectorScreening.totalPending.grWt,
+        mABase: editableScreeningData.usaCaScreening.totalPending.mABase + 
+                editableScreeningData.usaCaNoScreening.totalPending.mABase + 
+                editableScreeningData.otherSectorScreening.totalPending.mABase,
+        lBase: editableScreeningData.usaCaScreening.totalPending.lBase + 
+               editableScreeningData.usaCaNoScreening.totalPending.lBase + 
+               editableScreeningData.otherSectorScreening.totalPending.lBase,
+        kBase: editableScreeningData.usaCaScreening.totalPending.kBase + 
+               editableScreeningData.usaCaNoScreening.totalPending.kBase + 
+               editableScreeningData.otherSectorScreening.totalPending.kBase,
+      },
+    }
+    
+    return {
+      ...editableScreeningData,
+      overall: newOverall,
+    }
+  }, [editableScreeningData.usaCaScreening, editableScreeningData.usaCaNoScreening, editableScreeningData.otherSectorScreening])
+  
+  // Helper function to update screening data
+  const updateScreeningData = (
+    category: keyof typeof screeningData,
+    field: "totalBooked" | "totalPending",
+    subField: "pcs" | "grWt" | "mABase" | "lBase" | "kBase",
+    value: number
+  ) => {
+    if (category === "overall") return // Don't allow editing overall directly
+    
+    setEditableScreeningData((prev) => ({
+      ...prev,
+      [category]: {
+        ...prev[category],
+        [field]: {
+          ...prev[category][field],
+          [subField]: value,
+        },
+      },
+    }))
+  }
+  
+  // Helper function to update flight details
+  const updateFlightDetail = (
+    index: number,
+    field: keyof typeof flightDetails[0],
+    value: number | string
+  ) => {
+    setEditableFlightDetails((prev) => {
+      const updated = [...prev]
+      updated[index] = { ...updated[index], [field]: value }
+      return updated
+    })
+  }
 
   const filterLabels: Record<typeof screeningFilter, string> = {
     overall: "Overall",
@@ -747,23 +832,23 @@ export default function BDNDashboardScreen() {
                     data={[
                       {
                         name: "M/A Base",
-                        value: screeningData[screeningFilter].totalBooked.mABase,
-                        pcs: screeningData[screeningFilter].totalBooked.mABase,
-                        grWt: screeningData[screeningFilter].totalBooked.grWt,
+                        value: recalculatedScreeningData[screeningFilter].totalBooked.mABase,
+                        pcs: recalculatedScreeningData[screeningFilter].totalBooked.mABase,
+                        grWt: recalculatedScreeningData[screeningFilter].totalBooked.grWt,
                         color: "#DC2626", // Red
                       },
                       {
                         name: "L Base",
-                        value: screeningData[screeningFilter].totalBooked.lBase,
-                        pcs: screeningData[screeningFilter].totalBooked.lBase,
-                        grWt: screeningData[screeningFilter].totalBooked.grWt,
+                        value: recalculatedScreeningData[screeningFilter].totalBooked.lBase,
+                        pcs: recalculatedScreeningData[screeningFilter].totalBooked.lBase,
+                        grWt: recalculatedScreeningData[screeningFilter].totalBooked.grWt,
                         color: "#EF4444", // Lighter red
                       },
                       {
                         name: "K Base",
-                        value: screeningData[screeningFilter].totalBooked.kBase,
-                        pcs: screeningData[screeningFilter].totalBooked.kBase,
-                        grWt: screeningData[screeningFilter].totalBooked.grWt,
+                        value: recalculatedScreeningData[screeningFilter].totalBooked.kBase,
+                        pcs: recalculatedScreeningData[screeningFilter].totalBooked.kBase,
+                        grWt: recalculatedScreeningData[screeningFilter].totalBooked.grWt,
                         color: "#B91C1C", // Darker red
                       },
                     ]}
@@ -846,166 +931,316 @@ export default function BDNDashboardScreen() {
                             <tr>
                               <td className="px-3 py-2 border border-gray-300 font-medium">USA & CA Screening</td>
                               <td className="px-2 py-2 border border-gray-300 text-center">
-                                {screeningData.usaCaScreening.totalBooked.pcs.toLocaleString()}
+                                <input
+                                  type="number"
+                                  value={editableScreeningData.usaCaScreening.totalBooked.pcs}
+                                  onChange={(e) => updateScreeningData("usaCaScreening", "totalBooked", "pcs", parseInt(e.target.value) || 0)}
+                                  className="w-full text-center border border-blue-300 rounded bg-blue-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                />
                               </td>
                               <td className="px-2 py-2 border border-gray-300 text-center">
-                                {screeningData.usaCaScreening.totalBooked.grWt.toLocaleString()}
+                                <input
+                                  type="number"
+                                  value={editableScreeningData.usaCaScreening.totalBooked.grWt}
+                                  onChange={(e) => updateScreeningData("usaCaScreening", "totalBooked", "grWt", parseInt(e.target.value) || 0)}
+                                  className="w-full text-center border border-blue-300 rounded bg-blue-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                />
                               </td>
                               <td className="px-2 py-2 border border-gray-300 text-center">
-                                {screeningData.usaCaScreening.totalBooked.mABase}
+                                <input
+                                  type="number"
+                                  value={editableScreeningData.usaCaScreening.totalBooked.mABase}
+                                  onChange={(e) => updateScreeningData("usaCaScreening", "totalBooked", "mABase", parseInt(e.target.value) || 0)}
+                                  className="w-full text-center border-2 border-yellow-400 rounded bg-yellow-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-yellow-500 font-semibold"
+                                />
                               </td>
                               <td className="px-2 py-2 border border-gray-300 text-center">
-                                {screeningData.usaCaScreening.totalBooked.lBase}
+                                <input
+                                  type="number"
+                                  value={editableScreeningData.usaCaScreening.totalBooked.lBase}
+                                  onChange={(e) => updateScreeningData("usaCaScreening", "totalBooked", "lBase", parseInt(e.target.value) || 0)}
+                                  className="w-full text-center border-2 border-yellow-400 rounded bg-yellow-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-yellow-500 font-semibold"
+                                />
                               </td>
                               <td className="px-2 py-2 border border-gray-300 text-center">
-                                {screeningData.usaCaScreening.totalBooked.kBase}
+                                <input
+                                  type="number"
+                                  value={editableScreeningData.usaCaScreening.totalBooked.kBase}
+                                  onChange={(e) => updateScreeningData("usaCaScreening", "totalBooked", "kBase", parseInt(e.target.value) || 0)}
+                                  className="w-full text-center border-2 border-yellow-400 rounded bg-yellow-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-yellow-500 font-semibold"
+                                />
                               </td>
                               <td className="px-2 py-2 border border-gray-300 text-center">
-                                {screeningData.usaCaScreening.totalPending.pcs.toLocaleString()}
+                                <input
+                                  type="number"
+                                  value={editableScreeningData.usaCaScreening.totalPending.pcs}
+                                  onChange={(e) => updateScreeningData("usaCaScreening", "totalPending", "pcs", parseInt(e.target.value) || 0)}
+                                  className="w-full text-center border border-blue-300 rounded bg-blue-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                />
                               </td>
                               <td className="px-2 py-2 border border-gray-300 text-center">
-                                {screeningData.usaCaScreening.totalPending.grWt.toLocaleString()}
+                                <input
+                                  type="number"
+                                  value={editableScreeningData.usaCaScreening.totalPending.grWt}
+                                  onChange={(e) => updateScreeningData("usaCaScreening", "totalPending", "grWt", parseInt(e.target.value) || 0)}
+                                  className="w-full text-center border border-blue-300 rounded bg-blue-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                />
                               </td>
                               <td className="px-2 py-2 border border-gray-300 text-center">
-                                {screeningData.usaCaScreening.totalPending.mABase}
+                                <input
+                                  type="number"
+                                  value={editableScreeningData.usaCaScreening.totalPending.mABase}
+                                  onChange={(e) => updateScreeningData("usaCaScreening", "totalPending", "mABase", parseInt(e.target.value) || 0)}
+                                  className="w-full text-center border-2 border-yellow-400 rounded bg-yellow-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-yellow-500 font-semibold"
+                                />
                               </td>
                               <td className="px-2 py-2 border border-gray-300 text-center">
-                                {screeningData.usaCaScreening.totalPending.lBase}
+                                <input
+                                  type="number"
+                                  value={editableScreeningData.usaCaScreening.totalPending.lBase}
+                                  onChange={(e) => updateScreeningData("usaCaScreening", "totalPending", "lBase", parseInt(e.target.value) || 0)}
+                                  className="w-full text-center border-2 border-yellow-400 rounded bg-yellow-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-yellow-500 font-semibold"
+                                />
                               </td>
                               <td className="px-2 py-2 border border-gray-300 text-center">
-                                {screeningData.usaCaScreening.totalPending.kBase}
+                                <input
+                                  type="number"
+                                  value={editableScreeningData.usaCaScreening.totalPending.kBase}
+                                  onChange={(e) => updateScreeningData("usaCaScreening", "totalPending", "kBase", parseInt(e.target.value) || 0)}
+                                  className="w-full text-center border-2 border-yellow-400 rounded bg-yellow-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-yellow-500 font-semibold"
+                                />
                               </td>
                             </tr>
                             <tr>
                               <td className="px-3 py-2 border border-gray-300 font-medium">USA & CA No Screening</td>
                               <td className="px-2 py-2 border border-gray-300 text-center">
-                                {screeningData.usaCaNoScreening.totalBooked.pcs.toLocaleString()}
+                                <input
+                                  type="number"
+                                  value={editableScreeningData.usaCaNoScreening.totalBooked.pcs}
+                                  onChange={(e) => updateScreeningData("usaCaNoScreening", "totalBooked", "pcs", parseInt(e.target.value) || 0)}
+                                  className="w-full text-center border border-blue-300 rounded bg-blue-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                />
                               </td>
                               <td className="px-2 py-2 border border-gray-300 text-center">
-                                {screeningData.usaCaNoScreening.totalBooked.grWt.toLocaleString()}
+                                <input
+                                  type="number"
+                                  value={editableScreeningData.usaCaNoScreening.totalBooked.grWt}
+                                  onChange={(e) => updateScreeningData("usaCaNoScreening", "totalBooked", "grWt", parseInt(e.target.value) || 0)}
+                                  className="w-full text-center border border-blue-300 rounded bg-blue-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                />
                               </td>
                               <td className="px-2 py-2 border border-gray-300 text-center">
-                                {screeningData.usaCaNoScreening.totalBooked.mABase}
+                                <input
+                                  type="number"
+                                  value={editableScreeningData.usaCaNoScreening.totalBooked.mABase}
+                                  onChange={(e) => updateScreeningData("usaCaNoScreening", "totalBooked", "mABase", parseInt(e.target.value) || 0)}
+                                  className="w-full text-center border-2 border-yellow-400 rounded bg-yellow-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-yellow-500 font-semibold"
+                                />
                               </td>
                               <td className="px-2 py-2 border border-gray-300 text-center">
-                                {screeningData.usaCaNoScreening.totalBooked.lBase}
+                                <input
+                                  type="number"
+                                  value={editableScreeningData.usaCaNoScreening.totalBooked.lBase}
+                                  onChange={(e) => updateScreeningData("usaCaNoScreening", "totalBooked", "lBase", parseInt(e.target.value) || 0)}
+                                  className="w-full text-center border-2 border-yellow-400 rounded bg-yellow-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-yellow-500 font-semibold"
+                                />
                               </td>
                               <td className="px-2 py-2 border border-gray-300 text-center">
-                                {screeningData.usaCaNoScreening.totalBooked.kBase}
+                                <input
+                                  type="number"
+                                  value={editableScreeningData.usaCaNoScreening.totalBooked.kBase}
+                                  onChange={(e) => updateScreeningData("usaCaNoScreening", "totalBooked", "kBase", parseInt(e.target.value) || 0)}
+                                  className="w-full text-center border-2 border-yellow-400 rounded bg-yellow-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-yellow-500 font-semibold"
+                                />
                               </td>
                               <td className="px-2 py-2 border border-gray-300 text-center">
-                                {screeningData.usaCaNoScreening.totalPending.pcs.toLocaleString()}
+                                <input
+                                  type="number"
+                                  value={editableScreeningData.usaCaNoScreening.totalPending.pcs}
+                                  onChange={(e) => updateScreeningData("usaCaNoScreening", "totalPending", "pcs", parseInt(e.target.value) || 0)}
+                                  className="w-full text-center border border-blue-300 rounded bg-blue-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                />
                               </td>
                               <td className="px-2 py-2 border border-gray-300 text-center">
-                                {screeningData.usaCaNoScreening.totalPending.grWt.toLocaleString()}
+                                <input
+                                  type="number"
+                                  value={editableScreeningData.usaCaNoScreening.totalPending.grWt}
+                                  onChange={(e) => updateScreeningData("usaCaNoScreening", "totalPending", "grWt", parseInt(e.target.value) || 0)}
+                                  className="w-full text-center border border-blue-300 rounded bg-blue-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                />
                               </td>
                               <td className="px-2 py-2 border border-gray-300 text-center">
-                                {screeningData.usaCaNoScreening.totalPending.mABase}
+                                <input
+                                  type="number"
+                                  value={editableScreeningData.usaCaNoScreening.totalPending.mABase}
+                                  onChange={(e) => updateScreeningData("usaCaNoScreening", "totalPending", "mABase", parseInt(e.target.value) || 0)}
+                                  className="w-full text-center border-2 border-yellow-400 rounded bg-yellow-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-yellow-500 font-semibold"
+                                />
                               </td>
                               <td className="px-2 py-2 border border-gray-300 text-center">
-                                {screeningData.usaCaNoScreening.totalPending.lBase}
+                                <input
+                                  type="number"
+                                  value={editableScreeningData.usaCaNoScreening.totalPending.lBase}
+                                  onChange={(e) => updateScreeningData("usaCaNoScreening", "totalPending", "lBase", parseInt(e.target.value) || 0)}
+                                  className="w-full text-center border-2 border-yellow-400 rounded bg-yellow-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-yellow-500 font-semibold"
+                                />
                               </td>
                               <td className="px-2 py-2 border border-gray-300 text-center">
-                                {screeningData.usaCaNoScreening.totalPending.kBase}
+                                <input
+                                  type="number"
+                                  value={editableScreeningData.usaCaNoScreening.totalPending.kBase}
+                                  onChange={(e) => updateScreeningData("usaCaNoScreening", "totalPending", "kBase", parseInt(e.target.value) || 0)}
+                                  className="w-full text-center border-2 border-yellow-400 rounded bg-yellow-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-yellow-500 font-semibold"
+                                />
                               </td>
                             </tr>
                             <tr>
                               <td className="px-3 py-2 border border-gray-300 font-medium">Other Sector Screening</td>
                               <td className="px-2 py-2 border border-gray-300 text-center">
-                                {screeningData.otherSectorScreening.totalBooked.pcs.toLocaleString()}
+                                <input
+                                  type="number"
+                                  value={editableScreeningData.otherSectorScreening.totalBooked.pcs}
+                                  onChange={(e) => updateScreeningData("otherSectorScreening", "totalBooked", "pcs", parseInt(e.target.value) || 0)}
+                                  className="w-full text-center border border-blue-300 rounded bg-blue-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                />
                               </td>
                               <td className="px-2 py-2 border border-gray-300 text-center">
-                                {screeningData.otherSectorScreening.totalBooked.grWt.toLocaleString()}
+                                <input
+                                  type="number"
+                                  value={editableScreeningData.otherSectorScreening.totalBooked.grWt}
+                                  onChange={(e) => updateScreeningData("otherSectorScreening", "totalBooked", "grWt", parseInt(e.target.value) || 0)}
+                                  className="w-full text-center border border-blue-300 rounded bg-blue-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                />
                               </td>
                               <td className="px-2 py-2 border border-gray-300 text-center">
-                                {screeningData.otherSectorScreening.totalBooked.mABase}
+                                <input
+                                  type="number"
+                                  value={editableScreeningData.otherSectorScreening.totalBooked.mABase}
+                                  onChange={(e) => updateScreeningData("otherSectorScreening", "totalBooked", "mABase", parseInt(e.target.value) || 0)}
+                                  className="w-full text-center border-2 border-yellow-400 rounded bg-yellow-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-yellow-500 font-semibold"
+                                />
                               </td>
                               <td className="px-2 py-2 border border-gray-300 text-center">
-                                {screeningData.otherSectorScreening.totalBooked.lBase}
+                                <input
+                                  type="number"
+                                  value={editableScreeningData.otherSectorScreening.totalBooked.lBase}
+                                  onChange={(e) => updateScreeningData("otherSectorScreening", "totalBooked", "lBase", parseInt(e.target.value) || 0)}
+                                  className="w-full text-center border-2 border-yellow-400 rounded bg-yellow-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-yellow-500 font-semibold"
+                                />
                               </td>
                               <td className="px-2 py-2 border border-gray-300 text-center">
-                                {screeningData.otherSectorScreening.totalBooked.kBase}
+                                <input
+                                  type="number"
+                                  value={editableScreeningData.otherSectorScreening.totalBooked.kBase}
+                                  onChange={(e) => updateScreeningData("otherSectorScreening", "totalBooked", "kBase", parseInt(e.target.value) || 0)}
+                                  className="w-full text-center border-2 border-yellow-400 rounded bg-yellow-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-yellow-500 font-semibold"
+                                />
                               </td>
                               <td className="px-2 py-2 border border-gray-300 text-center">
-                                {screeningData.otherSectorScreening.totalPending.pcs.toLocaleString()}
+                                <input
+                                  type="number"
+                                  value={editableScreeningData.otherSectorScreening.totalPending.pcs}
+                                  onChange={(e) => updateScreeningData("otherSectorScreening", "totalPending", "pcs", parseInt(e.target.value) || 0)}
+                                  className="w-full text-center border border-blue-300 rounded bg-blue-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                />
                               </td>
                               <td className="px-2 py-2 border border-gray-300 text-center">
-                                {screeningData.otherSectorScreening.totalPending.grWt.toLocaleString()}
+                                <input
+                                  type="number"
+                                  value={editableScreeningData.otherSectorScreening.totalPending.grWt}
+                                  onChange={(e) => updateScreeningData("otherSectorScreening", "totalPending", "grWt", parseInt(e.target.value) || 0)}
+                                  className="w-full text-center border border-blue-300 rounded bg-blue-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                />
                               </td>
                               <td className="px-2 py-2 border border-gray-300 text-center">
-                                {screeningData.otherSectorScreening.totalPending.mABase}
+                                <input
+                                  type="number"
+                                  value={editableScreeningData.otherSectorScreening.totalPending.mABase}
+                                  onChange={(e) => updateScreeningData("otherSectorScreening", "totalPending", "mABase", parseInt(e.target.value) || 0)}
+                                  className="w-full text-center border-2 border-yellow-400 rounded bg-yellow-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-yellow-500 font-semibold"
+                                />
                               </td>
                               <td className="px-2 py-2 border border-gray-300 text-center">
-                                {screeningData.otherSectorScreening.totalPending.lBase}
+                                <input
+                                  type="number"
+                                  value={editableScreeningData.otherSectorScreening.totalPending.lBase}
+                                  onChange={(e) => updateScreeningData("otherSectorScreening", "totalPending", "lBase", parseInt(e.target.value) || 0)}
+                                  className="w-full text-center border-2 border-yellow-400 rounded bg-yellow-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-yellow-500 font-semibold"
+                                />
                               </td>
                               <td className="px-2 py-2 border border-gray-300 text-center">
-                                {screeningData.otherSectorScreening.totalPending.kBase}
+                                <input
+                                  type="number"
+                                  value={editableScreeningData.otherSectorScreening.totalPending.kBase}
+                                  onChange={(e) => updateScreeningData("otherSectorScreening", "totalPending", "kBase", parseInt(e.target.value) || 0)}
+                                  className="w-full text-center border-2 border-yellow-400 rounded bg-yellow-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-yellow-500 font-semibold"
+                                />
                               </td>
                             </tr>
                             <tr className="bg-gray-50 font-semibold">
                               <td className="px-3 py-2 border border-gray-300">Total Load</td>
                               <td className="px-2 py-2 border border-gray-300 text-center">
-                                {screeningData.overall.totalBooked.pcs.toLocaleString()}
+                                {recalculatedScreeningData.overall.totalBooked.pcs.toLocaleString()}
                               </td>
                               <td className="px-2 py-2 border border-gray-300 text-center">
-                                {screeningData.overall.totalBooked.grWt.toLocaleString()}
+                                {recalculatedScreeningData.overall.totalBooked.grWt.toLocaleString()}
                               </td>
                               <td className="px-2 py-2 border border-gray-300 text-center">
-                                {screeningData.overall.totalBooked.mABase}
+                                {recalculatedScreeningData.overall.totalBooked.mABase}
                               </td>
                               <td className="px-2 py-2 border border-gray-300 text-center">
-                                {screeningData.overall.totalBooked.lBase}
+                                {recalculatedScreeningData.overall.totalBooked.lBase}
                               </td>
                               <td className="px-2 py-2 border border-gray-300 text-center">
-                                {screeningData.overall.totalBooked.kBase}
+                                {recalculatedScreeningData.overall.totalBooked.kBase}
                               </td>
                               <td className="px-2 py-2 border border-gray-300 text-center">
-                                {screeningData.overall.totalPending.pcs.toLocaleString()}
+                                {recalculatedScreeningData.overall.totalPending.pcs.toLocaleString()}
                               </td>
                               <td className="px-2 py-2 border border-gray-300 text-center">
-                                {screeningData.overall.totalPending.grWt.toLocaleString()}
+                                {recalculatedScreeningData.overall.totalPending.grWt.toLocaleString()}
                               </td>
                               <td className="px-2 py-2 border border-gray-300 text-center">
-                                {screeningData.overall.totalPending.mABase}
+                                {recalculatedScreeningData.overall.totalPending.mABase}
                               </td>
                               <td className="px-2 py-2 border border-gray-300 text-center">
-                                {screeningData.overall.totalPending.lBase}
+                                {recalculatedScreeningData.overall.totalPending.lBase}
                               </td>
                               <td className="px-2 py-2 border border-gray-300 text-center">
-                                {screeningData.overall.totalPending.kBase}
+                                {recalculatedScreeningData.overall.totalPending.kBase}
                               </td>
                             </tr>
                             <tr className="bg-gray-50 font-semibold">
                               <td className="px-3 py-2 border border-gray-300">Total Screening Load</td>
                               <td className="px-2 py-2 border border-gray-300 text-center">
-                                {screeningData.overall.totalBooked.pcs.toLocaleString()}
+                                {recalculatedScreeningData.overall.totalBooked.pcs.toLocaleString()}
                               </td>
                               <td className="px-2 py-2 border border-gray-300 text-center">
-                                {screeningData.overall.totalBooked.grWt.toLocaleString()}
+                                {recalculatedScreeningData.overall.totalBooked.grWt.toLocaleString()}
                               </td>
                               <td className="px-2 py-2 border border-gray-300 text-center">
-                                {screeningData.overall.totalBooked.mABase}
+                                {recalculatedScreeningData.overall.totalBooked.mABase}
                               </td>
                               <td className="px-2 py-2 border border-gray-300 text-center">
-                                {screeningData.overall.totalBooked.lBase}
+                                {recalculatedScreeningData.overall.totalBooked.lBase}
                               </td>
                               <td className="px-2 py-2 border border-gray-300 text-center">
-                                {screeningData.overall.totalBooked.kBase}
+                                {recalculatedScreeningData.overall.totalBooked.kBase}
                               </td>
                               <td className="px-2 py-2 border border-gray-300 text-center">
-                                {screeningData.overall.totalPending.pcs.toLocaleString()}
+                                {recalculatedScreeningData.overall.totalPending.pcs.toLocaleString()}
                               </td>
                               <td className="px-2 py-2 border border-gray-300 text-center">
-                                {screeningData.overall.totalPending.grWt.toLocaleString()}
+                                {recalculatedScreeningData.overall.totalPending.grWt.toLocaleString()}
                               </td>
                               <td className="px-2 py-2 border border-gray-300 text-center">
-                                {screeningData.overall.totalPending.mABase}
+                                {recalculatedScreeningData.overall.totalPending.mABase}
                               </td>
                               <td className="px-2 py-2 border border-gray-300 text-center">
-                                {screeningData.overall.totalPending.lBase}
+                                {recalculatedScreeningData.overall.totalPending.lBase}
                               </td>
                               <td className="px-2 py-2 border border-gray-300 text-center">
-                                {screeningData.overall.totalPending.kBase}
+                                {recalculatedScreeningData.overall.totalPending.kBase}
                               </td>
                             </tr>
                           </tbody>
@@ -1052,46 +1287,133 @@ export default function BDNDashboardScreen() {
                             </tr>
                           </thead>
                           <tbody>
-                            {flightDetails.map((flight, idx) => (
+                            {editableFlightDetails.map((flight, idx) => (
                               <tr key={idx} className="hover:bg-gray-50">
-                                <td className="px-2 py-2 border border-gray-300 font-medium">{flight.flight}</td>
-                                <td className="px-2 py-2 border border-gray-300 text-center">{flight.dest}</td>
-                                <td className="px-2 py-2 border border-gray-300 text-center">{flight.etd}</td>
-                                <td className="px-2 py-2 border border-gray-300 text-center">
-                                  {flight.screenedShipments}
+                                <td className="px-2 py-2 border border-gray-300 font-medium">
+                                  <input
+                                    type="text"
+                                    value={flight.flight}
+                                    onChange={(e) => updateFlightDetail(idx, "flight", e.target.value)}
+                                    className="w-full text-center border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-gray-400"
+                                  />
                                 </td>
                                 <td className="px-2 py-2 border border-gray-300 text-center">
-                                  {flight.screenedPcs}
+                                  <input
+                                    type="text"
+                                    value={flight.dest}
+                                    onChange={(e) => updateFlightDetail(idx, "dest", e.target.value)}
+                                    className="w-full text-center border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-gray-400"
+                                  />
                                 </td>
                                 <td className="px-2 py-2 border border-gray-300 text-center">
-                                  {flight.screenedGrWt}
-                                </td>
-                                <td className="px-2 py-2 border border-gray-300 text-center text-gray-400">
-                                  {flight.toBeScreenedShipments === 0 ? "LOADING OVER" : flight.toBeScreenedShipments}
-                                </td>
-                                <td className="px-2 py-2 border border-gray-300 text-center text-gray-400">
-                                  {flight.toBeScreenedPcs === 0 ? "LOADING OVER" : flight.toBeScreenedPcs}
-                                </td>
-                                <td className="px-2 py-2 border border-gray-300 text-center text-gray-400">
-                                  {flight.toBeScreenedGrWt === 0 ? "LOADING OVER" : flight.toBeScreenedGrWt}
+                                  <input
+                                    type="text"
+                                    value={flight.etd}
+                                    onChange={(e) => updateFlightDetail(idx, "etd", e.target.value)}
+                                    className="w-full text-center border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-gray-400"
+                                  />
                                 </td>
                                 <td className="px-2 py-2 border border-gray-300 text-center">
-                                  {flight.buildMABase}
+                                  <input
+                                    type="number"
+                                    value={flight.screenedShipments}
+                                    onChange={(e) => updateFlightDetail(idx, "screenedShipments", parseInt(e.target.value) || 0)}
+                                    className="w-full text-center border-2 border-blue-400 rounded bg-blue-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 font-semibold"
+                                  />
                                 </td>
                                 <td className="px-2 py-2 border border-gray-300 text-center">
-                                  {flight.buildLBase}
+                                  <input
+                                    type="number"
+                                    value={flight.screenedPcs}
+                                    onChange={(e) => updateFlightDetail(idx, "screenedPcs", parseInt(e.target.value) || 0)}
+                                    className="w-full text-center border-2 border-blue-400 rounded bg-blue-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 font-semibold"
+                                  />
                                 </td>
                                 <td className="px-2 py-2 border border-gray-300 text-center">
-                                  {flight.buildKBase}
+                                  <input
+                                    type="number"
+                                    value={flight.screenedGrWt}
+                                    onChange={(e) => updateFlightDetail(idx, "screenedGrWt", parseInt(e.target.value) || 0)}
+                                    className="w-full text-center border-2 border-blue-400 rounded bg-blue-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 font-semibold"
+                                  />
                                 </td>
                                 <td className="px-2 py-2 border border-gray-300 text-center text-gray-400">
-                                  {flight.toBuildMABase === 0 ? "LOADING OVER" : flight.toBuildMABase}
+                                  <input
+                                    type="number"
+                                    value={flight.toBeScreenedShipments}
+                                    onChange={(e) => updateFlightDetail(idx, "toBeScreenedShipments", parseInt(e.target.value) || 0)}
+                                    className="w-full text-center border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-gray-400"
+                                    placeholder={flight.toBeScreenedShipments === 0 ? "LOADING OVER" : ""}
+                                  />
                                 </td>
                                 <td className="px-2 py-2 border border-gray-300 text-center text-gray-400">
-                                  {flight.toBuildLBase === 0 ? "LOADING OVER" : flight.toBuildLBase}
+                                  <input
+                                    type="number"
+                                    value={flight.toBeScreenedPcs}
+                                    onChange={(e) => updateFlightDetail(idx, "toBeScreenedPcs", parseInt(e.target.value) || 0)}
+                                    className="w-full text-center border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-gray-400"
+                                    placeholder={flight.toBeScreenedPcs === 0 ? "LOADING OVER" : ""}
+                                  />
                                 </td>
                                 <td className="px-2 py-2 border border-gray-300 text-center text-gray-400">
-                                  {flight.toBuildKBase === 0 ? "LOADING OVER" : flight.toBuildKBase}
+                                  <input
+                                    type="number"
+                                    value={flight.toBeScreenedGrWt}
+                                    onChange={(e) => updateFlightDetail(idx, "toBeScreenedGrWt", parseInt(e.target.value) || 0)}
+                                    className="w-full text-center border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-gray-400"
+                                    placeholder={flight.toBeScreenedGrWt === 0 ? "LOADING OVER" : ""}
+                                  />
+                                </td>
+                                <td className="px-2 py-2 border border-gray-300 text-center">
+                                  <input
+                                    type="number"
+                                    value={flight.buildMABase}
+                                    onChange={(e) => updateFlightDetail(idx, "buildMABase", parseInt(e.target.value) || 0)}
+                                    className="w-full text-center border-2 border-yellow-400 rounded bg-yellow-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-yellow-500 font-semibold"
+                                  />
+                                </td>
+                                <td className="px-2 py-2 border border-gray-300 text-center">
+                                  <input
+                                    type="number"
+                                    value={flight.buildLBase}
+                                    onChange={(e) => updateFlightDetail(idx, "buildLBase", parseInt(e.target.value) || 0)}
+                                    className="w-full text-center border-2 border-yellow-400 rounded bg-yellow-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-yellow-500 font-semibold"
+                                  />
+                                </td>
+                                <td className="px-2 py-2 border border-gray-300 text-center">
+                                  <input
+                                    type="number"
+                                    value={flight.buildKBase}
+                                    onChange={(e) => updateFlightDetail(idx, "buildKBase", parseInt(e.target.value) || 0)}
+                                    className="w-full text-center border-2 border-yellow-400 rounded bg-yellow-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-yellow-500 font-semibold"
+                                  />
+                                </td>
+                                <td className="px-2 py-2 border border-gray-300 text-center text-gray-400">
+                                  <input
+                                    type="number"
+                                    value={flight.toBuildMABase}
+                                    onChange={(e) => updateFlightDetail(idx, "toBuildMABase", parseInt(e.target.value) || 0)}
+                                    className="w-full text-center border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-gray-400"
+                                    placeholder={flight.toBuildMABase === 0 ? "LOADING OVER" : ""}
+                                  />
+                                </td>
+                                <td className="px-2 py-2 border border-gray-300 text-center text-gray-400">
+                                  <input
+                                    type="number"
+                                    value={flight.toBuildLBase}
+                                    onChange={(e) => updateFlightDetail(idx, "toBuildLBase", parseInt(e.target.value) || 0)}
+                                    className="w-full text-center border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-gray-400"
+                                    placeholder={flight.toBuildLBase === 0 ? "LOADING OVER" : ""}
+                                  />
+                                </td>
+                                <td className="px-2 py-2 border border-gray-300 text-center text-gray-400">
+                                  <input
+                                    type="number"
+                                    value={flight.toBuildKBase}
+                                    onChange={(e) => updateFlightDetail(idx, "toBuildKBase", parseInt(e.target.value) || 0)}
+                                    className="w-full text-center border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-gray-400"
+                                    placeholder={flight.toBuildKBase === 0 ? "LOADING OVER" : ""}
+                                  />
                                 </td>
                               </tr>
                             ))}
@@ -1100,13 +1422,13 @@ export default function BDNDashboardScreen() {
                                 TOTAL
                               </td>
                               <td className="px-2 py-2 border border-gray-300 text-center">
-                                {flightDetails.reduce((sum, f) => sum + f.screenedShipments, 0)}
+                                {editableFlightDetails.reduce((sum, f) => sum + f.screenedShipments, 0)}
                               </td>
                               <td className="px-2 py-2 border border-gray-300 text-center">
-                                {flightDetails.reduce((sum, f) => sum + f.screenedPcs, 0)}
+                                {editableFlightDetails.reduce((sum, f) => sum + f.screenedPcs, 0)}
                               </td>
                               <td className="px-2 py-2 border border-gray-300 text-center">
-                                {flightDetails.reduce((sum, f) => sum + f.screenedGrWt, 0)}
+                                {editableFlightDetails.reduce((sum, f) => sum + f.screenedGrWt, 0)}
                               </td>
                               <td className="px-2 py-2 border border-gray-300 text-center text-gray-400">
                                 LOADING OVER
@@ -1118,22 +1440,22 @@ export default function BDNDashboardScreen() {
                                 LOADING OVER
                               </td>
                               <td className="px-2 py-2 border border-gray-300 text-center">
-                                {flightDetails.reduce((sum, f) => sum + f.buildMABase, 0)}
+                                {editableFlightDetails.reduce((sum, f) => sum + f.buildMABase, 0)}
                               </td>
                               <td className="px-2 py-2 border border-gray-300 text-center">
-                                {flightDetails.reduce((sum, f) => sum + f.buildLBase, 0)}
+                                {editableFlightDetails.reduce((sum, f) => sum + f.buildLBase, 0)}
                               </td>
                               <td className="px-2 py-2 border border-gray-300 text-center">
-                                {flightDetails.reduce((sum, f) => sum + f.buildKBase, 0)}
+                                {editableFlightDetails.reduce((sum, f) => sum + f.buildKBase, 0)}
                               </td>
                               <td className="px-2 py-2 border border-gray-300 text-center">
-                                {screeningData.overall.totalPending.mABase}
+                                {recalculatedScreeningData.overall.totalPending.mABase}
                               </td>
                               <td className="px-2 py-2 border border-gray-300 text-center">
-                                {screeningData.overall.totalPending.lBase}
+                                {recalculatedScreeningData.overall.totalPending.lBase}
                               </td>
                               <td className="px-2 py-2 border border-gray-300 text-center">
-                                {screeningData.overall.totalPending.kBase}
+                                {recalculatedScreeningData.overall.totalPending.kBase}
                               </td>
                             </tr>
                           </tbody>

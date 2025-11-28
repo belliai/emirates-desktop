@@ -24,6 +24,7 @@ import ShiftSummaryReportScreen from "@/components/shift-summary-report-screen"
 import BUPAllocationListScreen from "@/components/bup-allocation-list-screen"
 import ScreeningSummaryScreen from "@/components/screening-summary-screen"
 import IncomingWorkloadScreen from "@/components/incoming-workload-screen"
+import QRTListScreen from "@/components/qrt-list-screen"
 import SideNavigation from "@/components/side-navigation"
 import { FlightProvider, useFlights } from "@/lib/flight-context"
 import { LoadPlanProvider } from "@/lib/load-plan-context"
@@ -57,6 +58,7 @@ function AppContent() {
     | "bup-allocation-list"
     | "screening"
     | "incoming-workload"
+    | "qrt-list"
   >("desktop")
   const [selectedULD, setSelectedULD] = useState<(ULD & { flightNumber: string; uldIndex: number }) | null>(null)
   const [buildupStaffParams, setBuildupStaffParams] = useState<{ staff?: string } | null>(null)
@@ -114,6 +116,8 @@ function AppContent() {
         return <LoadPlansScreen />
       case "lists":
         return <ListsScreen />
+      case "qrt-list":
+        return <QRTListScreen />
       case "non-preannounced":
         return <NonPreaannouncedScreen />
       case "dwc-steering":
