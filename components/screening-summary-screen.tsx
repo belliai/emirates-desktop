@@ -3,6 +3,8 @@
 import { useState, useMemo } from "react"
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from "recharts"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
+import { ChevronDown, ChevronRight } from "lucide-react"
 
 // Screening data structure (from image)
 const initialScreeningData = {
@@ -48,9 +50,33 @@ const ScreeningTooltip = ({ active, payload }: any) => {
 
 type ScreeningFilter = "overall" | "usaCaScreening" | "usaCaNoScreening" | "otherSectorScreening"
 
+// US Screening & Loading Details flight data
+const flightDetails = [
+  { flight: "EK0213", dest: "MIA-BOG", etd: "02:15", screenedShipments: 0, screenedPcs: 0, screenedGrWt: 0, toBeScreenedShipments: 0, toBeScreenedPcs: 0, toBeScreenedGrWt: 0, buildMABase: 1, buildLBase: 0, buildKBase: 0, toBuildMABase: 0, toBuildLBase: 0, toBuildKBase: 0 },
+  { flight: "EK0231", dest: "IAD", etd: "02:20", screenedShipments: 0, screenedPcs: 5, screenedGrWt: 1285, toBeScreenedShipments: 0, toBeScreenedPcs: 0, toBeScreenedGrWt: 0, buildMABase: 1, buildLBase: 1, buildKBase: 0, toBuildMABase: 0, toBuildLBase: 0, toBuildKBase: 0 },
+  { flight: "EK0243", dest: "YUL", etd: "02:30", screenedShipments: 0, screenedPcs: 0, screenedGrWt: 0, toBeScreenedShipments: 0, toBeScreenedPcs: 0, toBeScreenedGrWt: 0, buildMABase: 0, buildLBase: 0, buildKBase: 0, toBuildMABase: 0, toBuildLBase: 0, toBuildKBase: 0 },
+  { flight: "EK0221", dest: "DFW", etd: "02:40", screenedShipments: 0, screenedPcs: 0, screenedGrWt: 0, toBeScreenedShipments: 0, toBeScreenedPcs: 0, toBeScreenedGrWt: 0, buildMABase: 0, buildLBase: 0, buildKBase: 0, toBuildMABase: 0, toBuildLBase: 0, toBuildKBase: 0 },
+  { flight: "EK0203", dest: "JFK", etd: "02:50", screenedShipments: 0, screenedPcs: 0, screenedGrWt: 0, toBeScreenedShipments: 0, toBeScreenedPcs: 0, toBeScreenedGrWt: 0, buildMABase: 0, buildLBase: 0, buildKBase: 0, toBuildMABase: 0, toBuildLBase: 0, toBuildKBase: 0 },
+  { flight: "EK0241", dest: "YYZ", etd: "03:30", screenedShipments: 0, screenedPcs: 0, screenedGrWt: 0, toBeScreenedShipments: 0, toBeScreenedPcs: 0, toBeScreenedGrWt: 0, buildMABase: 0, buildLBase: 0, buildKBase: 0, toBuildMABase: 0, toBuildLBase: 0, toBuildKBase: 0 },
+  { flight: "EK0237", dest: "BOS", etd: "08:20", screenedShipments: 2, screenedPcs: 822, screenedGrWt: 9242, toBeScreenedShipments: 0, toBeScreenedPcs: 0, toBeScreenedGrWt: 0, buildMABase: 4, buildLBase: 0, buildKBase: 0, toBuildMABase: 0, toBuildLBase: 0, toBuildKBase: 0 },
+  { flight: "EK0201", dest: "JFK", etd: "08:30", screenedShipments: 5, screenedPcs: 120, screenedGrWt: 1230, toBeScreenedShipments: 0, toBeScreenedPcs: 0, toBeScreenedGrWt: 0, buildMABase: 4, buildLBase: 1, buildKBase: 0, toBuildMABase: 0, toBuildLBase: 0, toBuildKBase: 0 },
+  { flight: "EK0215", dest: "LAX", etd: "08:55", screenedShipments: 0, screenedPcs: 0, screenedGrWt: 0, toBeScreenedShipments: 0, toBeScreenedPcs: 0, toBeScreenedGrWt: 0, buildMABase: 0, buildLBase: 4, buildKBase: 0, toBuildMABase: 0, toBuildLBase: 0, toBuildKBase: 0 },
+  { flight: "EK0225", dest: "SFO", etd: "09:10", screenedShipments: 2, screenedPcs: 11, screenedGrWt: 289, toBeScreenedShipments: 0, toBeScreenedPcs: 0, toBeScreenedGrWt: 0, buildMABase: 0, buildLBase: 0, buildKBase: 1, toBuildMABase: 0, toBuildLBase: 0, toBuildKBase: 0 },
+  { flight: "EK0205", dest: "JFK", etd: "09:30", screenedShipments: 1, screenedPcs: 45, screenedGrWt: 1300, toBeScreenedShipments: 0, toBeScreenedPcs: 0, toBeScreenedGrWt: 0, buildMABase: 0, buildLBase: 0, buildKBase: 2, toBuildMABase: 0, toBuildLBase: 0, toBuildKBase: 0 },
+  { flight: "EK0211", dest: "IAH", etd: "09:30", screenedShipments: 3, screenedPcs: 4, screenedGrWt: 22, toBeScreenedShipments: 0, toBeScreenedPcs: 0, toBeScreenedGrWt: 0, buildMABase: 1, buildLBase: 0, buildKBase: 0, toBuildMABase: 0, toBuildLBase: 0, toBuildKBase: 0 },
+  { flight: "EK0235", dest: "ORD", etd: "09:55", screenedShipments: 2, screenedPcs: 360, screenedGrWt: 4205, toBeScreenedShipments: 0, toBeScreenedPcs: 0, toBeScreenedGrWt: 0, buildMABase: 1, buildLBase: 0, buildKBase: 0, toBuildMABase: 0, toBuildLBase: 0, toBuildKBase: 0 },
+  { flight: "EK0229", dest: "SEA", etd: "09:55", screenedShipments: 0, screenedPcs: 0, screenedGrWt: 0, toBeScreenedShipments: 0, toBeScreenedPcs: 0, toBeScreenedGrWt: 0, buildMABase: 0, buildLBase: 0, buildKBase: 1, toBuildMABase: 0, toBuildLBase: 0, toBuildKBase: 0 },
+  { flight: "EK0209", dest: "EWR", etd: "10:50", screenedShipments: 1, screenedPcs: 4, screenedGrWt: 160, toBeScreenedShipments: 0, toBeScreenedPcs: 0, toBeScreenedGrWt: 0, buildMABase: 0, buildLBase: 1, buildKBase: 0, toBuildMABase: 0, toBuildLBase: 0, toBuildKBase: 0 },
+  { flight: "EK0957", dest: "BEY", etd: "07:35", screenedShipments: 0, screenedPcs: 0, screenedGrWt: 0, toBeScreenedShipments: 0, toBeScreenedPcs: 0, toBeScreenedGrWt: 0, buildMABase: 8, buildLBase: 0, buildKBase: 2, toBuildMABase: 0, toBuildLBase: 0, toBuildKBase: 0 },
+  { flight: "EK0943", dest: "BGW", etd: "12:40", screenedShipments: 0, screenedPcs: 0, screenedGrWt: 0, toBeScreenedShipments: 0, toBeScreenedPcs: 0, toBeScreenedGrWt: 0, buildMABase: 3, buildLBase: 0, buildKBase: 0, toBuildMABase: 0, toBuildLBase: 0, toBuildKBase: 0 },
+  { flight: "EK0953", dest: "BEY", etd: "15:10", screenedShipments: 0, screenedPcs: 0, screenedGrWt: 0, toBeScreenedShipments: 0, toBeScreenedPcs: 0, toBeScreenedGrWt: 0, buildMABase: 2, buildLBase: 1, buildKBase: 1, toBuildMABase: 6, toBuildLBase: 0, toBuildKBase: 2 },
+]
+
 export default function ScreeningSummaryScreen() {
   const [screeningFilter, setScreeningFilter] = useState<ScreeningFilter>("overall")
   const [screeningData, setScreeningData] = useState(initialScreeningData)
+  const [isUSDetailsOpen, setIsUSDetailsOpen] = useState(false)
+  const [editableFlightDetails, setEditableFlightDetails] = useState(flightDetails)
 
   const filterLabels: Record<ScreeningFilter, string> = {
     overall: "Total Load",
@@ -128,6 +154,19 @@ export default function ScreeningSummaryScreen() {
         },
       },
     }))
+  }
+
+  // Helper function to update flight details
+  const updateFlightDetail = (
+    index: number,
+    field: keyof typeof flightDetails[0],
+    value: number | string
+  ) => {
+    setEditableFlightDetails((prev) => {
+      const updated = [...prev]
+      updated[index] = { ...updated[index], [field]: value }
+      return updated
+    })
   }
 
   // Get chart data based on filter
@@ -272,7 +311,7 @@ export default function ScreeningSummaryScreen() {
                             type="number"
                             value={screeningData.usaCaScreening.totalBooked.pcs}
                             onChange={(e) => updateScreeningData("usaCaScreening", "totalBooked", "pcs", parseInt(e.target.value) || 0)}
-                            className="w-full text-center border border-blue-300 rounded bg-blue-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            className="w-full text-center border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-gray-400"
                           />
                         </td>
                         <td className="px-2 py-2 border border-gray-300 text-center">
@@ -280,7 +319,7 @@ export default function ScreeningSummaryScreen() {
                             type="number"
                             value={screeningData.usaCaScreening.totalBooked.grWt}
                             onChange={(e) => updateScreeningData("usaCaScreening", "totalBooked", "grWt", parseInt(e.target.value) || 0)}
-                            className="w-full text-center border border-blue-300 rounded bg-blue-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            className="w-full text-center border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-gray-400"
                           />
                         </td>
                         <td className="px-2 py-2 border border-gray-300 text-center">
@@ -288,7 +327,7 @@ export default function ScreeningSummaryScreen() {
                             type="number"
                             value={screeningData.usaCaScreening.totalBooked.mABase}
                             onChange={(e) => updateScreeningData("usaCaScreening", "totalBooked", "mABase", parseInt(e.target.value) || 0)}
-                            className="w-full text-center border-2 border-yellow-400 rounded bg-yellow-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-yellow-500 font-semibold"
+                            className="w-full text-center border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-gray-400"
                           />
                         </td>
                         <td className="px-2 py-2 border border-gray-300 text-center">
@@ -296,7 +335,7 @@ export default function ScreeningSummaryScreen() {
                             type="number"
                             value={screeningData.usaCaScreening.totalBooked.lBase}
                             onChange={(e) => updateScreeningData("usaCaScreening", "totalBooked", "lBase", parseInt(e.target.value) || 0)}
-                            className="w-full text-center border-2 border-yellow-400 rounded bg-yellow-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-yellow-500 font-semibold"
+                            className="w-full text-center border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-gray-400"
                           />
                         </td>
                         <td className="px-2 py-2 border border-gray-300 text-center">
@@ -304,7 +343,7 @@ export default function ScreeningSummaryScreen() {
                             type="number"
                             value={screeningData.usaCaScreening.totalBooked.kBase}
                             onChange={(e) => updateScreeningData("usaCaScreening", "totalBooked", "kBase", parseInt(e.target.value) || 0)}
-                            className="w-full text-center border-2 border-yellow-400 rounded bg-yellow-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-yellow-500 font-semibold"
+                            className="w-full text-center border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-gray-400"
                           />
                         </td>
                         <td className="px-2 py-2 border border-gray-300 text-center">
@@ -312,7 +351,7 @@ export default function ScreeningSummaryScreen() {
                             type="number"
                             value={screeningData.usaCaScreening.totalPending.pcs}
                             onChange={(e) => updateScreeningData("usaCaScreening", "totalPending", "pcs", parseInt(e.target.value) || 0)}
-                            className="w-full text-center border border-blue-300 rounded bg-blue-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            className="w-full text-center border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-gray-400"
                           />
                         </td>
                         <td className="px-2 py-2 border border-gray-300 text-center">
@@ -320,7 +359,7 @@ export default function ScreeningSummaryScreen() {
                             type="number"
                             value={screeningData.usaCaScreening.totalPending.grWt}
                             onChange={(e) => updateScreeningData("usaCaScreening", "totalPending", "grWt", parseInt(e.target.value) || 0)}
-                            className="w-full text-center border border-blue-300 rounded bg-blue-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            className="w-full text-center border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-gray-400"
                           />
                         </td>
                         <td className="px-2 py-2 border border-gray-300 text-center">
@@ -328,7 +367,7 @@ export default function ScreeningSummaryScreen() {
                             type="number"
                             value={screeningData.usaCaScreening.totalPending.mABase}
                             onChange={(e) => updateScreeningData("usaCaScreening", "totalPending", "mABase", parseInt(e.target.value) || 0)}
-                            className="w-full text-center border-2 border-yellow-400 rounded bg-yellow-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-yellow-500 font-semibold"
+                            className="w-full text-center border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-gray-400"
                           />
                         </td>
                         <td className="px-2 py-2 border border-gray-300 text-center">
@@ -336,7 +375,7 @@ export default function ScreeningSummaryScreen() {
                             type="number"
                             value={screeningData.usaCaScreening.totalPending.lBase}
                             onChange={(e) => updateScreeningData("usaCaScreening", "totalPending", "lBase", parseInt(e.target.value) || 0)}
-                            className="w-full text-center border-2 border-yellow-400 rounded bg-yellow-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-yellow-500 font-semibold"
+                            className="w-full text-center border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-gray-400"
                           />
                         </td>
                         <td className="px-2 py-2 border border-gray-300 text-center">
@@ -344,7 +383,7 @@ export default function ScreeningSummaryScreen() {
                             type="number"
                             value={screeningData.usaCaScreening.totalPending.kBase}
                             onChange={(e) => updateScreeningData("usaCaScreening", "totalPending", "kBase", parseInt(e.target.value) || 0)}
-                            className="w-full text-center border-2 border-yellow-400 rounded bg-yellow-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-yellow-500 font-semibold"
+                            className="w-full text-center border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-gray-400"
                           />
                         </td>
                       </tr>
@@ -355,7 +394,7 @@ export default function ScreeningSummaryScreen() {
                             type="number"
                             value={screeningData.usaCaNoScreening.totalBooked.pcs}
                             onChange={(e) => updateScreeningData("usaCaNoScreening", "totalBooked", "pcs", parseInt(e.target.value) || 0)}
-                            className="w-full text-center border border-blue-300 rounded bg-blue-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            className="w-full text-center border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-gray-400"
                           />
                         </td>
                         <td className="px-2 py-2 border border-gray-300 text-center">
@@ -363,7 +402,7 @@ export default function ScreeningSummaryScreen() {
                             type="number"
                             value={screeningData.usaCaNoScreening.totalBooked.grWt}
                             onChange={(e) => updateScreeningData("usaCaNoScreening", "totalBooked", "grWt", parseInt(e.target.value) || 0)}
-                            className="w-full text-center border border-blue-300 rounded bg-blue-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            className="w-full text-center border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-gray-400"
                           />
                         </td>
                         <td className="px-2 py-2 border border-gray-300 text-center">
@@ -371,7 +410,7 @@ export default function ScreeningSummaryScreen() {
                             type="number"
                             value={screeningData.usaCaNoScreening.totalBooked.mABase}
                             onChange={(e) => updateScreeningData("usaCaNoScreening", "totalBooked", "mABase", parseInt(e.target.value) || 0)}
-                            className="w-full text-center border-2 border-yellow-400 rounded bg-yellow-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-yellow-500 font-semibold"
+                            className="w-full text-center border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-gray-400"
                           />
                         </td>
                         <td className="px-2 py-2 border border-gray-300 text-center">
@@ -379,7 +418,7 @@ export default function ScreeningSummaryScreen() {
                             type="number"
                             value={screeningData.usaCaNoScreening.totalBooked.lBase}
                             onChange={(e) => updateScreeningData("usaCaNoScreening", "totalBooked", "lBase", parseInt(e.target.value) || 0)}
-                            className="w-full text-center border-2 border-yellow-400 rounded bg-yellow-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-yellow-500 font-semibold"
+                            className="w-full text-center border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-gray-400"
                           />
                         </td>
                         <td className="px-2 py-2 border border-gray-300 text-center">
@@ -387,7 +426,7 @@ export default function ScreeningSummaryScreen() {
                             type="number"
                             value={screeningData.usaCaNoScreening.totalBooked.kBase}
                             onChange={(e) => updateScreeningData("usaCaNoScreening", "totalBooked", "kBase", parseInt(e.target.value) || 0)}
-                            className="w-full text-center border-2 border-yellow-400 rounded bg-yellow-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-yellow-500 font-semibold"
+                            className="w-full text-center border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-gray-400"
                           />
                         </td>
                         <td className="px-2 py-2 border border-gray-300 text-center">
@@ -395,7 +434,7 @@ export default function ScreeningSummaryScreen() {
                             type="number"
                             value={screeningData.usaCaNoScreening.totalPending.pcs}
                             onChange={(e) => updateScreeningData("usaCaNoScreening", "totalPending", "pcs", parseInt(e.target.value) || 0)}
-                            className="w-full text-center border border-blue-300 rounded bg-blue-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            className="w-full text-center border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-gray-400"
                           />
                         </td>
                         <td className="px-2 py-2 border border-gray-300 text-center">
@@ -403,7 +442,7 @@ export default function ScreeningSummaryScreen() {
                             type="number"
                             value={screeningData.usaCaNoScreening.totalPending.grWt}
                             onChange={(e) => updateScreeningData("usaCaNoScreening", "totalPending", "grWt", parseInt(e.target.value) || 0)}
-                            className="w-full text-center border border-blue-300 rounded bg-blue-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            className="w-full text-center border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-gray-400"
                           />
                         </td>
                         <td className="px-2 py-2 border border-gray-300 text-center">
@@ -411,7 +450,7 @@ export default function ScreeningSummaryScreen() {
                             type="number"
                             value={screeningData.usaCaNoScreening.totalPending.mABase}
                             onChange={(e) => updateScreeningData("usaCaNoScreening", "totalPending", "mABase", parseInt(e.target.value) || 0)}
-                            className="w-full text-center border-2 border-yellow-400 rounded bg-yellow-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-yellow-500 font-semibold"
+                            className="w-full text-center border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-gray-400"
                           />
                         </td>
                         <td className="px-2 py-2 border border-gray-300 text-center">
@@ -419,7 +458,7 @@ export default function ScreeningSummaryScreen() {
                             type="number"
                             value={screeningData.usaCaNoScreening.totalPending.lBase}
                             onChange={(e) => updateScreeningData("usaCaNoScreening", "totalPending", "lBase", parseInt(e.target.value) || 0)}
-                            className="w-full text-center border-2 border-yellow-400 rounded bg-yellow-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-yellow-500 font-semibold"
+                            className="w-full text-center border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-gray-400"
                           />
                         </td>
                         <td className="px-2 py-2 border border-gray-300 text-center">
@@ -427,7 +466,7 @@ export default function ScreeningSummaryScreen() {
                             type="number"
                             value={screeningData.usaCaNoScreening.totalPending.kBase}
                             onChange={(e) => updateScreeningData("usaCaNoScreening", "totalPending", "kBase", parseInt(e.target.value) || 0)}
-                            className="w-full text-center border-2 border-yellow-400 rounded bg-yellow-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-yellow-500 font-semibold"
+                            className="w-full text-center border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-gray-400"
                           />
                         </td>
                       </tr>
@@ -438,7 +477,7 @@ export default function ScreeningSummaryScreen() {
                             type="number"
                             value={screeningData.otherSectorScreening.totalBooked.pcs}
                             onChange={(e) => updateScreeningData("otherSectorScreening", "totalBooked", "pcs", parseInt(e.target.value) || 0)}
-                            className="w-full text-center border border-blue-300 rounded bg-blue-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            className="w-full text-center border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-gray-400"
                           />
                         </td>
                         <td className="px-2 py-2 border border-gray-300 text-center">
@@ -446,7 +485,7 @@ export default function ScreeningSummaryScreen() {
                             type="number"
                             value={screeningData.otherSectorScreening.totalBooked.grWt}
                             onChange={(e) => updateScreeningData("otherSectorScreening", "totalBooked", "grWt", parseInt(e.target.value) || 0)}
-                            className="w-full text-center border border-blue-300 rounded bg-blue-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            className="w-full text-center border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-gray-400"
                           />
                         </td>
                         <td className="px-2 py-2 border border-gray-300 text-center">
@@ -454,7 +493,7 @@ export default function ScreeningSummaryScreen() {
                             type="number"
                             value={screeningData.otherSectorScreening.totalBooked.mABase}
                             onChange={(e) => updateScreeningData("otherSectorScreening", "totalBooked", "mABase", parseInt(e.target.value) || 0)}
-                            className="w-full text-center border-2 border-yellow-400 rounded bg-yellow-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-yellow-500 font-semibold"
+                            className="w-full text-center border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-gray-400"
                           />
                         </td>
                         <td className="px-2 py-2 border border-gray-300 text-center">
@@ -462,7 +501,7 @@ export default function ScreeningSummaryScreen() {
                             type="number"
                             value={screeningData.otherSectorScreening.totalBooked.lBase}
                             onChange={(e) => updateScreeningData("otherSectorScreening", "totalBooked", "lBase", parseInt(e.target.value) || 0)}
-                            className="w-full text-center border-2 border-yellow-400 rounded bg-yellow-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-yellow-500 font-semibold"
+                            className="w-full text-center border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-gray-400"
                           />
                         </td>
                         <td className="px-2 py-2 border border-gray-300 text-center">
@@ -470,7 +509,7 @@ export default function ScreeningSummaryScreen() {
                             type="number"
                             value={screeningData.otherSectorScreening.totalBooked.kBase}
                             onChange={(e) => updateScreeningData("otherSectorScreening", "totalBooked", "kBase", parseInt(e.target.value) || 0)}
-                            className="w-full text-center border-2 border-yellow-400 rounded bg-yellow-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-yellow-500 font-semibold"
+                            className="w-full text-center border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-gray-400"
                           />
                         </td>
                         <td className="px-2 py-2 border border-gray-300 text-center">
@@ -478,7 +517,7 @@ export default function ScreeningSummaryScreen() {
                             type="number"
                             value={screeningData.otherSectorScreening.totalPending.pcs}
                             onChange={(e) => updateScreeningData("otherSectorScreening", "totalPending", "pcs", parseInt(e.target.value) || 0)}
-                            className="w-full text-center border border-blue-300 rounded bg-blue-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            className="w-full text-center border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-gray-400"
                           />
                         </td>
                         <td className="px-2 py-2 border border-gray-300 text-center">
@@ -486,7 +525,7 @@ export default function ScreeningSummaryScreen() {
                             type="number"
                             value={screeningData.otherSectorScreening.totalPending.grWt}
                             onChange={(e) => updateScreeningData("otherSectorScreening", "totalPending", "grWt", parseInt(e.target.value) || 0)}
-                            className="w-full text-center border border-blue-300 rounded bg-blue-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            className="w-full text-center border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-gray-400"
                           />
                         </td>
                         <td className="px-2 py-2 border border-gray-300 text-center">
@@ -494,7 +533,7 @@ export default function ScreeningSummaryScreen() {
                             type="number"
                             value={screeningData.otherSectorScreening.totalPending.mABase}
                             onChange={(e) => updateScreeningData("otherSectorScreening", "totalPending", "mABase", parseInt(e.target.value) || 0)}
-                            className="w-full text-center border-2 border-yellow-400 rounded bg-yellow-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-yellow-500 font-semibold"
+                            className="w-full text-center border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-gray-400"
                           />
                         </td>
                         <td className="px-2 py-2 border border-gray-300 text-center">
@@ -502,7 +541,7 @@ export default function ScreeningSummaryScreen() {
                             type="number"
                             value={screeningData.otherSectorScreening.totalPending.lBase}
                             onChange={(e) => updateScreeningData("otherSectorScreening", "totalPending", "lBase", parseInt(e.target.value) || 0)}
-                            className="w-full text-center border-2 border-yellow-400 rounded bg-yellow-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-yellow-500 font-semibold"
+                            className="w-full text-center border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-gray-400"
                           />
                         </td>
                         <td className="px-2 py-2 border border-gray-300 text-center">
@@ -510,7 +549,7 @@ export default function ScreeningSummaryScreen() {
                             type="number"
                             value={screeningData.otherSectorScreening.totalPending.kBase}
                             onChange={(e) => updateScreeningData("otherSectorScreening", "totalPending", "kBase", parseInt(e.target.value) || 0)}
-                            className="w-full text-center border-2 border-yellow-400 rounded bg-yellow-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-yellow-500 font-semibold"
+                            className="w-full text-center border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-gray-400"
                           />
                         </td>
                       </tr>
@@ -672,6 +711,230 @@ export default function ScreeningSummaryScreen() {
             </div>
           </div>
         </div>
+
+        {/* US SCREENING & LOADING DETAILS Table */}
+        <Collapsible open={isUSDetailsOpen} onOpenChange={setIsUSDetailsOpen} className="mt-4">
+          <CollapsibleTrigger className="w-full">
+            <div className="bg-white rounded-lg border border-gray-200 p-4 flex items-center justify-between hover:bg-gray-50 transition-colors">
+              <h3 className="text-lg font-semibold text-gray-900">US SCREENING & LOADING DETAILS</h3>
+              {isUSDetailsOpen ? <ChevronDown className="w-5 h-5 text-gray-600" /> : <ChevronRight className="w-5 h-5 text-gray-600" />}
+            </div>
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <div className="bg-white rounded-lg border border-gray-200 border-t-0 p-4">
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs border border-gray-300">
+                  <thead>
+                    <tr className="bg-gray-50">
+                      <th rowSpan={2} className="px-2 py-2 text-left border border-gray-300">Flight No</th>
+                      <th rowSpan={2} className="px-2 py-2 text-center border border-gray-300">DEST</th>
+                      <th rowSpan={2} className="px-2 py-2 text-center border border-gray-300">ETD</th>
+                      <th colSpan={3} className="px-2 py-2 text-center border border-gray-300">
+                        Screened
+                      </th>
+                      <th colSpan={3} className="px-2 py-2 text-center border border-gray-300">
+                        To be screened
+                      </th>
+                      <th colSpan={3} className="px-2 py-2 text-center border border-gray-300">
+                        Units Build
+                      </th>
+                      <th colSpan={3} className="px-2 py-2 text-center border border-gray-300">
+                        Units to be Build
+                      </th>
+                    </tr>
+                    <tr className="bg-gray-50">
+                      <th className="px-2 py-2 text-center border border-gray-300">No of shipments</th>
+                      <th className="px-2 py-2 text-center border border-gray-300">No of Pcs</th>
+                      <th className="px-2 py-2 text-center border border-gray-300">Gr. Wt.</th>
+                      <th className="px-2 py-2 text-center border border-gray-300">No of shipments</th>
+                      <th className="px-2 py-2 text-center border border-gray-300">No of Pcs</th>
+                      <th className="px-2 py-2 text-center border border-gray-300">Gr. Wt.</th>
+                      <th className="px-2 py-2 text-center border border-gray-300">M/A Base</th>
+                      <th className="px-2 py-2 text-center border border-gray-300">L Base</th>
+                      <th className="px-2 py-2 text-center border border-gray-300">K Base</th>
+                      <th className="px-2 py-2 text-center border border-gray-300">M/A Base</th>
+                      <th className="px-2 py-2 text-center border border-gray-300">L Base</th>
+                      <th className="px-2 py-2 text-center border border-gray-300">K Base</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {editableFlightDetails.map((flight, idx) => (
+                      <tr key={idx} className="hover:bg-gray-50">
+                        <td className="px-2 py-2 border border-gray-300 font-medium">
+                          <input
+                            type="text"
+                            value={flight.flight}
+                            onChange={(e) => updateFlightDetail(idx, "flight", e.target.value)}
+                            className="w-full text-center border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-gray-400"
+                          />
+                        </td>
+                        <td className="px-2 py-2 border border-gray-300 text-center">
+                          <input
+                            type="text"
+                            value={flight.dest}
+                            onChange={(e) => updateFlightDetail(idx, "dest", e.target.value)}
+                            className="w-full text-center border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-gray-400"
+                          />
+                        </td>
+                        <td className="px-2 py-2 border border-gray-300 text-center">
+                          <input
+                            type="text"
+                            value={flight.etd}
+                            onChange={(e) => updateFlightDetail(idx, "etd", e.target.value)}
+                            className="w-full text-center border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-gray-400"
+                          />
+                        </td>
+                        <td className="px-2 py-2 border border-gray-300 text-center">
+                          <input
+                            type="number"
+                            value={flight.screenedShipments}
+                            onChange={(e) => updateFlightDetail(idx, "screenedShipments", parseInt(e.target.value) || 0)}
+                            className="w-full text-center border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-gray-400"
+                          />
+                        </td>
+                        <td className="px-2 py-2 border border-gray-300 text-center">
+                          <input
+                            type="number"
+                            value={flight.screenedPcs}
+                            onChange={(e) => updateFlightDetail(idx, "screenedPcs", parseInt(e.target.value) || 0)}
+                            className="w-full text-center border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-gray-400"
+                          />
+                        </td>
+                        <td className="px-2 py-2 border border-gray-300 text-center">
+                          <input
+                            type="number"
+                            value={flight.screenedGrWt}
+                            onChange={(e) => updateFlightDetail(idx, "screenedGrWt", parseInt(e.target.value) || 0)}
+                            className="w-full text-center border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-gray-400"
+                          />
+                        </td>
+                        <td className="px-2 py-2 border border-gray-300 text-center text-gray-400">
+                          <input
+                            type="number"
+                            value={flight.toBeScreenedShipments}
+                            onChange={(e) => updateFlightDetail(idx, "toBeScreenedShipments", parseInt(e.target.value) || 0)}
+                            className="w-full text-center border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-gray-400"
+                            placeholder={flight.toBeScreenedShipments === 0 ? "LOADING OVER" : ""}
+                          />
+                        </td>
+                        <td className="px-2 py-2 border border-gray-300 text-center text-gray-400">
+                          <input
+                            type="number"
+                            value={flight.toBeScreenedPcs}
+                            onChange={(e) => updateFlightDetail(idx, "toBeScreenedPcs", parseInt(e.target.value) || 0)}
+                            className="w-full text-center border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-gray-400"
+                            placeholder={flight.toBeScreenedPcs === 0 ? "LOADING OVER" : ""}
+                          />
+                        </td>
+                        <td className="px-2 py-2 border border-gray-300 text-center text-gray-400">
+                          <input
+                            type="number"
+                            value={flight.toBeScreenedGrWt}
+                            onChange={(e) => updateFlightDetail(idx, "toBeScreenedGrWt", parseInt(e.target.value) || 0)}
+                            className="w-full text-center border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-gray-400"
+                            placeholder={flight.toBeScreenedGrWt === 0 ? "LOADING OVER" : ""}
+                          />
+                        </td>
+                        <td className="px-2 py-2 border border-gray-300 text-center">
+                          <input
+                            type="number"
+                            value={flight.buildMABase}
+                            onChange={(e) => updateFlightDetail(idx, "buildMABase", parseInt(e.target.value) || 0)}
+                            className="w-full text-center border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-gray-400"
+                          />
+                        </td>
+                        <td className="px-2 py-2 border border-gray-300 text-center">
+                          <input
+                            type="number"
+                            value={flight.buildLBase}
+                            onChange={(e) => updateFlightDetail(idx, "buildLBase", parseInt(e.target.value) || 0)}
+                            className="w-full text-center border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-gray-400"
+                          />
+                        </td>
+                        <td className="px-2 py-2 border border-gray-300 text-center">
+                          <input
+                            type="number"
+                            value={flight.buildKBase}
+                            onChange={(e) => updateFlightDetail(idx, "buildKBase", parseInt(e.target.value) || 0)}
+                            className="w-full text-center border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-gray-400"
+                          />
+                        </td>
+                        <td className="px-2 py-2 border border-gray-300 text-center text-gray-400">
+                          <input
+                            type="number"
+                            value={flight.toBuildMABase}
+                            onChange={(e) => updateFlightDetail(idx, "toBuildMABase", parseInt(e.target.value) || 0)}
+                            className="w-full text-center border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-gray-400"
+                            placeholder={flight.toBuildMABase === 0 ? "LOADING OVER" : ""}
+                          />
+                        </td>
+                        <td className="px-2 py-2 border border-gray-300 text-center text-gray-400">
+                          <input
+                            type="number"
+                            value={flight.toBuildLBase}
+                            onChange={(e) => updateFlightDetail(idx, "toBuildLBase", parseInt(e.target.value) || 0)}
+                            className="w-full text-center border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-gray-400"
+                            placeholder={flight.toBuildLBase === 0 ? "LOADING OVER" : ""}
+                          />
+                        </td>
+                        <td className="px-2 py-2 border border-gray-300 text-center text-gray-400">
+                          <input
+                            type="number"
+                            value={flight.toBuildKBase}
+                            onChange={(e) => updateFlightDetail(idx, "toBuildKBase", parseInt(e.target.value) || 0)}
+                            className="w-full text-center border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-gray-400"
+                            placeholder={flight.toBuildKBase === 0 ? "LOADING OVER" : ""}
+                          />
+                        </td>
+                      </tr>
+                    ))}
+                    <tr className="bg-gray-50 font-semibold">
+                      <td colSpan={3} className="px-2 py-2 border border-gray-300 text-right">
+                        TOTAL
+                      </td>
+                      <td className="px-2 py-2 border border-gray-300 text-center">
+                        {editableFlightDetails.reduce((sum, f) => sum + f.screenedShipments, 0)}
+                      </td>
+                      <td className="px-2 py-2 border border-gray-300 text-center">
+                        {editableFlightDetails.reduce((sum, f) => sum + f.screenedPcs, 0)}
+                      </td>
+                      <td className="px-2 py-2 border border-gray-300 text-center">
+                        {editableFlightDetails.reduce((sum, f) => sum + f.screenedGrWt, 0)}
+                      </td>
+                      <td className="px-2 py-2 border border-gray-300 text-center text-gray-400">
+                        LOADING OVER
+                      </td>
+                      <td className="px-2 py-2 border border-gray-300 text-center text-gray-400">
+                        LOADING OVER
+                      </td>
+                      <td className="px-2 py-2 border border-gray-300 text-center text-gray-400">
+                        LOADING OVER
+                      </td>
+                      <td className="px-2 py-2 border border-gray-300 text-center">
+                        {editableFlightDetails.reduce((sum, f) => sum + f.buildMABase, 0)}
+                      </td>
+                      <td className="px-2 py-2 border border-gray-300 text-center">
+                        {editableFlightDetails.reduce((sum, f) => sum + f.buildLBase, 0)}
+                      </td>
+                      <td className="px-2 py-2 border border-gray-300 text-center">
+                        {editableFlightDetails.reduce((sum, f) => sum + f.buildKBase, 0)}
+                      </td>
+                      <td className="px-2 py-2 border border-gray-300 text-center">
+                        {recalculatedScreeningData.overall.totalPending.mABase}
+                      </td>
+                      <td className="px-2 py-2 border border-gray-300 text-center">
+                        {recalculatedScreeningData.overall.totalPending.lBase}
+                      </td>
+                      <td className="px-2 py-2 border border-gray-300 text-center">
+                        {recalculatedScreeningData.overall.totalPending.kBase}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </CollapsibleContent>
+        </Collapsible>
       </div>
     </div>
   )
