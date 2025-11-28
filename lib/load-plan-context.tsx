@@ -21,15 +21,26 @@ export type FlightAssignment = {
   sector: string
 }
 
+export type SentBCR = {
+  flight: string
+  date: string
+  loadPlan: any // LoadPlanDetail
+  bcrData: any // BCRData
+  sentAt: string
+  sentBy?: string
+}
+
 type LoadPlanContextType = {
   loadPlans: LoadPlan[]
   flightAssignments: FlightAssignment[]
+  sentBCRs: SentBCR[]
   setLoadPlans: (plans: LoadPlan[]) => void
   addLoadPlan: (plan: LoadPlan) => void
   updateFlightAssignment: (flight: string, name: string) => void
   updateFlightAssignmentSector: (flight: string, sector: string) => void
   sendToFlightAssignment: (flight: string) => void
   getFlightsByStaff: (staffName: string) => LoadPlan[]
+  addSentBCR: (bcr: SentBCR) => void
 }
 
 const LoadPlanContext = createContext<LoadPlanContextType | undefined>(undefined)
@@ -60,6 +71,7 @@ const defaultLoadPlans: LoadPlan[] = [
 export function LoadPlanProvider({ children }: { children: ReactNode }) {
   const [loadPlans, setLoadPlans] = useState<LoadPlan[]>(defaultLoadPlans)
   const [flightAssignments, setFlightAssignments] = useState<FlightAssignment[]>([])
+  const [sentBCRs, setSentBCRs] = useState<SentBCR[]>([])
 
   const addLoadPlan = (plan: LoadPlan) => {
     setLoadPlans((prev) => {
@@ -192,17 +204,32 @@ export function LoadPlanProvider({ children }: { children: ReactNode }) {
     return loadPlans.filter((plan) => assignedFlights.includes(plan.flight))
   }
 
+  const addSentBCR = (bcr: SentBCR) => {
+    setSentBCRs((prev) => {
+      // Check if BCR already exists for this flight, replace it
+      const existingIndex = prev.findIndex((b) => b.flight === bcr.flight)
+      if (existingIndex >= 0) {
+        const updated = [...prev]
+        updated[existingIndex] = bcr
+        return updated
+      }
+      return [...prev, bcr]
+    })
+  }
+
   return (
     <LoadPlanContext.Provider
       value={{
         loadPlans,
         flightAssignments,
+        sentBCRs,
         setLoadPlans,
         addLoadPlan,
         updateFlightAssignment,
         updateFlightAssignmentSector,
         sendToFlightAssignment,
         getFlightsByStaff,
+        addSentBCR,
       }}
     >
       {children}

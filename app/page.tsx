@@ -25,6 +25,7 @@ import BUPAllocationListScreen from "@/components/bup-allocation-list-screen"
 import ScreeningSummaryScreen from "@/components/screening-summary-screen"
 import IncomingWorkloadScreen from "@/components/incoming-workload-screen"
 import QRTListScreen from "@/components/qrt-list-screen"
+import BCRScreen from "@/components/bcr-screen"
 import SideNavigation from "@/components/side-navigation"
 import { FlightProvider, useFlights } from "@/lib/flight-context"
 import { LoadPlanProvider } from "@/lib/load-plan-context"
@@ -59,6 +60,7 @@ function AppContent() {
     | "screening"
     | "incoming-workload"
     | "qrt-list"
+    | "bcr"
   >("desktop")
   const [selectedULD, setSelectedULD] = useState<(ULD & { flightNumber: string; uldIndex: number }) | null>(null)
   const [buildupStaffParams, setBuildupStaffParams] = useState<{ staff?: string } | null>(null)
@@ -154,6 +156,8 @@ function AppContent() {
         return <FlightAssignmentScreen />
       case "shift-summary-report":
         return <ShiftSummaryReportScreen />
+      case "bcr":
+        return <BCRScreen />
       case "staff":
         return <PerformanceScreen />
       case "uld-management":

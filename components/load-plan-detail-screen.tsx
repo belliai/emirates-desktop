@@ -84,7 +84,7 @@ export default function LoadPlanDetailScreen({ loadPlan, onBack, onSave, onNavig
     awbIndex: number
   } | null>(null)
   const [selectedAWBKeys, setSelectedAWBKeys] = useState<Set<string>>(new Set())
-  const { sendToFlightAssignment, flightAssignments } = useLoadPlans()
+  const { sendToFlightAssignment, flightAssignments, addSentBCR } = useLoadPlans()
   
   // Load ULD entries from localStorage on mount (supports both old format string[] and new format ULDEntry[])
   // Uses utility function to ensure checked state is preserved
@@ -233,6 +233,24 @@ export default function LoadPlanDetailScreen({ loadPlan, onBack, onSave, onNavig
     // Get the current staff name from flight assignments
     const assignment = flightAssignments.find(fa => fa.flight === editedPlan.flight)
     const staffName = assignment?.name || ""
+    
+    // Generate BCR data before sending
+    const bcrData = generateBCRData(
+      editedPlan, 
+      awbComments, 
+      awbAssignments, 
+      mergedUldEntries
+    )
+    
+    // Save BCR to context
+    addSentBCR({
+      flight: editedPlan.flight,
+      date: editedPlan.date,
+      loadPlan: editedPlan,
+      bcrData,
+      sentAt: new Date().toISOString(),
+      sentBy: staffName,
+    })
     
     // Send back to flight assignment (clear assignment)
     sendToFlightAssignment(editedPlan.flight)

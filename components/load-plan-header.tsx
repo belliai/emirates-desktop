@@ -24,10 +24,10 @@ export function LoadPlanHeader({ onBack, isReadOnly, onGenerateBCR, onHandover, 
           {isReadOnly && onHandover && (
             <button
               onClick={onHandover}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium flex items-center gap-2"
+              className="px-4 py-2 bg-[#D71A21] text-white rounded-lg hover:bg-[#B01419] transition-colors font-medium flex items-center gap-2"
             >
               <Send className="w-4 h-4" />
-              Handover
+              Send
             </button>
           )}
           {isReadOnly && onGenerateBCR && (
