@@ -39,7 +39,7 @@ export default function SideNavigation({ currentScreen, onNavigate }: SideNaviga
       defaultOpen: true,
       items: [
         { id: "flights-view", label: "Flights View", icon: Plane },
-        { id: "bup-allocation-list", label: "BUP Allocation List", icon: Clipboard },
+        { id: "bup-allocation-list", label: "Build-up Allocation", icon: Clipboard },
       ],
     },
     {
@@ -52,7 +52,7 @@ export default function SideNavigation({ currentScreen, onNavigate }: SideNaviga
         { id: "lists", label: "Export Lists", icon: Download },
         { id: "qrt-list", label: "QRT List", icon: Download },
         { id: "flight-assignment", label: "Flight Assignment", icon: Plane },
-        { id: "buildup-staff", label: "Buildup Staff", icon: Users },
+        { id: "buildup-staff", label: "Build-up Staff", icon: Users },
         { id: "screening", label: "Screening", icon: Search },
         { id: "incoming-workload", label: "Incoming Workload", icon: TrendingUp },
       ],
@@ -64,7 +64,7 @@ export default function SideNavigation({ currentScreen, onNavigate }: SideNaviga
       defaultOpen: true,
       items: [
         { id: "staff", label: "Staff Performance", icon: Users },
-        { id: "bcr", label: "Buildup Completion", icon: FileText },
+        { id: "bcr", label: "Build-up Completion", icon: FileText },
         { id: "shift-summary-report", label: "Shift Summary Report", icon: FileText },
         { id: "bdn-dashboard", label: "Workload Visibility", icon: ClipboardList },
         { id: "situational-awareness", label: "Situational Awareness", icon: Activity },

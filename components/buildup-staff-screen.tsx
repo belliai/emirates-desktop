@@ -83,7 +83,7 @@ export default function BuildupStaffScreen({ initialStaff, onNavigate }: Buildup
       <div className="max-w-full">
         {/* Header with Staff Name and Icon Bar */}
         <div className="flex justify-between items-center mb-4 px-2">
-          <h2 className="text-lg font-semibold text-gray-900">Buildup Staff</h2>
+          <h2 className="text-lg font-semibold text-gray-900">Build-up Staff</h2>
           <div className="flex items-center gap-3">
             <Select value={selectedStaff} onValueChange={(value: "david" | "harley") => setSelectedStaff(value)}>
               <SelectTrigger className="flex items-center gap-2 bg-white border border-gray-300 hover:bg-gray-50 px-3 py-2 rounded-lg">

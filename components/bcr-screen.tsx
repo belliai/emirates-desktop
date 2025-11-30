@@ -38,7 +38,7 @@ export default function BCRScreen({ onBack }: BCRScreenProps) {
       <div className="max-w-full">
         {/* Header */}
         <div className="flex justify-between items-center mb-4 px-2">
-          <h2 className="text-lg font-semibold text-gray-900">Buildup Completion Report</h2>
+          <h2 className="text-lg font-semibold text-gray-900">Build-up Completion</h2>
         </div>
         <div className="mx-2 rounded-lg border border-gray-200 overflow-x-auto">
           <div className="bg-white">

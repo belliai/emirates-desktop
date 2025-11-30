@@ -264,7 +264,7 @@ export default function BUPAllocationListScreen({ onNavigate }: BUPAllocationLis
         {/* Header */}
         <div className="flex justify-between items-center mb-4 px-2">
           <div>
-            <h2 className="text-lg font-semibold text-gray-900">BUP Allocation List</h2>
+            <h2 className="text-lg font-semibold text-gray-900">Build-up Allocation</h2>
             <p className="text-sm text-gray-500">Manage and filter buildup allocation lists</p>
           </div>
           <div className="flex items-center gap-3">
