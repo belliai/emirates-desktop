@@ -19,40 +19,6 @@ import { getULDEntriesFromStorage, saveULDEntriesToStorage } from "@/lib/uld-sto
 import { AWBQuickActionModal } from "./awb-quick-action-modal"
 import { uldSectionHasPilPerShc, type WorkArea } from "./flights-view-screen"
 
-/**
- * Calculate total PMC and AKE from all ULD sections in the load plan
- * Returns formatted string like "05PMC/10AKE"
- */
-function calculateTTLPlnUld(plan: LoadPlanDetail): string {
-  let pmcCount = 0
-  let akeCount = 0
-
-  plan.sectors.forEach((sector) => {
-    sector.uldSections.forEach((uldSection) => {
-      if (uldSection.uld) {
-        const { expandedTypes } = parseULDSection(uldSection.uld)
-        expandedTypes.forEach((type) => {
-          if (type === "PMC") {
-            pmcCount++
-          } else if (type === "AKE") {
-            akeCount++
-          }
-        })
-      }
-    })
-  })
-
-  const parts: string[] = []
-  if (pmcCount > 0) {
-    parts.push(`${String(pmcCount).padStart(2, "0")}PMC`)
-  }
-  if (akeCount > 0) {
-    parts.push(`${String(akeCount).padStart(2, "0")}AKE`)
-  }
-
-  return parts.length > 0 ? parts.join("/") : ""
-}
-
 // Re-export types for backward compatibility
 export type { AWBRow, ULDSection, LoadPlanItem, LoadPlanDetail } from "./load-plan-types"
 
@@ -64,9 +30,10 @@ interface LoadPlanDetailScreenProps {
   enableBulkCheckboxes?: boolean // Enable bulk checkbox functionality (default: false, true for Buildup Staff)
   workAreaFilter?: WorkArea // Filter ULD sections based on work area (SHC codes)
   isQRTList?: boolean // Show Bay Number and Connection Time columns for QRT List
+  onULDUpdate?: () => void // Callback when ULD entries are updated (for progress bar recalculation)
 }
 
-export default function LoadPlanDetailScreen({ loadPlan, onBack, onSave, onNavigateToBuildupStaff, enableBulkCheckboxes = false, workAreaFilter, isQRTList = false }: LoadPlanDetailScreenProps) {
+export default function LoadPlanDetailScreen({ loadPlan, onBack, onSave, onNavigateToBuildupStaff, enableBulkCheckboxes = false, workAreaFilter, isQRTList = false, onULDUpdate }: LoadPlanDetailScreenProps) {
   const [showBCRModal, setShowBCRModal] = useState(false)
   const [showHandoverModal, setShowHandoverModal] = useState(false)
   const [awbComments, setAwbComments] = useState<AWBComment[]>([])
@@ -162,6 +129,10 @@ export default function LoadPlanDetailScreen({ loadPlan, onBack, onSave, onNavig
       updated.set(key, entries)
       // Save to localStorage using utility function to ensure checked state is preserved
       saveULDEntriesToStorage(loadPlan.flight, updated)
+      // Notify parent component to recalculate progress bar
+      if (onULDUpdate) {
+        onULDUpdate()
+      }
       return updated
     })
   }
@@ -449,7 +420,7 @@ export default function LoadPlanDetailScreen({ loadPlan, onBack, onSave, onNavig
         <FlightHeaderRow
           plan={{
             ...editedPlan,
-            ttlPlnUld: calculateTTLPlnUld(editedPlan) || editedPlan.ttlPlnUld,
+            ttlPlnUld: editedPlan.ttlPlnUld,
           }}
           onFieldUpdate={updateField}
           isReadOnly={isReadOnly}
@@ -856,6 +827,7 @@ function CombinedTable({
                   <>
                     <th className="px-2 py-2 text-left font-semibold">Bay Number</th>
                     <th className="px-2 py-2 text-left font-semibold">Conn. Time</th>
+                    <th className="px-2 py-2 text-left font-semibold">ULD Number</th>
                   </>
                 )}
                 <th className="px-2 py-2 text-left font-semibold">FLTIN</th>
@@ -870,7 +842,7 @@ function CombinedTable({
               {/* Special Instructions - Note: Remarks update needs setEditedPlan, keeping simple for now */}
               {editedPlan.remarks && editedPlan.remarks.length > 0 && (
                 <tr>
-                  <td colSpan={enableBulkCheckboxes ? (isQRTList ? 23 : 21) : (isQRTList ? 22 : 20)} className="px-2 py-2 bg-gray-100 border-b border-gray-200">
+                  <td colSpan={enableBulkCheckboxes ? (isQRTList ? 24 : 21) : (isQRTList ? 23 : 20)} className="px-2 py-2 bg-gray-100 border-b border-gray-200">
                     <div className="space-y-1">
                       {editedPlan.remarks.map((remark, index) => (
                         <EditableField
@@ -900,7 +872,7 @@ function CombinedTable({
                     {/* Sector Header - only show if multiple sectors */}
                     {hasMultipleSectors && (
                       <tr className="bg-blue-50 border-t-2 border-blue-200">
-                        <td colSpan={enableBulkCheckboxes ? (isQRTList ? 23 : 21) : (isQRTList ? 22 : 20)} className="px-2 py-2 font-bold text-blue-900 text-center">
+                        <td colSpan={enableBulkCheckboxes ? (isQRTList ? 24 : 21) : (isQRTList ? 23 : 20)} className="px-2 py-2 font-bold text-blue-900 text-center">
                           SECTOR: {sectorName}
                         </td>
                       </tr>
@@ -985,7 +957,7 @@ function CombinedTable({
                     {group.rampTransfer.length > 0 && (
                       <>
                         <tr className="bg-gray-50">
-                          <td colSpan={enableBulkCheckboxes ? (isQRTList ? 23 : 21) : (isQRTList ? 22 : 20)} className="px-2 py-1 font-semibold text-gray-900 text-center">
+                          <td colSpan={enableBulkCheckboxes ? (isQRTList ? 24 : 21) : (isQRTList ? 23 : 20)} className="px-2 py-1 font-semibold text-gray-900 text-center">
                             ***** RAMP TRANSFER *****
                           </td>
                         </tr>
@@ -1222,6 +1194,7 @@ function AWBRow({
     ...(isQRTList ? [
       { key: "bayNumber" as keyof AWBRow },
       { key: "connTime" as keyof AWBRow },
+      { key: "uldNumber" as keyof AWBRow },
     ] : []),
     { key: "fltin" },
     { key: "arrdtTime" },
@@ -1371,7 +1344,7 @@ function AWBRow({
       </tr>
       {awb.remarks && (
         <tr>
-          <td colSpan={isQRTList ? 22 : 20} className="px-2 py-1 text-xs text-gray-700 italic">
+          <td colSpan={isQRTList ? 23 : 20} className="px-2 py-1 text-xs text-gray-700 italic">
             <EditableField
               value={awb.remarks}
               onChange={(value) => onUpdateField("remarks", value)}
@@ -1402,7 +1375,7 @@ function AWBRow({
             <td className="px-2 py-1 text-xs text-gray-700 font-semibold">{group.pieces || "-"}</td>
             <td className="px-2 py-1 text-xs text-gray-500">{groupUld || "-"}</td>
             <td className="px-2 py-1 text-xs text-gray-600 font-mono">{group.no || "-"}</td>
-            <td colSpan={isQRTList ? 16 : 14} className="px-2 py-1"></td>
+            <td colSpan={isQRTList ? 17 : 14} className="px-2 py-1"></td>
           </tr>
         )
       })}
@@ -1473,7 +1446,7 @@ function ULDRow({ uld, uldEntries, isReadOnly, enableBulkCheckboxes, sectionKeys
           />
         </td>
       )}
-      <td colSpan={enableBulkCheckboxes ? (isQRTList ? 21 : 19) : (isQRTList ? 20 : 20)} className="px-2 py-1 font-semibold text-gray-900 text-center relative">
+      <td colSpan={enableBulkCheckboxes ? (isQRTList ? 22 : 19) : (isQRTList ? 21 : 20)} className="px-2 py-1 font-semibold text-gray-900 text-center relative">
         <div className="flex items-center justify-center gap-4">
           {displayNumbers && (
             <div className="group relative flex-shrink-0">

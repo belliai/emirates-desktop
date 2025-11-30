@@ -13,6 +13,7 @@ import { getULDEntriesFromStorage } from "@/lib/uld-storage"
 type CompletionStatus = "green" | "amber" | "red"
 type WorkArea = "All" | "GCR" | "PIL and PER"
 type Shift = "All" | "9am to 9pm" | "9pm to 9am"
+type Module = "All" | "PAX & PF build-up EUR (1st floor, E)" | "PAX & PF build-up AFR (1st floor, F)" | "PAX & PF build-up ME, SubCon, Asia (1st floor, G)" | "Build-up AUS (1st floor, H)" | "US Screening Flights (1st floor, I)" | "Freighter & PAX Breakdown & build-up (Ground floor, F)" | "IND/PAK Build-up (Ground floor, G)" | "PER (Ground floor, H)" | "PIL (Ground floor, I)"
 
 // PIL/PER SHC codes that identify PIL and PER work areas
 const PIL_PER_SHC_CODES = ["FRO", "FRI", "ACT", "CRT", "COL", "ERT", "PIL-ACT", "PIL-COL", "PEF-COL", "PER-COL"]
@@ -42,6 +43,20 @@ export type { WorkArea }
 
 // Two 9-9 shifts
 const SHIFTS: Shift[] = ["All", "9am to 9pm", "9pm to 9am"]
+
+// Modules
+const MODULES: Module[] = [
+  "All",
+  "PAX & PF build-up EUR (1st floor, E)",
+  "PAX & PF build-up AFR (1st floor, F)",
+  "PAX & PF build-up ME, SubCon, Asia (1st floor, G)",
+  "Build-up AUS (1st floor, H)",
+  "US Screening Flights (1st floor, I)",
+  "Freighter & PAX Breakdown & build-up (Ground floor, F)",
+  "IND/PAK Build-up (Ground floor, G)",
+  "PER (Ground floor, H)",
+  "PIL (Ground floor, I)",
+]
 
 const SHIFT_MAP: Record<string, { start: number; end: number; overnight?: boolean }> = {
   "9am to 9pm": { start: 9, end: 21 },
@@ -164,59 +179,21 @@ function parseTTLPlnUld(ttlPlnUld: string): number {
  * @param workAreaFilter - Optional work area filter ("All", "GCR", or "PIL and PER")
  */
 function calculateTotalPlannedULDs(loadPlanDetail: LoadPlanDetail, workAreaFilter?: WorkArea): number {
-  // Check if ULD numbers have been saved (modified via modal)
+  // Get entries from localStorage if they exist
+  let entriesMap: Map<string, ULDEntry[]> = new Map()
   if (typeof window !== 'undefined') {
     try {
-      // Use utility function to get entries with checked state
-      const entriesMap = getULDEntriesFromStorage(loadPlanDetail.flight, loadPlanDetail.sectors)
-      
-      if (entriesMap.size > 0) {
-        // Filter ULD sections based on workAreaFilter
-        let totalSlots = 0
-        
-        entriesMap.forEach((entries, key) => {
-          // Parse sectorIndex and uldSectionIndex from key format: "sectorIndex-uldSectionIndex"
-          const [sectorIndexStr, uldSectionIndexStr] = key.split('-')
-          const sectorIndex = parseInt(sectorIndexStr, 10)
-          const uldSectionIndex = parseInt(uldSectionIndexStr, 10)
-          
-          // Check if this ULD section matches the filter
-          const sector = loadPlanDetail.sectors[sectorIndex]
-          if (sector && sector.uldSections[uldSectionIndex]) {
-            const uldSection = sector.uldSections[uldSectionIndex]
-            
-            // Apply filter logic
-            let shouldInclude = true
-            if (workAreaFilter === "PIL and PER") {
-              shouldInclude = uldSectionHasPilPerShc(uldSection)
-            } else if (workAreaFilter === "GCR") {
-              // GCR = everything that's NOT PIL/PER
-              shouldInclude = !uldSectionHasPilPerShc(uldSection)
-            }
-            // "All" or undefined = include everything
-            
-            if (shouldInclude) {
-              // Count all entries (checked or not) - this is the total planned slots
-              totalSlots += entries.length
-            }
-          }
-        })
-        
-        // If we have saved ULD numbers, use the total slots as denominator
-        // This reflects additions/subtractions made via the ULD numbers modal
-        if (totalSlots > 0) {
-          return totalSlots
-        }
-      }
+      entriesMap = getULDEntriesFromStorage(loadPlanDetail.flight, loadPlanDetail.sectors)
     } catch (e) {
       // Fall through to default calculation
     }
   }
   
-  // Default: count from ULD sections, filtered by work area
+  // Count from ULD sections, using entries.length if entries exist for that section
+  // Otherwise use parseULDSection count
   let total = 0
-  loadPlanDetail.sectors.forEach((sector) => {
-    sector.uldSections.forEach((uldSection) => {
+  loadPlanDetail.sectors.forEach((sector, sectorIndex) => {
+    sector.uldSections.forEach((uldSection, uldSectionIndex) => {
       // Apply filter logic
       let shouldInclude = true
       if (workAreaFilter === "PIL and PER") {
@@ -228,8 +205,17 @@ function calculateTotalPlannedULDs(loadPlanDetail: LoadPlanDetail, workAreaFilte
       // "All" or undefined = include everything
       
       if (shouldInclude && uldSection.uld) {
-        const { count } = parseULDSection(uldSection.uld)
-        total += count
+        const key = `${sectorIndex}-${uldSectionIndex}`
+        const entries = entriesMap.get(key)
+        
+        if (entries && entries.length > 0) {
+          // Use entries.length if entries exist (reflects additions/subtractions via modal)
+          total += entries.length
+        } else {
+          // Use parseULDSection count if no entries exist for this section
+          const { count } = parseULDSection(uldSection.uld)
+          total += count
+        }
       }
     })
   })
@@ -339,9 +325,11 @@ export default function FlightsViewScreen() {
   const [loadPlanDetailsCache, setLoadPlanDetailsCache] = useState<Map<string, LoadPlanDetail>>(new Map())
   const [selectedWorkArea, setSelectedWorkArea] = useState<WorkArea>("All")
   const [selectedShift, setSelectedShift] = useState<Shift>("All" as Shift)
+  const [selectedModule, setSelectedModule] = useState<Module>("All")
   const [customTimeRange, setCustomTimeRange] = useState<{ start: string; end: string } | null>(null)
   const [showTimeRangePicker, setShowTimeRangePicker] = useState(false)
   const timeRangePickerRef = useRef<HTMLDivElement>(null)
+  const [uldUpdateTrigger, setUldUpdateTrigger] = useState(0) // Trigger for progress bar recalculation
 
   // Fetch load plans from Supabase on mount
   useEffect(() => {
@@ -390,7 +378,7 @@ export default function FlightsViewScreen() {
     fetchLoadPlans()
   }, [setLoadPlans])
 
-  // Recalculate completions when work area filter changes
+  // Recalculate completions when work area filter changes or ULD entries are updated
   useEffect(() => {
     if (loadPlans.length === 0) return
     
@@ -399,8 +387,8 @@ export default function FlightsViewScreen() {
     loadPlans.forEach(plan => {
       const cachedDetail = loadPlanDetailsCache.get(plan.flight)
       
-      if (cachedDetail && selectedWorkArea !== "All") {
-        // Calculate filtered completion if we have load plan detail
+      // Always use detail-based calculation if available (same as load plan detail screen)
+      if (cachedDetail) {
         const totalPlannedULDs = calculateTotalPlannedULDs(cachedDetail, selectedWorkArea)
         const totalMarkedULDs = calculateTotalMarkedULDs(plan.flight, cachedDetail, selectedWorkArea)
         const completionPercentage = totalPlannedULDs > 0 
@@ -423,13 +411,13 @@ export default function FlightsViewScreen() {
           shift,
         })
       } else {
-        // Fall back to default calculation
+        // Fall back to default calculation only if no detail available
         recalculatedCompletions.set(plan.flight, calculateFlightCompletion(plan))
       }
     })
     
     setFlightCompletions(recalculatedCompletions)
-  }, [loadPlans, loadPlanDetailsCache, selectedWorkArea])
+  }, [loadPlans, loadPlanDetailsCache, selectedWorkArea, uldUpdateTrigger])
 
   // Generate hourly time options (00:00 to 23:00)
   const timeOptions = useMemo(() => {
@@ -560,6 +548,9 @@ export default function FlightsViewScreen() {
     
     // If we have a load plan detail, show it with progress bar
     if (selectedLoadPlan) {
+      // Recalculate progress when ULD entries are updated (uldUpdateTrigger changes)
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const _ = uldUpdateTrigger // Force recalculation when this changes
       const totalPlannedULDs = calculateTotalPlannedULDs(selectedLoadPlan, selectedWorkArea)
       const totalMarkedULDs = calculateTotalMarkedULDs(selectedLoadPlan.flight, selectedLoadPlan, selectedWorkArea)
       const completionPercentage = totalPlannedULDs > 0 
@@ -608,6 +599,10 @@ export default function FlightsViewScreen() {
             }}
             enableBulkCheckboxes={true}
             workAreaFilter={selectedWorkArea}
+            onULDUpdate={() => {
+              // Trigger re-render to recalculate progress bar
+              setUldUpdateTrigger(prev => prev + 1)
+            }}
             // No onSave - makes it read-only (like BuildupStaffScreen)
           />
         </div>
@@ -821,6 +816,25 @@ export default function FlightsViewScreen() {
                 </div>
               )}
             </div>
+          </div>
+
+          {/* Module Filter */}
+          <div className="flex items-center gap-2">
+            <label htmlFor="module-filter" className="text-sm font-medium text-gray-700">
+              Module:
+            </label>
+            <select
+              id="module-filter"
+              value={selectedModule}
+              onChange={(e) => setSelectedModule(e.target.value as Module)}
+              className="px-3 py-1.5 text-sm border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-[#D71A21] focus:border-transparent w-64"
+            >
+              {MODULES.map(module => (
+                <option key={module} value={module}>
+                  {module}
+                </option>
+              ))}
+            </select>
           </div>
 
           {/* Show filtered count */}

@@ -15,6 +15,7 @@ export type AWBRow = {
   pi: string
   bayNumber?: string // Bay number for QRT List
   connTime?: string // Connection time for QRT List
+  uldNumber?: string // ULD number for QRT List
   fltin: string
   arrdtTime: string
   qnnAqnn: string
