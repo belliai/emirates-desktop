@@ -30,10 +30,32 @@ export type SentBCR = {
   sentBy?: string
 }
 
+// Shift types for BUP Allocation
+export type ShiftType = "night" | "day" | "current"
+export type PeriodType = "early-morning" | "late-morning" | "afternoon" | "all"
+export type WaveType = "first-wave" | "second-wave" | "all"
+
+// BUP Allocation type - represents a flight allocation from uploaded CSV
+export type BUPAllocation = {
+  carrier: string
+  flightNo: string
+  etd: string
+  routing: string
+  staff: string
+  mobile: string
+  acType: string
+  regnNo: string
+  shiftType: ShiftType
+  period: PeriodType
+  wave: WaveType | null
+  date: string | null
+}
+
 type LoadPlanContextType = {
   loadPlans: LoadPlan[]
   flightAssignments: FlightAssignment[]
   sentBCRs: SentBCR[]
+  bupAllocations: BUPAllocation[]
   setLoadPlans: (plans: LoadPlan[]) => void
   addLoadPlan: (plan: LoadPlan) => void
   updateFlightAssignment: (flight: string, name: string) => void
@@ -41,6 +63,9 @@ type LoadPlanContextType = {
   sendToFlightAssignment: (flight: string) => void
   getFlightsByStaff: (staffName: string) => LoadPlan[]
   addSentBCR: (bcr: SentBCR) => void
+  setBupAllocations: (allocations: BUPAllocation[]) => void
+  addBupAllocation: (allocation: BUPAllocation) => void
+  updateBupAllocationStaff: (flightNo: string, staff: string, mobile: string) => void
 }
 
 const LoadPlanContext = createContext<LoadPlanContextType | undefined>(undefined)
@@ -68,10 +93,45 @@ const defaultLoadPlans: LoadPlan[] = [
   },
 ]
 
+// Helper function to parse origin-destination from pax field
+// Supports both formats: "DXBMAA" (6 letters) or "DXB/MAA" (slash-separated)
+function parseOriginDestination(pax: string | undefined): string {
+  if (!pax) return "DXB-???"
+  
+  let origin = "DXB"
+  let destination = ""
+  
+  if (pax.includes("/")) {
+    // Slash-separated format: "DXB/MAA/0/23/251"
+    const parts = pax.split("/").filter((part) => /^[A-Z]{3}$/.test(part))
+    origin = parts[0] || "DXB"
+    destination = parts[1] || ""
+  } else if (/^[A-Z]{6}$/.test(pax)) {
+    // Concatenated format: "DXBMAA" (6 uppercase letters)
+    origin = pax.slice(0, 3)
+    destination = pax.slice(3, 6)
+  } else {
+    // Try to extract first 3-letter code as origin
+    const originMatch = pax.match(/^([A-Z]{3})/)
+    if (originMatch) {
+      origin = originMatch[1]
+      // Try to find destination in remaining text
+      const remaining = pax.slice(3)
+      const destMatch = remaining.match(/([A-Z]{3})/)
+      if (destMatch) {
+        destination = destMatch[1]
+      }
+    }
+  }
+  
+  return destination ? `${origin}-${destination}` : `${origin}-???`
+}
+
 export function LoadPlanProvider({ children }: { children: ReactNode }) {
   const [loadPlans, setLoadPlans] = useState<LoadPlan[]>(defaultLoadPlans)
   const [flightAssignments, setFlightAssignments] = useState<FlightAssignment[]>([])
   const [sentBCRs, setSentBCRs] = useState<SentBCR[]>([])
+  const [bupAllocations, setBupAllocations] = useState<BUPAllocation[]>([])
 
   const addLoadPlan = (plan: LoadPlan) => {
     setLoadPlans((prev) => {
@@ -86,18 +146,12 @@ export function LoadPlanProvider({ children }: { children: ReactNode }) {
     setFlightAssignments((prev) => {
       const exists = prev.some((fa) => fa.flight === plan.flight)
       if (!exists) {
-        const originMatch = plan.pax.match(/^([A-Z]{3})/)
-        const origin = originMatch ? originMatch[1] : "DXB"
-        const destinations = plan.pax.split("/").filter((part) => part.length === 3 && part !== origin)
-        const destination = destinations[0] || "JFK"
-        const originDestination = `${origin}-${destination}`
-
         return [
           ...prev,
           {
             flight: plan.flight,
             std: plan.std,
-            originDestination,
+            originDestination: parseOriginDestination(plan.pax),
             name: "",
             sector: plan.acftType || "E75",
           },
@@ -116,18 +170,12 @@ export function LoadPlanProvider({ children }: { children: ReactNode }) {
       // If assignment doesn't exist, find the load plan and create assignment
       const plan = loadPlans.find((p) => p.flight === flight)
       if (plan) {
-        const originMatch = plan.pax.match(/^([A-Z]{3})/)
-        const origin = originMatch ? originMatch[1] : "DXB"
-        const destinations = plan.pax.split("/").filter((part) => part.length === 3 && part !== origin)
-        const destination = destinations[0] || "JFK"
-        const originDestination = `${origin}-${destination}`
-
         return [
           ...prev,
           {
             flight: plan.flight,
             std: plan.std,
-            originDestination,
+            originDestination: parseOriginDestination(plan.pax),
             name,
             sector: plan.acftType || "E75",
           },
@@ -139,7 +187,7 @@ export function LoadPlanProvider({ children }: { children: ReactNode }) {
         {
           flight,
           std: "",
-          originDestination: "DXB-JFK",
+          originDestination: "DXB-???",
           name,
           sector: "E75",
         },
@@ -156,18 +204,12 @@ export function LoadPlanProvider({ children }: { children: ReactNode }) {
       // If assignment doesn't exist, find the load plan and create assignment
       const plan = loadPlans.find((p) => p.flight === flight)
       if (plan) {
-        const originMatch = plan.pax.match(/^([A-Z]{3})/)
-        const origin = originMatch ? originMatch[1] : "DXB"
-        const destinations = plan.pax.split("/").filter((part) => part.length === 3 && part !== origin)
-        const destination = destinations[0] || "JFK"
-        const originDestination = `${origin}-${destination}`
-
         return [
           ...prev,
           {
             flight: plan.flight,
             std: plan.std,
-            originDestination,
+            originDestination: parseOriginDestination(plan.pax),
             name: "",
             sector: sector || plan.acftType || "E75",
           },
@@ -179,7 +221,7 @@ export function LoadPlanProvider({ children }: { children: ReactNode }) {
         {
           flight,
           std: "",
-          originDestination: "DXB-JFK",
+          originDestination: "DXB-???",
           name: "",
           sector: sector || "E75",
         },
@@ -217,12 +259,84 @@ export function LoadPlanProvider({ children }: { children: ReactNode }) {
     })
   }
 
+  const addBupAllocation = (allocation: BUPAllocation) => {
+    setBupAllocations((prev) => {
+      // Check if allocation already exists for this flight, replace it
+      const existingIndex = prev.findIndex((a) => a.flightNo === allocation.flightNo)
+      if (existingIndex >= 0) {
+        const updated = [...prev]
+        updated[existingIndex] = allocation
+        return updated
+      }
+      return [...prev, allocation]
+    })
+    
+    // Auto-sync to flight assignments when BUP allocation is added
+    if (allocation.flightNo) {
+      const flightNumber = `EK${allocation.flightNo}`
+      // Parse routing - could be "DXB-MXP", "DXBMXP", or just destination "MXP"
+      let originDestination = "DXB-???"
+      if (allocation.routing) {
+        if (allocation.routing.includes("-")) {
+          // Already in correct format
+          originDestination = allocation.routing
+        } else if (/^[A-Z]{6}$/.test(allocation.routing)) {
+          // Concatenated format: "DXBMXP"
+          originDestination = `${allocation.routing.slice(0, 3)}-${allocation.routing.slice(3, 6)}`
+        } else if (/^[A-Z]{3}$/.test(allocation.routing)) {
+          // Just destination: "MXP"
+          originDestination = `DXB-${allocation.routing}`
+        } else {
+          originDestination = parseOriginDestination(allocation.routing)
+        }
+      }
+      
+      setFlightAssignments((prev) => {
+        const exists = prev.some((fa) => fa.flight === flightNumber)
+        if (!exists) {
+          return [
+            ...prev,
+            {
+              flight: flightNumber,
+              std: allocation.etd,
+              originDestination,
+              name: allocation.staff.toLowerCase(),
+              sector: allocation.acType || "",
+            },
+          ]
+        }
+        // Update existing assignment if staff is provided
+        if (allocation.staff) {
+          return prev.map((fa) =>
+            fa.flight === flightNumber
+              ? { ...fa, name: allocation.staff.toLowerCase() }
+              : fa
+          )
+        }
+        return prev
+      })
+    }
+  }
+
+  const updateBupAllocationStaff = (flightNo: string, staff: string, mobile: string) => {
+    setBupAllocations((prev) =>
+      prev.map((a) =>
+        a.flightNo === flightNo ? { ...a, staff, mobile } : a
+      )
+    )
+    
+    // Also update flight assignment
+    const flightNumber = `EK${flightNo}`
+    updateFlightAssignment(flightNumber, staff.toLowerCase())
+  }
+
   return (
     <LoadPlanContext.Provider
       value={{
         loadPlans,
         flightAssignments,
         sentBCRs,
+        bupAllocations,
         setLoadPlans,
         addLoadPlan,
         updateFlightAssignment,
@@ -230,6 +344,9 @@ export function LoadPlanProvider({ children }: { children: ReactNode }) {
         sendToFlightAssignment,
         getFlightsByStaff,
         addSentBCR,
+        setBupAllocations,
+        addBupAllocation,
+        updateBupAllocationStaff,
       }}
     >
       {children}
