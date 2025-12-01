@@ -33,9 +33,14 @@ export default function BuildupStaffScreen({ initialStaff, onNavigate }: Buildup
         const operatorsData = await getOperators()
         setOperators(operatorsData)
         
-        // Set default operator if available and none selected
+        // Set default operator if available and none selected - prefer "harley"
         if (operatorsData.length > 0 && !selectedStaffId) {
-          setSelectedStaffId(operatorsData[0].staff_no.toString())
+          const harleyOperator = operatorsData.find(op => {
+            const parsed = parseStaffName(op.name)
+            return parsed.displayName.toLowerCase() === "harley"
+          })
+          const defaultOperator = harleyOperator || operatorsData[0]
+          setSelectedStaffId(defaultOperator.staff_no.toString())
         }
       } catch (error) {
         console.error("[BuildupStaffScreen] Error fetching operators:", error)

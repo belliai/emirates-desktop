@@ -196,9 +196,14 @@ export default function FlightAssignmentScreen() {
         setSupervisors(supervisorsData)
         setOperators(operatorsData)
         
-        // Set default supervisor if available
+        // Set default supervisor if available - prefer "roosevelt"
         if (supervisorsData.length > 0 && !selectedSupervisorId) {
-          setSelectedSupervisorId(supervisorsData[0].staff_no.toString())
+          const rooseveltSupervisor = supervisorsData.find(sup => {
+            const parsed = parseStaffName(sup.name)
+            return parsed.displayName.toLowerCase() === "roosevelt"
+          })
+          const defaultSupervisor = rooseveltSupervisor || supervisorsData[0]
+          setSelectedSupervisorId(defaultSupervisor.staff_no.toString())
         }
       } catch (error) {
         console.error("[FlightAssignment] Error fetching staff data:", error)
