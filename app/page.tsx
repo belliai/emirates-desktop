@@ -2,7 +2,6 @@
 
 import { useState } from "react"
 import LoginScreen from "@/components/login-screen"
-import { findStaffByStaffNo } from "@/lib/buildup-staff"
 import DesktopScreen from "@/components/desktop-screen"
 import ULDHistoryScreen from "@/components/uld-history-screen"
 import ListsScreen from "@/components/lists-screen"
@@ -67,38 +66,6 @@ function AppContent() {
   const [buildupStaffParams, setBuildupStaffParams] = useState<{ staff?: string } | null>(null)
   const { updateULDStatus, addMultipleStatusUpdates } = useFlights()
 
-  const handleLogin = async (staffId: string) => {
-    try {
-      // If no staff ID provided, allow login to master view (no persistence)
-      if (!staffId || staffId.trim() === "") {
-        setIsLoggedIn(true)
-        setCurrentScreen("desktop")
-        // Don't store in localStorage - will require login on reload
-        return
-      }
-
-      const staff = await findStaffByStaffNo(staffId)
-      if (staff) {
-        setIsLoggedIn(true)
-        // Navigate to buildup-staff with staff selected
-        setBuildupStaffParams({ staff: staff.staff_no.toString() })
-        setCurrentScreen("buildup-staff")
-      } else {
-        // Staff not found - could show error message
-        alert("Staff ID not found. Please check your Staff ID and try again.")
-      }
-    } catch (error) {
-      console.error("[App] Error during login:", error)
-      alert("Error during login. Please try again.")
-    }
-  }
-
-  const handleLogout = () => {
-    setIsLoggedIn(false)
-    setCurrentScreen("desktop")
-    setBuildupStaffParams(null)
-  }
-
   const handleULDSelect = (uld: ULD, flightNumber: string, uldIndex: number) => {
     setSelectedULD({ ...uld, flightNumber, uldIndex })
     setCurrentScreen("history")
@@ -141,7 +108,7 @@ function AppContent() {
       case "buildup-staff":
         return (
           <BuildupStaffScreen 
-            initialStaff={buildupStaffParams?.staff}
+            initialStaff={buildupStaffParams?.staff as "david" | "harley" | undefined}
             onNavigate={handleNavigate}
           />
         )
@@ -212,7 +179,7 @@ function AppContent() {
   return (
     <div className="min-h-screen bg-white">
       {!isLoggedIn ? (
-        <LoginScreen onLogin={handleLogin} />
+        <LoginScreen onLogin={() => setIsLoggedIn(true)} />
       ) : (
         <div className="flex h-screen overflow-hidden">
           <SideNavigation currentScreen={currentScreen} onNavigate={handleNavigate} />

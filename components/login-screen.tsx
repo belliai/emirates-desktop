@@ -10,17 +10,17 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Eye, EyeOff } from "lucide-react"
 
 interface LoginScreenProps {
-  onLogin: (staffId: string) => void
+  onLogin: () => void
 }
 
 export default function LoginScreen({ onLogin }: LoginScreenProps) {
   const [showPassword, setShowPassword] = useState(false)
-  const [staffId, setStaffId] = useState("")
+  const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault()
-    onLogin(staffId.trim())
+    onLogin()
   }
 
   return (
@@ -46,15 +46,15 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
         <form onSubmit={handleLogin} className="mt-8 space-y-6">
           <div className="space-y-4">
             <div>
-              <Label htmlFor="staffId" className="text-gray-700">
-                Staff ID
+              <Label htmlFor="email" className="text-gray-700">
+                Username
               </Label>
               <Input
-                id="staffId"
-                type="text"
-                placeholder="416445"
-                value={staffId}
-                onChange={(e) => setStaffId(e.target.value)}
+                id="email"
+                type="email"
+                placeholder="belli@mail.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
                 className="mt-1 bg-gray-50 border-gray-300"
               />
             </div>
