@@ -1,8 +1,8 @@
 "use client"
 
 import type React from "react"
-import { useState, useRef } from "react"
-import { Upload } from 'lucide-react'
+import { useState, useRef, useEffect } from "react"
+import { Upload, Database, Loader2 } from 'lucide-react'
 import { Button } from "@/components/ui/button"
 import type { ListsResults, Shipment, LoadPlanHeader } from "@/lib/lists/types"
 import { parseHeader, parseShipments, formatDateForReport } from "@/lib/lists/parser"
@@ -18,10 +18,13 @@ import {
 } from "@/lib/lists/export"
 import { extractTextFromFile } from "@/lib/lists/file-extractors"
 import { saveListsDataToSupabase } from "@/lib/lists/supabase-save"
+import { fetchAllLoadPlansFromSupabase } from "@/lib/lists/supabase-fetch"
 import { UploadModal } from "./lists/upload-modal"
 import { ResultsDisplay } from "./lists/results-display"
 import { EmptyState } from "./lists/empty-state"
 import { getDefaultListsResults } from "@/lib/lists/default-data"
+
+type DataSource = "file" | "database"
 
 export default function ListsScreen() {
   const defaultResults = getDefaultListsResults()
@@ -35,6 +38,21 @@ export default function ListsScreen() {
   const [allShipments, setAllShipments] = useState<Shipment[]>(defaultResults?.shipments || [])
   const [combinedHeader, setCombinedHeader] = useState<LoadPlanHeader | null>(defaultResults?.header || null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
+  
+  // Database mode state - default to database view
+  const [dataSource, setDataSource] = useState<DataSource>("database")
+  const [isLoadingDatabase, setIsLoadingDatabase] = useState(false)
+  const [loadPlanCount, setLoadPlanCount] = useState(0)
+  const [databaseError, setDatabaseError] = useState<string | null>(null)
+  const [hasInitialized, setHasInitialized] = useState(false)
+
+  // Load from database on mount
+  useEffect(() => {
+    if (!hasInitialized) {
+      setHasInitialized(true)
+      handleLoadFromDatabase()
+    }
+  }, [hasInitialized])
 
   const handleExportSpecialCargo = (format: "csv" | "xlsx") => {
     if (!results) return
@@ -224,6 +242,58 @@ export default function ListsScreen() {
     setAllShipments(defaultResults?.shipments || [])
     setCombinedHeader(defaultResults?.header || null)
     setUploadedFile(null)
+    setLoadPlanCount(0)
+  }
+
+  const handleLoadFromDatabase = async () => {
+    setDatabaseError(null)
+    setIsLoadingDatabase(true)
+
+    try {
+      const { shipments, header, loadPlanCount: count } = await fetchAllLoadPlansFromSupabase()
+      
+      if (shipments.length === 0) {
+        setDatabaseError("No load plans found in the database")
+        setIsLoadingDatabase(false)
+        return
+      }
+
+      setLoadPlanCount(count)
+      setAllShipments(shipments)
+      setCombinedHeader(header)
+
+      // Generate reports from database shipments (no QRT for database mode - available in sidebar)
+      const specialCargo = generateSpecialCargoReport(header, shipments)
+      const vunList = generateVUNList(header, shipments)
+
+      console.log('[v0] Database - Special cargo items:', specialCargo.regular.length + specialCargo.weapons.length)
+      console.log('[v0] Database - VUN items:', vunList.length)
+
+      const dbResults: ListsResults = {
+        specialCargo,
+        vunList,
+        qrtList: [], // Empty - QRT available in sidebar
+        header,
+        shipments,
+      }
+
+      setResults(dbResults)
+    } catch (err) {
+      console.error('[v0] Database load error:', err)
+      setDatabaseError(err instanceof Error ? err.message : "Failed to load from database")
+    } finally {
+      setIsLoadingDatabase(false)
+    }
+  }
+
+  const handleDataSourceChange = (source: DataSource) => {
+    setDataSource(source)
+    setDatabaseError(null)
+    if (source === "database") {
+      handleLoadFromDatabase()
+    } else {
+      handleReset()
+    }
   }
 
   return (
@@ -234,15 +304,89 @@ export default function ListsScreen() {
             <h1 className="text-base font-semibold text-gray-900">Lists</h1>
             <p className="text-sm text-gray-500">Transform load plans into reports</p>
           </div>
-          <Button onClick={() => setShowUploadModal(true)} className="bg-[#D71A21] hover:bg-[#B01419] text-white">
-            <Upload className="w-4 h-4 mr-2" />
-            Upload File
-          </Button>
+          <div className="flex items-center gap-3">
+            {/* Data Source Toggle */}
+            <div className="flex items-center bg-gray-100 rounded-lg p-1">
+              <button
+                onClick={() => handleDataSourceChange("file")}
+                className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
+                  dataSource === "file"
+                    ? "bg-white text-gray-900 shadow-sm"
+                    : "text-gray-600 hover:text-gray-900"
+                }`}
+              >
+                <Upload className="w-3.5 h-3.5" />
+                File Upload
+              </button>
+              <button
+                onClick={() => handleDataSourceChange("database")}
+                className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
+                  dataSource === "database"
+                    ? "bg-white text-gray-900 shadow-sm"
+                    : "text-gray-600 hover:text-gray-900"
+                }`}
+              >
+                <Database className="w-3.5 h-3.5" />
+                From Database
+                {loadPlanCount > 0 && dataSource === "database" && (
+                  <span className="ml-1 bg-[#D71A21] text-white text-xs px-1.5 py-0.5 rounded-full">
+                    {loadPlanCount}
+                  </span>
+                )}
+              </button>
+            </div>
+
+            {/* Action Button */}
+            {dataSource === "file" ? (
+              <Button onClick={() => setShowUploadModal(true)} className="bg-[#D71A21] hover:bg-[#B01419] text-white">
+                <Upload className="w-4 h-4 mr-2" />
+                Upload File
+              </Button>
+            ) : (
+              <Button 
+                onClick={handleLoadFromDatabase} 
+                disabled={isLoadingDatabase}
+                className="bg-[#D71A21] hover:bg-[#B01419] text-white"
+              >
+                {isLoadingDatabase ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Loading...
+                  </>
+                ) : (
+                  <>
+                    <Database className="w-4 h-4 mr-2" />
+                    Refresh
+                  </>
+                )}
+              </Button>
+            )}
+          </div>
         </div>
       </div>
 
       <div className="flex-1 overflow-auto p-6">
-        {!results ? (
+        {/* Loading state for database mode */}
+        {isLoadingDatabase ? (
+          <div className="flex flex-col items-center justify-center h-full">
+            <Loader2 className="w-12 h-12 text-[#D71A21] animate-spin mb-4" />
+            <p className="text-gray-600">Loading from database...</p>
+          </div>
+        ) : databaseError ? (
+          <div className="flex flex-col items-center justify-center h-full">
+            <div className="bg-red-50 border border-red-200 rounded-lg p-6 max-w-md text-center">
+              <p className="text-red-800 font-medium mb-2">Database Error</p>
+              <p className="text-red-600 text-sm">{databaseError}</p>
+              <Button 
+                onClick={handleLoadFromDatabase} 
+                variant="outline" 
+                className="mt-4"
+              >
+                Try Again
+              </Button>
+            </div>
+          </div>
+        ) : !results ? (
           <EmptyState />
         ) : (
           <ResultsDisplay
@@ -251,6 +395,7 @@ export default function ListsScreen() {
             onExportVUNList={handleExportVUNList}
             onExportQRTList={handleExportQRTList}
             onReset={handleReset}
+            loadPlanCount={dataSource === "database" ? loadPlanCount : undefined}
           />
         )}
       </div>

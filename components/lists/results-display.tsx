@@ -19,6 +19,7 @@ interface ResultsDisplayProps {
   onExportVUNList: (format: "csv" | "xlsx") => void
   onExportQRTList: (format: "csv" | "xlsx") => void
   onReset: () => void
+  loadPlanCount?: number
 }
 
 
@@ -28,15 +29,24 @@ export function ResultsDisplay({
   onExportVUNList,
   onExportQRTList,
   onReset,
+  loadPlanCount,
 }: ResultsDisplayProps) {
+  const isFromDatabase = loadPlanCount !== undefined && loadPlanCount > 0
   return (
     <div className="max-w-6xl mx-auto space-y-6">
       <Card className="p-6">
         <div className="flex flex-col lg:flex-row gap-4 mb-6 justify-between">
           <div className="flex-1">
             <div className="mb-4">
-              <h2 className="text-xl font-semibold text-gray-900 mb-2">Load Plan Upload</h2>
-              <p className="text-sm text-gray-600">Your load plan has been successfully processed</p>
+              <h2 className="text-xl font-semibold text-gray-900 mb-2">
+                {isFromDatabase ? "Load Plans D-12" : "Load Plan Upload"}
+              </h2>
+              <p className="text-sm text-gray-600">
+                {isFromDatabase 
+                  ? `${loadPlanCount} load plan${loadPlanCount > 1 ? 's' : ''} departing within 12 hours`
+                  : "Your load plan has been successfully processed"
+                }
+              </p>
             </div>
             <div className="flex flex-wrap gap-2">
               <DropdownMenu>
@@ -53,7 +63,8 @@ export function ResultsDisplay({
                 </DropdownMenuContent>
               </DropdownMenu>
 
-              {results.vunList.length > 0 && (
+              {/* VUN List button - always show for database mode, or when there are VUN items */}
+              {(isFromDatabase || results.vunList.length > 0) && (
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button className="bg-[#D71A21] hover:bg-[#B01419] px-3 py-2 h-9">
@@ -69,7 +80,8 @@ export function ResultsDisplay({
                 </DropdownMenu>
               )}
 
-              {results.qrtList.length > 0 && (
+              {/* QRT List button - only show for file upload mode */}
+              {!isFromDatabase && results.qrtList.length > 0 && (
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button className="bg-[#D71A21] hover:bg-[#B01419] px-3 py-2 h-9">
@@ -88,7 +100,7 @@ export function ResultsDisplay({
           </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className={`grid grid-cols-1 sm:grid-cols-2 ${isFromDatabase ? '' : 'lg:grid-cols-3'} gap-6`}>
           <div className="bg-gray-50 p-4 rounded-lg">
             <p className="text-sm text-gray-600 mb-1">Special Cargo Items</p>
             <p className="text-xl font-semibold text-[#D71A21]">
@@ -101,13 +113,16 @@ export function ResultsDisplay({
           <div className="bg-gray-50 p-4 rounded-lg">
             <p className="text-sm text-gray-600 mb-1">VUN Items</p>
             <p className="text-xl font-semibold text-[#D71A21]">{results.vunList.length}</p>
-            <p className="text-xs text-gray-500 mt-1">Tracked shipments</p>
+            <p className="text-xs text-gray-500 mt-1">Valuable/Vulnerable shipments</p>
           </div>
-          <div className="bg-gray-50 p-4 rounded-lg">
-            <p className="text-sm text-gray-600 mb-1">QRT Items</p>
-            <p className="text-xl font-semibold text-[#D71A21]">{results.qrtList.length}</p>
-            <p className="text-xs text-gray-500 mt-1">Quick ramp transfer</p>
-          </div>
+          {/* QRT stats - only show for file upload mode */}
+          {!isFromDatabase && (
+            <div className="bg-gray-50 p-4 rounded-lg">
+              <p className="text-sm text-gray-600 mb-1">QRT Items</p>
+              <p className="text-xl font-semibold text-[#D71A21]">{results.qrtList.length}</p>
+              <p className="text-xs text-gray-500 mt-1">Quick ramp transfer</p>
+            </div>
+          )}
         </div>
       </Card>
 
@@ -124,10 +139,13 @@ export function ResultsDisplay({
               VUN List
               <span className="ml-2 text-xs text-gray-500">({results.vunList.length})</span>
             </TabsTrigger>
-            <TabsTrigger value="qrt">
-              QRT List
-              <span className="ml-2 text-xs text-gray-500">({results.qrtList.length})</span>
-            </TabsTrigger>
+            {/* QRT tab - only show for file upload mode */}
+            {!isFromDatabase && (
+              <TabsTrigger value="qrt">
+                QRT List
+                <span className="ml-2 text-xs text-gray-500">({results.qrtList.length})</span>
+              </TabsTrigger>
+            )}
           </TabsList>
 
           <TabsContent value="special-cargo" className="mt-0">
@@ -280,58 +298,61 @@ export function ResultsDisplay({
             </div>
           </TabsContent>
 
-          <TabsContent value="qrt" className="mt-0">
-            <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-gray-50 border-b border-gray-200 sticky top-0">
-                  <tr>
-                    <th className="px-3 py-2 text-left font-medium text-gray-700">Doc No.</th>
-                    <th className="px-3 py-2 text-left font-medium text-gray-700">Carrier</th>
-                    <th className="px-3 py-2 text-left font-medium text-gray-700">Flt No.</th>
-                    <th className="px-3 py-2 text-left font-medium text-gray-700">Off Pt</th>
-                    <th className="px-3 py-2 text-left font-medium text-gray-700">Dep. Date</th>
-                    <th className="px-3 py-2 text-left font-medium text-gray-700">STD</th>
-                    <th className="px-3 py-2 text-left font-medium text-gray-700">MCT</th>
-                    <th className="px-3 py-2 text-left font-medium text-gray-700">ULD</th>
-                    <th className="px-3 py-2 text-left font-medium text-gray-700">SHC</th>
-                    <th className="px-3 py-2 text-left font-medium text-gray-700">THC</th>
-                    <th className="px-3 py-2 text-left font-medium text-gray-700">Manifest Desc.</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {results.qrtList.length > 0 ? (
-                    results.qrtList.map((row, idx) => (
-                      <tr key={idx} className="border-b border-gray-100">
-                        <td className="px-3 py-2 text-gray-900">{row.docNo}</td>
-                        <td className="px-3 py-2 text-gray-600">{row.carrier}</td>
-                        <td className="px-3 py-2 text-gray-600">{row.flightNo}</td>
-                        <td className="px-3 py-2 text-gray-600">{row.outOffPt}</td>
-                        <td className="px-3 py-2 text-gray-600">{row.depDate}</td>
-                        <td className="px-3 py-2 text-gray-600">{row.std}</td>
-                        <td className="px-3 py-2 text-gray-600">{row.mct}</td>
-                        <td className="px-3 py-2 text-gray-600 text-xs">{row.uld}</td>
-                        <td className="px-3 py-2 text-gray-600 text-xs">{row.shc}</td>
-                        <td className="px-3 py-2 text-gray-600 text-xs font-semibold text-[#D71A21]">{row.thc}</td>
-                        <td className="px-3 py-2 text-gray-600 text-xs">{row.manifestDesc}</td>
-                      </tr>
-                    ))
-                  ) : (
+          {/* QRT content - only show for file upload mode */}
+          {!isFromDatabase && (
+            <TabsContent value="qrt" className="mt-0">
+              <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 border-b border-gray-200 sticky top-0">
                     <tr>
-                      <td colSpan={11} className="px-3 py-8 text-center text-gray-500">
-                        No data available
-                      </td>
+                      <th className="px-3 py-2 text-left font-medium text-gray-700">Doc No.</th>
+                      <th className="px-3 py-2 text-left font-medium text-gray-700">Carrier</th>
+                      <th className="px-3 py-2 text-left font-medium text-gray-700">Flt No.</th>
+                      <th className="px-3 py-2 text-left font-medium text-gray-700">Off Pt</th>
+                      <th className="px-3 py-2 text-left font-medium text-gray-700">Dep. Date</th>
+                      <th className="px-3 py-2 text-left font-medium text-gray-700">STD</th>
+                      <th className="px-3 py-2 text-left font-medium text-gray-700">MCT</th>
+                      <th className="px-3 py-2 text-left font-medium text-gray-700">ULD</th>
+                      <th className="px-3 py-2 text-left font-medium text-gray-700">SHC</th>
+                      <th className="px-3 py-2 text-left font-medium text-gray-700">THC</th>
+                      <th className="px-3 py-2 text-left font-medium text-gray-700">Manifest Desc.</th>
                     </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </TabsContent>
+                  </thead>
+                  <tbody>
+                    {results.qrtList.length > 0 ? (
+                      results.qrtList.map((row, idx) => (
+                        <tr key={idx} className="border-b border-gray-100">
+                          <td className="px-3 py-2 text-gray-900">{row.docNo}</td>
+                          <td className="px-3 py-2 text-gray-600">{row.carrier}</td>
+                          <td className="px-3 py-2 text-gray-600">{row.flightNo}</td>
+                          <td className="px-3 py-2 text-gray-600">{row.outOffPt}</td>
+                          <td className="px-3 py-2 text-gray-600">{row.depDate}</td>
+                          <td className="px-3 py-2 text-gray-600">{row.std}</td>
+                          <td className="px-3 py-2 text-gray-600">{row.mct}</td>
+                          <td className="px-3 py-2 text-gray-600 text-xs">{row.uld}</td>
+                          <td className="px-3 py-2 text-gray-600 text-xs">{row.shc}</td>
+                          <td className="px-3 py-2 text-gray-600 text-xs font-semibold text-[#D71A21]">{row.thc}</td>
+                          <td className="px-3 py-2 text-gray-600 text-xs">{row.manifestDesc}</td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan={11} className="px-3 py-8 text-center text-gray-500">
+                          No data available
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </TabsContent>
+          )}
         </Tabs>
       </Card>
 
       <div className="flex justify-center">
         <Button onClick={onReset} variant="outline">
-          Process Another File
+          {isFromDatabase ? "Reset" : "Process Another File"}
         </Button>
       </div>
     </div>
