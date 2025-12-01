@@ -1,6 +1,6 @@
 "use client"
 
-import { createContext, useContext, useState, ReactNode } from "react"
+import { createContext, useContext, useState, ReactNode, useCallback, useRef } from "react"
 import { useNotifications } from "./notification-context"
 import { getSupervisors, findStaffByName } from "./buildup-staff"
 
@@ -58,6 +58,7 @@ type LoadPlanContextType = {
   flightAssignments: FlightAssignment[]
   sentBCRs: SentBCR[]
   bupAllocations: BUPAllocation[]
+  activeSupervisorId: string | null
   setLoadPlans: (plans: LoadPlan[]) => void
   addLoadPlan: (plan: LoadPlan) => void
   updateFlightAssignment: (flight: string, name: string) => void
@@ -68,6 +69,7 @@ type LoadPlanContextType = {
   setBupAllocations: (allocations: BUPAllocation[]) => void
   addBupAllocation: (allocation: BUPAllocation) => void
   updateBupAllocationStaff: (flightNo: string, staff: string, mobile: string) => void
+  setActiveSupervisorId: (supervisorId: string | null) => void
 }
 
 const LoadPlanContext = createContext<LoadPlanContextType | undefined>(undefined)
@@ -130,16 +132,81 @@ function parseOriginDestination(pax: string | undefined): string {
 }
 
 export function LoadPlanProvider({ children }: { children: ReactNode }) {
-  const [loadPlans, setLoadPlans] = useState<LoadPlan[]>(defaultLoadPlans)
+  const [loadPlans, setLoadPlansState] = useState<LoadPlan[]>(defaultLoadPlans)
   const [flightAssignments, setFlightAssignments] = useState<FlightAssignment[]>([])
   const [sentBCRs, setSentBCRs] = useState<SentBCR[]>([])
   const [bupAllocations, setBupAllocations] = useState<BUPAllocation[]>([])
+  const [activeSupervisorId, setActiveSupervisorId] = useState<string | null>(null)
   const { addNotification } = useNotifications()
+  
+  // Use refs to track values without causing re-renders
+  // IMPORTANT: Only update ref inside setLoadPlans, not on every render
+  // This ensures we compare against the previous value, not the current state
+  const loadPlansRef = useRef<LoadPlan[]>(defaultLoadPlans)
+  const activeSupervisorIdRef = useRef<string | null>(null)
+  
+  // Update activeSupervisorId ref when state changes (this is fine)
+  activeSupervisorIdRef.current = activeSupervisorId
+
+  // Wrapper for setLoadPlans that detects new/deleted load plans and notifies active supervisor
+  // Memoized with useCallback to prevent infinite loops in useEffect dependencies
+  const setLoadPlans = useCallback((newPlans: LoadPlan[]) => {
+    // Compare against the ref value (which represents the previous state)
+    // This ensures we detect changes correctly
+    const currentPlans = loadPlansRef.current
+    const currentFlightNumbers = new Set(currentPlans.map(lp => lp.flight))
+    const newFlightNumbers = new Set(newPlans.map(lp => lp.flight))
+    
+    const newLoadPlans = newPlans.filter(lp => !currentFlightNumbers.has(lp.flight))
+    const deletedLoadPlans = currentPlans.filter(lp => !newFlightNumbers.has(lp.flight))
+    
+    console.log('[LoadPlanContext] setLoadPlans:', {
+      currentCount: currentPlans.length,
+      newCount: newPlans.length,
+      currentFlights: Array.from(currentFlightNumbers),
+      newFlights: Array.from(newFlightNumbers),
+      newLoadPlans: newLoadPlans.map(lp => lp.flight),
+      deletedLoadPlans: deletedLoadPlans.map(lp => lp.flight),
+      activeSupervisorId: activeSupervisorIdRef.current
+    })
+    
+    // Notify active supervisor about new load plans
+    if (newLoadPlans.length > 0 && activeSupervisorIdRef.current) {
+      console.log('[LoadPlanContext] Creating notifications for new load plans:', newLoadPlans.map(lp => lp.flight))
+      newLoadPlans.forEach(plan => {
+        addNotification({
+          type: "load_plan_updated",
+          flight: plan.flight,
+          staffNo: activeSupervisorIdRef.current!,
+          title: "New Load Plan Uploaded",
+          message: `A new load plan for flight ${plan.flight} has been uploaded.`,
+        })
+      })
+    }
+    
+    // Notify active supervisor about deleted load plans
+    if (deletedLoadPlans.length > 0 && activeSupervisorIdRef.current) {
+      console.log('[LoadPlanContext] Creating notifications for deleted load plans:', deletedLoadPlans.map(lp => lp.flight))
+      deletedLoadPlans.forEach(plan => {
+        addNotification({
+          type: "load_plan_updated",
+          flight: plan.flight,
+          staffNo: activeSupervisorIdRef.current!,
+          title: "Load Plan Deleted",
+          message: `Load plan for flight ${plan.flight} has been deleted.`,
+        })
+      })
+    }
+    
+    // Update ref AFTER comparison to ensure next call compares against this value
+    loadPlansRef.current = newPlans
+    setLoadPlansState(newPlans)
+  }, [addNotification])
 
   const addLoadPlan = async (plan: LoadPlan) => {
     let isUpdate = false
     
-    setLoadPlans((prev) => {
+    setLoadPlansState((prev) => {
       const exists = prev.some((p) => p.flight === plan.flight)
       isUpdate = exists
       if (exists) {
@@ -386,6 +453,7 @@ export function LoadPlanProvider({ children }: { children: ReactNode }) {
         flightAssignments,
         sentBCRs,
         bupAllocations,
+        activeSupervisorId,
         setLoadPlans,
         addLoadPlan,
         updateFlightAssignment,
@@ -396,6 +464,7 @@ export function LoadPlanProvider({ children }: { children: ReactNode }) {
         setBupAllocations,
         addBupAllocation,
         updateBupAllocationStaff,
+        setActiveSupervisorId,
       }}
     >
       {children}

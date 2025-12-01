@@ -340,6 +340,41 @@ export async function findStaffByName(searchName: string): Promise<BuildupStaff 
 }
 
 /**
+ * Find staff by staff number (exact match)
+ * Used for login and staff lookup by ID
+ */
+export async function findStaffByStaffNo(staffNo: string | number): Promise<BuildupStaff | null> {
+  try {
+    if (!isSupabaseConfigured()) {
+      return null
+    }
+
+    const supabase = createClient()
+    const staffNoNum = typeof staffNo === "string" ? parseInt(staffNo, 10) : staffNo
+
+    if (isNaN(staffNoNum)) {
+      return null
+    }
+
+    const { data: staff, error } = await supabase
+      .from("buildup_staff_list")
+      .select("*")
+      .eq("staff_no", staffNoNum)
+      .limit(1)
+      .single()
+
+    if (error || !staff) {
+      return null
+    }
+
+    return staff as BuildupStaff
+  } catch (error) {
+    console.error("[BuildupStaff] Error finding staff by staff number:", error)
+    return null
+  }
+}
+
+/**
  * Generate a deterministic mobile number based on staff_no
  * This creates a unique, consistent mobile number for each staff member
  * Format: +971 5X XXX XXXX (UAE mobile format)

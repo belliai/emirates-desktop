@@ -177,7 +177,7 @@ interface FlightAssignmentScreenProps {
 }
 
 export default function FlightAssignmentScreen({ initialSupervisor }: FlightAssignmentScreenProps = {}) {
-  const { loadPlans, flightAssignments: contextAssignments, bupAllocations, updateFlightAssignment, updateFlightAssignmentSector, setLoadPlans } = useLoadPlans()
+  const { loadPlans, flightAssignments: contextAssignments, bupAllocations, updateFlightAssignment, updateFlightAssignmentSector, setLoadPlans, setActiveSupervisorId } = useLoadPlans()
   const [isLoading, setIsLoading] = useState(true)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [supervisors, setSupervisors] = useState<BuildupStaff[]>([])
@@ -350,6 +350,14 @@ export default function FlightAssignmentScreen({ initialSupervisor }: FlightAssi
       setSelectedSupervisorId(initialSupervisor)
     }
   }, [initialSupervisor])
+
+  // Set active supervisor in context when supervisor selection changes
+  // NOTE: We don't clear on unmount so notifications work when navigating to Load Plans
+  useEffect(() => {
+    if (selectedSupervisorId) {
+      setActiveSupervisorId(selectedSupervisorId)
+    }
+  }, [selectedSupervisorId, setActiveSupervisorId])
 
   // Show notifications when screen opens or supervisor selection changes
   useEffect(() => {
