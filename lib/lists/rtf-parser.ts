@@ -11,39 +11,23 @@ import { extractTextFromFile } from "./file-extractors"
  * This helps ensure the parser can correctly identify patterns
  */
 function preprocessRTFContent(content: string): string {
+  // Content should already be cleaned by extractTextFromRTFDirect
+  // This function just does final normalization
+  
   let processed = content
 
-  // Remove RTF control codes that might interfere with parsing
-  // These are already handled by extractTextFromFile, but we do additional cleanup
-  
-  // Normalize multiple spaces (RTF can have inconsistent spacing)
-  processed = processed.replace(/[ \t]{3,}/g, "  ")
-  
   // Normalize line breaks (ensure consistent \n)
   processed = processed.replace(/\r\n/g, "\n").replace(/\r/g, "\n")
   
-  // Remove lines that are clearly RTF artifacts
-  const lines = processed.split("\n")
-  const cleanedLines = lines.filter(line => {
-    const trimmed = line.trim()
-    
-    // Skip empty lines (but we'll add them back for structure)
-    if (!trimmed) return true
-    
-    // Skip RTF style table definitions
-    if (trimmed.match(/^List\s+Table\s+\d+/i)) return false
-    
-    // Skip binary-looking data
-    if (trimmed.match(/^[0f\s]{50,}$/i)) return false
-    if (trimmed.match(/^[0-9a-f]{100,}$/i)) return false
-    
-    // Skip lines that are just RTF control codes
-    if (trimmed.match(/^\\[a-zA-Z]+\d*\s*$/)) return false
-    
-    return true
-  })
+  // Normalize multiple spaces
+  processed = processed.replace(/[ \t]{3,}/g, "  ")
   
-  return cleanedLines.join("\n")
+  // Remove excessive empty lines
+  processed = processed.replace(/\n{4,}/g, "\n\n\n")
+  
+  console.log(`[RTFParser] Preprocessed content: ${processed.length} chars (from ${content.length} chars)`)
+  
+  return processed
 }
 
 /**
@@ -229,6 +213,8 @@ export function parseRTFShipments(content: string, header: LoadPlanHeader): Ship
   // Preprocess RTF content first
   const processedContent = preprocessRTFContent(content)
   
+  console.log(`[RTFParser] Processing shipments from ${processedContent.length} chars of content`)
+  
   const shipments: Shipment[] = []
   const lines = processedContent.split("\n")
   let currentShipment: Partial<Shipment> | null = null
@@ -237,9 +223,16 @@ export function parseRTFShipments(content: string, header: LoadPlanHeader): Ship
   let isRampTransfer = false
   let currentSector = header.sector || ""
   const awbBuffer: Partial<Shipment>[] = []
+  
+  console.log(`[RTFParser] Total lines to process: ${lines.length}`)
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim()
+    
+    // Log first few lines that look like shipments for debugging
+    if (i < 200 && line.match(/^\d{3}\s+\d{3}-\d{8}/)) {
+      console.log(`[RTFParser] Line ${i} looks like shipment:`, line.substring(0, 200))
+    }
 
     // Check for new SECTOR marker
     const sectorMatch = line.match(/^SECTOR:\s*([A-Z]{6})/i)
@@ -280,13 +273,17 @@ export function parseRTFShipments(content: string, header: LoadPlanHeader): Ship
       continue
     }
 
-    // Check for TOTALS line - end of shipments
+    // Check for TOTALS line - end of shipments (but continue parsing in case there are more sectors)
     if (line.includes("TOTALS:") || line.match(/^TOTALS:/i)) {
       // Flush buffer before ending
       if (awbBuffer.length > 0) {
+        console.log("[RTFParser] Flushing", awbBuffer.length, "items from buffer at TOTALS")
         awbBuffer.forEach((shipment) => {
           const s = shipment as Partial<Shipment> & { sector?: string }
           s.sector = currentSector
+          if (!s.uld) {
+            s.uld = ""
+          }
         })
         shipments.push(...(awbBuffer as Shipment[]))
         awbBuffer.length = 0
@@ -295,6 +292,9 @@ export function parseRTFShipments(content: string, header: LoadPlanHeader): Ship
       if (currentShipment) {
         const s = currentShipment as Partial<Shipment> & { sector?: string }
         s.sector = currentSector
+        if (!s.uld) {
+          s.uld = ""
+        }
         shipments.push(currentShipment as Shipment)
         currentShipment = null
       }
@@ -450,16 +450,30 @@ export function parseRTFShipments(content: string, header: LoadPlanHeader): Ship
       // If ULD was set before, assign it
       if (currentULD) {
         currentShipment.uld = currentULD
+        const s = currentShipment as Partial<Shipment> & { sector?: string }
+        s.sector = currentSector
         shipments.push(currentShipment as Shipment)
         currentShipment = null
         currentULD = ""
       } else {
         // Store in buffer until ULD is found
+        // Make sure sector is set
+        const s = currentShipment as Partial<Shipment> & { sector?: string }
+        s.sector = currentSector
         awbBuffer.push(currentShipment)
         currentShipment = null
       }
       
       continue
+    }
+    
+    // Log lines that look like shipments but don't match (for debugging)
+    if (inShipmentSection && line.match(/^\d{3}\s+\d{3}-\d{8}/)) {
+      console.warn("[RTFParser] ⚠️ Line looks like shipment but didn't match regex:", line.substring(0, 200))
+      console.warn("[RTFParser] ⚠️ Normalized line:", normalizedLine.substring(0, 200))
+      // Try to see what fields we can extract manually
+      const parts = normalizedLine.split(/\s+/)
+      console.warn("[RTFParser] ⚠️ Line parts count:", parts.length, "First 10 parts:", parts.slice(0, 10))
     }
 
     // Check for ULD section - same pattern as regular parser
@@ -509,36 +523,50 @@ export function parseRTFShipments(content: string, header: LoadPlanHeader): Ship
 
   // Flush any remaining items
   if (awbBuffer.length > 0) {
+    console.log(`[RTFParser] Flushing ${awbBuffer.length} items from buffer at end of parsing`)
     awbBuffer.forEach((shipment) => {
       const s = shipment as Partial<Shipment> & { sector?: string }
       s.sector = currentSector
+      // If no ULD assigned, use empty string
+      if (!s.uld) {
+        s.uld = ""
+      }
     })
     shipments.push(...(awbBuffer as Shipment[]))
+    awbBuffer.length = 0
   }
   
   if (currentShipment) {
     const s = currentShipment as Partial<Shipment> & { sector?: string }
     s.sector = currentSector
+    if (!s.uld) {
+      s.uld = ""
+    }
     shipments.push(currentShipment as Shipment)
   }
 
   console.log(`[RTFParser] Parsed ${shipments.length} shipments from RTF content`)
+  console.log(`[RTFParser] Shipments by sector:`, 
+    Array.from(new Map(shipments.map(s => [s.sector || 'UNKNOWN', 0])).keys()).map(sector => {
+      const count = shipments.filter(s => (s.sector || 'UNKNOWN') === sector).length
+      return { sector, count }
+    })
+  )
+  console.log(`[RTFParser] Ramp transfer shipments:`, shipments.filter(s => s.isRampTransfer).length)
+  
   return shipments
 }
 
 /**
  * Extract text directly from RTF file without DOCX conversion
- * Uses the rtfToPlainText function from file-extractors
+ * More aggressive cleaning to remove RTF artifacts
  */
 async function extractTextFromRTFDirect(file: File): Promise<string> {
   try {
     // Read RTF file as text
     const rtfText = await file.text()
     
-    // Use rtfToPlainText function to convert RTF to plain text
-    // This function is already defined in file-extractors.ts but not exported
-    // So we'll implement a simplified version here
-    
+    // Step 1: Basic RTF control word removal
     let text = rtfText
       .replace(/\\par[d]?/gi, "\n")
       .replace(/\\line/gi, "\n")
@@ -546,74 +574,114 @@ async function extractTextFromRTFDirect(file: File): Promise<string> {
       .replace(/\\;/g, ";")
       .replace(/\\\\/g, "\\")
 
-    // Decode hex escapes like \'e9 -> é
+    // Step 2: Decode hex escapes like \'e9 -> é
     text = text.replace(/\\'([0-9a-fA-F]{2})/g, (_m, hex) =>
       String.fromCharCode(parseInt(hex, 16))
     )
 
-    // Drop remaining control words
+    // Step 3: Remove RTF control words more aggressively
     text = text.replace(/\\[a-zA-Z]+-?\d*(?:\s|)/g, "")
-
-    // Remove braces
+    
+    // Step 4: Remove braces and their content (RTF groups)
+    // First pass: remove empty braces
     text = text.replace(/\{[^}]*\}/g, (match) => {
       const content = match.slice(1, -1)
       if (!content.trim() || /^\\[a-zA-Z]+\d*\s*$/.test(content)) {
         return ""
       }
+      // If content looks like binary/hex data, remove it
+      if (/^[0-9a-f]{50,}$/i.test(content.trim())) {
+        return ""
+      }
       return match
     })
     
+    // Second pass: remove remaining braces but keep content
     text = text.replace(/[{}]/g, "")
 
-    // Split into lines for processing
+    // Step 5: Find the actual load plan content
+    // Look for "SER." and "AWB NO" to find where the table starts
     const lines = text.split("\n")
-    const processedLines: string[] = []
+    let startIndex = 0
+    let foundTableHeader = false
     
     for (let i = 0; i < lines.length; i++) {
-      let line = lines[i]
-      
-      const isTableRow = /^\d{3}\s+\d{3}-\d{8}/.test(line.trim())
-      const isTableHeader = /SER\./i.test(line) && /AWB\s+NO/i.test(line)
-      const isSeparator = /^[_\-=\s]+$/.test(line.trim())
-      
-      if (isTableRow || isTableHeader || isSeparator) {
-        line = line.replace(/\t/g, " ")
-        line = line.replace(/ {3,}/g, "  ")
-        processedLines.push(line.trimEnd())
-      } else {
-        line = line.trimEnd()
-        line = line.replace(/[ \t]+/g, " ")
-        processedLines.push(line)
+      const line = lines[i]
+      // Look for table header - be flexible with spacing
+      if ((line.includes("SER") || line.includes("SER.")) && 
+          (line.includes("AWB") || line.includes("AWB NO") || line.includes("AWBNO"))) {
+        startIndex = Math.max(0, i - 100) // Include some context before header
+        foundTableHeader = true
+        console.log(`[RTFParser] Found table header at line ${i}, starting extraction from line ${startIndex}`)
+        break
       }
     }
     
-    text = processedLines.join("\n").replace(/\n{3,}/g, "\n\n").trim()
+    // If header found, only process from that point
+    if (foundTableHeader) {
+      text = lines.slice(startIndex).join("\n")
+      console.log(`[RTFParser] Extracted ${text.length} chars from table header onwards`)
+    } else {
+      console.warn('[RTFParser] Table header not found, processing entire file')
+    }
     
-    // Final cleanup
-    const finalLines = text.split("\n")
-    const cleanedLines = finalLines.filter(line => {
-      const trimmed = line.trim()
-      if (!trimmed) return true
-      if (trimmed.match(/^List\s+Table\s+\d+/i)) return false
-      if (trimmed.match(/^[0f\s]{50,}$/i)) return false
-      if (trimmed.match(/^[0-9a-f]{100,}$/i)) return false
-      if (trimmed.match(/^\\[a-zA-Z]+\d*\s*$/)) return false
-      return true
-    })
+    // Step 6: Clean up lines - remove RTF artifacts
+    const textLines = text.split("\n")
+    const cleanedLines: string[] = []
     
-    text = cleanedLines.join("\n").replace(/\n{4,}/g, "\n\n\n").trim()
+    for (let i = 0; i < textLines.length; i++) {
+      let line = textLines[i].trim()
+      
+      // Skip empty lines (but keep structure)
+      if (!line) {
+        cleanedLines.push("")
+        continue
+      }
+      
+      // Skip RTF style definitions
+      if (line.match(/^List\s+Table\s+\d+/i)) continue
+      if (line.match(/^Colorful|^Light|^Medium|^Dark|^Subtle|^Intense|^Book|^Bibliography|^TOC/i)) continue
+      if (line.match(/^Times\s+New\s+Roman|^Arial|^Calibri|^Courier/i)) continue
+      if (line.match(/^Normal|^heading\s+\d+/i)) continue
+      
+      // Skip binary/hex data
+      if (line.match(/^[0f\s]{50,}$/i)) continue
+      if (line.match(/^[0-9a-f]{100,}$/i)) continue
+      
+      // Skip lines with too many RTF control codes
+      if ((line.match(/\\[a-zA-Z]+\d*/g) || []).length > 5) continue
+      
+      // Skip lines that are mostly special characters
+      if ((line.match(/[{}]/g) || []).length > 10) continue
+      
+      // Normalize spacing
+      line = line.replace(/\s+/g, " ")
+      
+      cleanedLines.push(line)
+    }
+    
+    text = cleanedLines.join("\n").replace(/\n{3,}/g, "\n\n").trim()
     
     console.log('[RTFParser] Direct RTF extraction, length:', text.length)
     
-    // Log first 1000 chars for debugging
+    // Log sample for debugging
     if (text.length > 0) {
-      console.log('[RTFParser] First 1000 chars of extracted text:', text.substring(0, 1000))
-      // Check if EK pattern exists in extracted text
-      const ekPatterns = text.match(/EK[^\s]*/gi)
+      const sampleStart = text.substring(0, 1000)
+      console.log('[RTFParser] First 1000 chars of extracted text:', sampleStart)
+      
+      // Check if EK pattern exists
+      const ekPatterns = text.match(/EK\s*\d{3,4}/gi)
       if (ekPatterns) {
         console.log('[RTFParser] Found EK patterns in extracted text:', ekPatterns.slice(0, 10))
       } else {
         console.warn('[RTFParser] No EK patterns found in extracted text!')
+      }
+      
+      // Check if table header exists
+      if (text.includes("SER") && text.includes("AWB")) {
+        console.log('[RTFParser] ✅ Table header found in extracted text')
+      } else {
+        console.warn('[RTFParser] ⚠️ Table header not found in extracted text')
       }
     }
     
@@ -657,6 +725,11 @@ export async function parseRTFFile(file: File): Promise<{ header: LoadPlanHeader
   const content = await extractTextFromRTFDirect(file)
   console.log('[RTFParser] Extracted content length:', content.length)
   
+  // Log last 500 chars to see if content is complete
+  if (content.length > 500) {
+    console.log('[RTFParser] Last 500 chars of content:', content.substring(content.length - 500))
+  }
+  
   // Parse header using RTF-specific parser
   const header = parseRTFHeader(content)
   
@@ -673,9 +746,30 @@ export async function parseRTFFile(file: File): Promise<{ header: LoadPlanHeader
     }
   }
   
+  console.log('[RTFParser] Parsed header:', {
+    flightNumber: header.flightNumber,
+    date: header.date,
+    aircraftType: header.aircraftType,
+    sector: header.sector,
+  })
+  
   // Parse shipments using RTF-specific parser
   const shipments = parseRTFShipments(content, header)
-  console.log('[RTFParser] Parsed shipments:', shipments.length)
+  console.log('[RTFParser] Total parsed shipments:', shipments.length)
+  
+  // Validate shipments
+  if (shipments.length === 0) {
+    console.warn('[RTFParser] No shipments parsed! This might indicate a parsing issue.')
+    // Log sample lines that look like shipments
+    const lines = content.split('\n')
+    const shipmentLikeLines = lines.filter(line => /^\d{3}\s+\d{3}-\d{8}/.test(line.trim())).slice(0, 5)
+    if (shipmentLikeLines.length > 0) {
+      console.warn('[RTFParser] Found lines that look like shipments but were not parsed:')
+      shipmentLikeLines.forEach((line, idx) => {
+        console.warn(`[RTFParser]   ${idx + 1}:`, line.substring(0, 100))
+      })
+    }
+  }
   
   return { header, shipments }
 }

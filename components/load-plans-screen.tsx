@@ -220,9 +220,93 @@ export default function LoadPlansScreen({ onLoadPlanSelect }: { onLoadPlanSelect
           if (isRTF) {
             // Use RTF-specific parser
             console.log('[LoadPlansScreen] Using RTF parser for:', f.name)
-            const rtfResult = await parseRTFFile(f)
-            header = rtfResult.header
-            shipments = rtfResult.shipments
+            try {
+              const rtfResult = await parseRTFFile(f)
+              header = rtfResult.header
+              shipments = rtfResult.shipments
+              
+              // If RTF parser returns very few shipments, try fallback to regular parser
+              if (shipments.length < 5) {
+                console.warn('[LoadPlansScreen] RTF parser returned only', shipments.length, 'shipments. Trying fallback to regular parser...')
+                try {
+                  // Use direct RTF extraction (same as RTF parser uses) to avoid DOCX conversion
+                  const rtfText = await f.text()
+                  let fallbackContent = rtfText
+                    .replace(/\\par[d]?/gi, "\n")
+                    .replace(/\\line/gi, "\n")
+                    .replace(/\\tab/gi, "\t")
+                    .replace(/\\;/g, ";")
+                    .replace(/\\\\/g, "\\")
+                    .replace(/\\'([0-9a-fA-F]{2})/g, (_m, hex) => String.fromCharCode(parseInt(hex, 16)))
+                    .replace(/\\[a-zA-Z]+-?\d*(?:\s|)/g, "")
+                    .replace(/\{[^}]*\}/g, "")
+                    .replace(/[{}]/g, "")
+                  
+                  // Find table header and extract from there
+                  const lines = fallbackContent.split("\n")
+                  let startIdx = 0
+                  for (let i = 0; i < lines.length; i++) {
+                    if (lines[i].includes("SER.") && lines[i].includes("AWB NO")) {
+                      startIdx = Math.max(0, i - 50)
+                      break
+                    }
+                  }
+                  fallbackContent = lines.slice(startIdx).join("\n")
+                  
+                  const fallbackHeader = parseHeader(fallbackContent)
+                  const fallbackShipments = parseShipments(fallbackContent, fallbackHeader)
+                  
+                  if (fallbackShipments.length > shipments.length) {
+                    console.log('[LoadPlansScreen] Fallback parser found', fallbackShipments.length, 'shipments. Using fallback result.')
+                    header = fallbackHeader
+                    shipments = fallbackShipments
+                  } else {
+                    console.log('[LoadPlansScreen] RTF parser result is better, keeping RTF result.')
+                  }
+                } catch (fallbackError) {
+                  console.error('[LoadPlansScreen] Fallback parser also failed:', fallbackError)
+                }
+              }
+            } catch (rtfError) {
+              console.error('[LoadPlansScreen] RTF parser failed, trying fallback to regular parser:', rtfError)
+              // Fallback to regular parser with direct RTF extraction
+              try {
+                const rtfText = await f.text()
+                let fallbackContent = rtfText
+                  .replace(/\\par[d]?/gi, "\n")
+                  .replace(/\\line/gi, "\n")
+                  .replace(/\\tab/gi, "\t")
+                  .replace(/\\;/g, ";")
+                  .replace(/\\\\/g, "\\")
+                  .replace(/\\'([0-9a-fA-F]{2})/g, (_m, hex) => String.fromCharCode(parseInt(hex, 16)))
+                  .replace(/\\[a-zA-Z]+-?\d*(?:\s|)/g, "")
+                  .replace(/\{[^}]*\}/g, "")
+                  .replace(/[{}]/g, "")
+                
+                // Find table header
+                const lines = fallbackContent.split("\n")
+                let startIdx = 0
+                for (let i = 0; i < lines.length; i++) {
+                  if (lines[i].includes("SER.") && lines[i].includes("AWB NO")) {
+                    startIdx = Math.max(0, i - 50)
+                    break
+                  }
+                }
+                fallbackContent = lines.slice(startIdx).join("\n")
+                
+                header = parseHeader(fallbackContent)
+                if (!header.flightNumber) {
+                  console.error('[LoadPlansScreen] Could not parse flight number from file:', f.name)
+                  failedFiles.push(f.name)
+                  continue
+                }
+                shipments = parseShipments(fallbackContent, header)
+              } catch (fallbackError) {
+                console.error('[LoadPlansScreen] All parsing methods failed:', fallbackError)
+                failedFiles.push(f.name)
+                continue
+              }
+            }
           } else {
             // Use regular parser for other file types
             const content = await extractTextFromFile(f)
@@ -239,6 +323,13 @@ export default function LoadPlansScreen({ onLoadPlanSelect }: { onLoadPlanSelect
           }
           
           console.log('[LoadPlansScreen] Parsed shipments from', f.name, ':', shipments.length)
+          
+          // Validate that we have shipments
+          if (!shipments || shipments.length === 0) {
+            console.error('[LoadPlansScreen] No shipments parsed from file:', f.name)
+            failedFiles.push(f.name)
+            continue
+          }
           
           // Log ramp transfer detection
           const rampTransferShipments = shipments.filter(s => s.isRampTransfer)
@@ -268,6 +359,13 @@ export default function LoadPlansScreen({ onLoadPlanSelect }: { onLoadPlanSelect
             shipments 
           }
 
+          // Validate shipments before saving
+          console.log('[LoadPlansScreen] About to save to Supabase:', {
+            flightNumber: header.flightNumber,
+            shipmentsCount: shipments.length,
+            fileName: f.name,
+          })
+          
           // Save to Supabase
           const saveResult = await saveListsDataToSupabase({
             results,
@@ -277,7 +375,8 @@ export default function LoadPlansScreen({ onLoadPlanSelect }: { onLoadPlanSelect
           })
 
           if (saveResult.success) {
-            console.log('[LoadPlansScreen] Data saved to Supabase successfully for', f.name, ', load_plan_id:', saveResult.loadPlanId)
+            console.log('[LoadPlansScreen] ✅ Data saved to Supabase successfully for', f.name, ', load_plan_id:', saveResult.loadPlanId)
+            console.log('[LoadPlansScreen] Saved', shipments.length, 'shipments to load_plan_items')
             
             // Check if flight already exists in current list
             const exists = loadPlans.some((lp) => lp.flight === header.flightNumber)
@@ -288,6 +387,7 @@ export default function LoadPlansScreen({ onLoadPlanSelect }: { onLoadPlanSelect
               totalAddedCount++
             }
           } else {
+            console.error('[LoadPlansScreen] ❌ Failed to save to Supabase:', saveResult.error)
             console.error('[LoadPlansScreen] Failed to save data to Supabase for', f.name, ':', saveResult.error)
             failedFiles.push(f.name)
           }
