@@ -1,8 +1,8 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState } from "react"
 import LoginScreen from "@/components/login-screen"
-import { findStaffByStaffNo, parseStaffName } from "@/lib/buildup-staff"
+import { findStaffByStaffNo } from "@/lib/buildup-staff"
 import DesktopScreen from "@/components/desktop-screen"
 import ULDHistoryScreen from "@/components/uld-history-screen"
 import ListsScreen from "@/components/lists-screen"
@@ -32,11 +32,8 @@ import { FlightProvider, useFlights } from "@/lib/flight-context"
 import { LoadPlanProvider } from "@/lib/load-plan-context"
 import type { ULD } from "@/lib/flight-data"
 
-const AUTH_STORAGE_KEY = "emirates_auth_staff_id"
-
 function AppContent() {
   const [isLoggedIn, setIsLoggedIn] = useState(false)
-  const [isCheckingAuth, setIsCheckingAuth] = useState(true)
   const [currentScreen, setCurrentScreen] = useState<
     | "desktop"
     | "history"
@@ -70,36 +67,6 @@ function AppContent() {
   const [buildupStaffParams, setBuildupStaffParams] = useState<{ staff?: string } | null>(null)
   const { updateULDStatus, addMultipleStatusUpdates } = useFlights()
 
-  // Check authentication on mount
-  useEffect(() => {
-    const checkAuth = async () => {
-      try {
-        const storedStaffId = localStorage.getItem(AUTH_STORAGE_KEY)
-        if (storedStaffId) {
-          // Verify staff still exists
-          const staff = await findStaffByStaffNo(storedStaffId)
-          if (staff) {
-            setIsLoggedIn(true)
-            // Navigate to buildup-staff with staff selected
-            const parsed = parseStaffName(staff.name)
-            setBuildupStaffParams({ staff: staff.staff_no.toString() })
-            setCurrentScreen("buildup-staff")
-          } else {
-            // Staff not found, clear auth
-            localStorage.removeItem(AUTH_STORAGE_KEY)
-          }
-        }
-      } catch (error) {
-        console.error("[App] Error checking auth:", error)
-        localStorage.removeItem(AUTH_STORAGE_KEY)
-      } finally {
-        setIsCheckingAuth(false)
-      }
-    }
-    
-    checkAuth()
-  }, [])
-
   const handleLogin = async (staffId: string) => {
     try {
       // If no staff ID provided, allow login to master view (no persistence)
@@ -112,8 +79,6 @@ function AppContent() {
 
       const staff = await findStaffByStaffNo(staffId)
       if (staff) {
-        // Store auth state
-        localStorage.setItem(AUTH_STORAGE_KEY, staff.staff_no.toString())
         setIsLoggedIn(true)
         // Navigate to buildup-staff with staff selected
         setBuildupStaffParams({ staff: staff.staff_no.toString() })
@@ -129,7 +94,6 @@ function AppContent() {
   }
 
   const handleLogout = () => {
-    localStorage.removeItem(AUTH_STORAGE_KEY)
     setIsLoggedIn(false)
     setCurrentScreen("desktop")
     setBuildupStaffParams(null)
@@ -243,18 +207,6 @@ function AppContent() {
       default:
         return <DesktopScreen onULDSelect={handleULDSelect} />
     }
-  }
-
-  // Show loading while checking auth
-  if (isCheckingAuth) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-white">
-        <div className="text-center">
-          <div className="mb-4 inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-[#D71A21] border-r-transparent"></div>
-          <p className="text-gray-600">Loading...</p>
-        </div>
-      </div>
-    )
   }
 
   return (
