@@ -1,17 +1,19 @@
 "use client"
 
 import React, { useState, useEffect, useMemo } from "react"
-import { ChevronRight, Plane, Calendar, Package, Users, Clock, FileText, Check, ChevronsUpDown } from "lucide-react"
+import { ChevronRight, Plane, Calendar, Package, Users, Clock, FileText, Check, ChevronsUpDown, RefreshCw } from "lucide-react"
 import { useLoadPlans, type LoadPlan } from "@/lib/load-plan-context"
 import LoadPlanDetailScreen from "./load-plan-detail-screen"
 import type { LoadPlanDetail } from "./load-plan-types"
-import { getLoadPlanDetailFromSupabase } from "@/lib/load-plans-supabase"
+import { getLoadPlanDetailFromSupabase, getLoadPlansFromSupabase } from "@/lib/load-plans-supabase"
 import { getOperators, parseStaffName, type BuildupStaff } from "@/lib/buildup-staff"
 import { Button } from "@/components/ui/button"
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { cn } from "@/lib/utils"
 import { NotificationBadge } from "./notification-badge"
+import { useNotifications } from "@/lib/notification-context"
+import { useToast } from "@/hooks/use-toast"
 
 interface BuildupStaffScreenProps {
   initialStaff?: string
@@ -19,13 +21,17 @@ interface BuildupStaffScreenProps {
 }
 
 export default function BuildupStaffScreen({ initialStaff, onNavigate }: BuildupStaffScreenProps = {}) {
-  const { loadPlans, getFlightsByStaff } = useLoadPlans()
+  const { loadPlans, getFlightsByStaff, setLoadPlans, flightAssignments } = useLoadPlans()
   const [operators, setOperators] = useState<BuildupStaff[]>([])
   const [selectedStaffId, setSelectedStaffId] = useState<string>(initialStaff || "")
   const [selectedLoadPlan, setSelectedLoadPlan] = useState<LoadPlanDetail | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [isRefreshing, setIsRefreshing] = useState(false)
   const [staffDropdownOpen, setStaffDropdownOpen] = useState(false)
   const [staffSearch, setStaffSearch] = useState("")
+  const { getNotificationsForStaff } = useNotifications()
+  const { toast } = useToast()
+  const shownNotificationIdsRef = React.useRef<Set<string>>(new Set())
   
   // Fetch operators from Supabase on mount
   useEffect(() => {
@@ -60,6 +66,26 @@ export default function BuildupStaffScreen({ initialStaff, onNavigate }: Buildup
     }
   }, [initialStaff])
 
+  // Show notifications when screen opens or staff selection changes
+  useEffect(() => {
+    if (selectedStaffId) {
+      const notifications = getNotificationsForStaff(selectedStaffId)
+      const unreadNotifications = notifications.filter(
+        (notif) => !notif.read && !shownNotificationIdsRef.current.has(notif.id)
+      )
+
+      // Show unread notifications as toasts
+      unreadNotifications.forEach((notif) => {
+        toast({
+          title: notif.title,
+          description: notif.message,
+          duration: 5000,
+        })
+        shownNotificationIdsRef.current.add(notif.id)
+      })
+    }
+  }, [selectedStaffId, getNotificationsForStaff, toast])
+
   // Parse all operators into options with display names
   const operatorOptions = useMemo(() => {
     return operators.map(op => {
@@ -79,7 +105,8 @@ export default function BuildupStaffScreen({ initialStaff, onNavigate }: Buildup
     const search = staffSearch.toLowerCase()
     return operatorOptions.filter(op => 
       op.searchName.includes(search) || 
-      op.displayName.toLowerCase().includes(search)
+      op.displayName.toLowerCase().includes(search) ||
+      op.fullName.toLowerCase().includes(search)
     )
   }, [operatorOptions, staffSearch])
 
@@ -104,6 +131,72 @@ export default function BuildupStaffScreen({ initialStaff, onNavigate }: Buildup
 
   // Get flights assigned to the selected staff member
   const assignedLoadPlans = getFlightsByStaff(getDisplayName().toLowerCase())
+
+  // Handle refresh with new/deleted detection
+  const handleRefresh = async () => {
+    if (!selectedStaffId) return
+    
+    setIsRefreshing(true)
+    try {
+      // Store current assigned flight numbers for comparison
+      const currentAssignedFlights = new Set(assignedLoadPlans.map(lp => lp.flight))
+      const staffDisplayName = getDisplayName().toLowerCase()
+      
+      // Fetch fresh data
+      const freshLoadPlans = await getLoadPlansFromSupabase()
+      setLoadPlans(freshLoadPlans)
+      
+      // Calculate fresh assigned flights manually using current flightAssignments
+      const assignedFlightNumbers = flightAssignments
+        .filter((fa) => fa.name.toLowerCase() === staffDisplayName)
+        .map((fa) => fa.flight)
+      
+      const freshAssignedLoadPlans = freshLoadPlans.filter((plan) => 
+        assignedFlightNumbers.includes(plan.flight)
+      )
+      const freshAssignedFlights = new Set(freshAssignedLoadPlans.map(lp => lp.flight))
+      
+      // Find new assigned load plans
+      const newFlights = Array.from(freshAssignedFlights).filter(flight => !currentAssignedFlights.has(flight))
+      // Find deleted assigned load plans
+      const deletedFlights = Array.from(currentAssignedFlights).filter(flight => !freshAssignedFlights.has(flight))
+      
+      // Show notifications
+      if (newFlights.length > 0) {
+        toast({
+          title: "New Load Plans Assigned",
+          description: `${newFlights.length} new load plan(s) assigned: ${newFlights.join(", ")}`,
+          duration: 5000,
+        })
+      }
+      
+      if (deletedFlights.length > 0) {
+        toast({
+          title: "Load Plans Removed",
+          description: `${deletedFlights.length} assigned load plan(s) removed: ${deletedFlights.join(", ")}`,
+          duration: 5000,
+        })
+      }
+      
+      if (newFlights.length === 0 && deletedFlights.length === 0) {
+        toast({
+          title: "Data Refreshed",
+          description: "No changes detected.",
+          duration: 3000,
+        })
+      }
+    } catch (err) {
+      console.error("[BuildupStaffScreen] Error refreshing load plans:", err)
+      toast({
+        title: "Refresh Failed",
+        description: "Failed to refresh load plans. Please try again.",
+        variant: "destructive",
+        duration: 5000,
+      })
+    } finally {
+      setIsRefreshing(false)
+    }
+  }
 
   const handleRowClick = async (loadPlan: LoadPlan) => {
     // Try to fetch from Supabase
@@ -155,6 +248,16 @@ export default function BuildupStaffScreen({ initialStaff, onNavigate }: Buildup
           <h2 className="text-lg font-semibold text-gray-900">Build-up Staff</h2>
           <div className="flex items-center gap-3">
             {selectedStaffId && <NotificationBadge staffNo={selectedStaffId} />}
+            <Button
+              onClick={handleRefresh}
+              disabled={isRefreshing || !selectedStaffId}
+              variant="outline"
+              className="border-gray-300 hover:bg-gray-50"
+              title="Refresh data"
+            >
+              <RefreshCw className={`w-4 h-4 mr-2 ${isRefreshing ? "animate-spin" : ""}`} />
+              Refresh
+            </Button>
             <Popover 
               open={staffDropdownOpen} 
               onOpenChange={(open) => {
@@ -215,7 +318,7 @@ export default function BuildupStaffScreen({ initialStaff, onNavigate }: Buildup
                                 {op.displayName.charAt(0).toUpperCase()}
                               </span>
                             </div>
-                            <span title={op.fullName}>{op.displayName}</span>
+                            <span title={op.fullName}>{op.fullName}</span>
                           </CommandItem>
                         ))}
                       </CommandGroup>
