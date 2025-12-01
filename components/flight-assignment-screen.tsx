@@ -29,18 +29,22 @@ function extractFlightNumber(flight: string): number {
 }
 
 // Get region category based on flight number ranges
+// 1-199 → EU/UK
 // 200-299 → US
-// 300-399 → FE/Australia/WAX (Far East)
+// 300-499 → FE/AUS (Far East/Australia)
 // 500-699 → ISUB (Indian Subcontinent)
 // 700-799 → Africa
-// 800-999 → M/East (Middle East)
+// 800+ → M/East (Middle East)
 function getFlightRegion(flight: string): { category: string; color: string } {
   const flightNum = extractFlightNumber(flight)
   
+  if (flightNum >= 1 && flightNum <= 199) {
+    return { category: "EU/UK", color: "bg-blue-200" }
+  }
   if (flightNum >= 200 && flightNum <= 299) {
     return { category: "US", color: "bg-pink-200" }
   }
-  if (flightNum >= 300 && flightNum <= 399) {
+  if (flightNum >= 300 && flightNum <= 499) {
     return { category: "FE/AUS", color: "bg-cyan-200" }
   }
   if (flightNum >= 500 && flightNum <= 699) {
@@ -49,12 +53,9 @@ function getFlightRegion(flight: string): { category: string; color: string } {
   if (flightNum >= 700 && flightNum <= 799) {
     return { category: "Africa", color: "bg-green-200" }
   }
-  if (flightNum >= 800 && flightNum <= 999) {
-    return { category: "M/East", color: "bg-yellow-200" }
-  }
   
-  // Default for other flight numbers (000-199, 400-499)
-  return { category: "Other", color: "bg-orange-200" }
+  // 800+ defaults to M/East
+  return { category: "M/East", color: "bg-yellow-200" }
 }
 
 // Color coding based on flight number - only for origin destination cell
