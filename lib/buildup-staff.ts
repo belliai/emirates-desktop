@@ -340,10 +340,10 @@ export async function findStaffByName(searchName: string): Promise<BuildupStaff 
 }
 
 /**
- * Find staff by staff number (exact match)
- * Used for login and staff lookup by ID
+ * Find staff by staff_no
+ * Used for authentication/login
  */
-export async function findStaffByStaffNo(staffNo: string | number): Promise<BuildupStaff | null> {
+export async function findStaffByStaffNo(staffNo: number | string): Promise<BuildupStaff | null> {
   try {
     if (!isSupabaseConfigured()) {
       return null
@@ -361,15 +361,14 @@ export async function findStaffByStaffNo(staffNo: string | number): Promise<Buil
       .select("*")
       .eq("staff_no", staffNoNum)
       .limit(1)
-      .single()
 
-    if (error || !staff) {
+    if (error || !staff || staff.length === 0) {
       return null
     }
 
-    return staff as BuildupStaff
+    return staff[0] as BuildupStaff
   } catch (error) {
-    console.error("[BuildupStaff] Error finding staff by staff number:", error)
+    console.error("[BuildupStaff] Error finding staff by staff_no:", error)
     return null
   }
 }

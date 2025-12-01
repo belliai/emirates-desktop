@@ -27,6 +27,9 @@ import IncomingWorkloadScreen from "@/components/incoming-workload-screen"
 import QRTListScreen from "@/components/qrt-list-screen"
 import BCRScreen from "@/components/bcr-screen"
 import SideNavigation from "@/components/side-navigation"
+import SettingsSidebar from "@/components/settings-sidebar"
+import SettingsBuildupStaffList from "@/components/settings-buildup-staff-list"
+import SettingsScreening from "@/components/settings-screening"
 import { FlightProvider, useFlights } from "@/lib/flight-context"
 import { LoadPlanProvider } from "@/lib/load-plan-context"
 import { NotificationProvider } from "@/lib/notification-context"
@@ -63,7 +66,10 @@ function AppContent() {
     | "incoming-workload"
     | "qrt-list"
     | "bcr"
+    | "settings-buildup-staff"
+    | "settings-screening"
   >("desktop")
+  const [isSettingsMode, setIsSettingsMode] = useState(false)
   const [selectedULD, setSelectedULD] = useState<(ULD & { flightNumber: string; uldIndex: number }) | null>(null)
   const [buildupStaffParams, setBuildupStaffParams] = useState<{ staff?: string } | null>(null)
   const [flightAssignmentParams, setFlightAssignmentParams] = useState<{ supervisor?: string } | null>(null)
@@ -98,6 +104,20 @@ function AppContent() {
       setBuildupStaffParams(null)
       setFlightAssignmentParams(null)
     }
+  }
+
+  const handleSettingsClick = () => {
+    setIsSettingsMode(true)
+    setCurrentScreen("settings-buildup-staff")
+  }
+
+  const handleBackToDashboard = () => {
+    setIsSettingsMode(false)
+    setCurrentScreen("desktop")
+  }
+
+  const handleSettingsNavigate = (screen: string) => {
+    setCurrentScreen(screen as any)
   }
 
   const handleLogin = async (staffId?: string) => {
@@ -198,6 +218,10 @@ function AppContent() {
         return <ShiftSummaryReportScreen />
       case "bcr":
         return <BCRScreen />
+      case "settings-buildup-staff":
+        return <SettingsBuildupStaffList />
+      case "settings-screening":
+        return <SettingsScreening />
       case "staff":
         return <PerformanceScreen />
       case "uld-management":
@@ -222,7 +246,19 @@ function AppContent() {
         <LoginScreen onLogin={handleLogin} />
       ) : (
         <div className="flex h-screen overflow-hidden">
-          <SideNavigation currentScreen={currentScreen} onNavigate={handleNavigate} />
+          {isSettingsMode ? (
+            <SettingsSidebar 
+              currentScreen={currentScreen} 
+              onNavigate={handleSettingsNavigate} 
+              onBackToDashboard={handleBackToDashboard}
+            />
+          ) : (
+            <SideNavigation 
+              currentScreen={currentScreen} 
+              onNavigate={handleNavigate} 
+              onSettingsClick={handleSettingsClick}
+            />
+          )}
           <div className="flex-1 overflow-y-auto">{renderScreen()}</div>
         </div>
       )}

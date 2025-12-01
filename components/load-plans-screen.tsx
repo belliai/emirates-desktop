@@ -14,7 +14,6 @@ import { parseRTFFile } from "@/lib/lists/rtf-parser"
 import { saveListsDataToSupabase } from "@/lib/lists/supabase-save"
 import type { ListsResults } from "@/lib/lists/types"
 import { generateSpecialCargoReport, generateVUNList, generateQRTList } from "@/lib/lists/report-generators"
-import { useToast } from "@/hooks/use-toast"
 
 // Delete Confirmation Modal Component
 type DeleteModalState = {
@@ -162,7 +161,6 @@ export default function LoadPlansScreen({ onLoadPlanSelect }: { onLoadPlanSelect
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [deleteModal, setDeleteModal] = useState<DeleteModalState>({ isOpen: false, type: "confirm", flight: "" })
   const [pendingDeletePlan, setPendingDeletePlan] = useState<LoadPlan | null>(null)
-  const { toast } = useToast()
 
   // Fetch load plans from Supabase on mount
   useEffect(() => {
@@ -612,12 +610,10 @@ export default function LoadPlansScreen({ onLoadPlanSelect }: { onLoadPlanSelect
         {/* Header with Upload Button */}
         <div className="flex justify-between items-center mb-4 px-2">
           <h2 className="text-lg font-semibold text-gray-900">Load Plans</h2>
-          <div className="flex items-center gap-2">
-            <Button onClick={() => setShowUploadModal(true)} className="bg-[#D71A21] hover:bg-[#B01419] text-white">
-              <Upload className="w-4 h-4 mr-2" />
-              Upload Files
-            </Button>
-          </div>
+          <Button onClick={() => setShowUploadModal(true)} className="bg-[#D71A21] hover:bg-[#B01419] text-white">
+            <Upload className="w-4 h-4 mr-2" />
+            Upload Files
+          </Button>
         </div>
         <div className="mx-2 rounded-lg border border-gray-200 overflow-x-auto">
           <div className="bg-white">

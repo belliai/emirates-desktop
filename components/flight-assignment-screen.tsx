@@ -1,7 +1,7 @@
 "use client"
 
 import React, { useState, useEffect, useMemo } from "react"
-import { Plane, Clock, MapPin, Users, FileText, Check, ChevronsUpDown, RefreshCw } from "lucide-react"
+import { Plane, Clock, MapPin, Users, FileText, Check, ChevronsUpDown } from "lucide-react"
 import { useLoadPlans } from "@/lib/load-plan-context"
 import { Button } from "@/components/ui/button"
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
@@ -13,7 +13,6 @@ import { getSupervisors, getOperators, parseStaffName, parseStaffDisplayName, ty
 import { NotificationBadge } from "./notification-badge"
 import { useNotifications } from "@/lib/notification-context"
 import { useToast } from "@/hooks/use-toast"
-import { getLoadPlansFromSupabase } from "@/lib/load-plans-supabase"
 
 type FlightAssignment = {
   flight: string
@@ -29,113 +28,13 @@ function extractFlightNumber(flight: string): number {
   return match ? parseInt(match[1], 10) : 0
 }
 
-// Airport to region mapping
-const airportToRegion: Record<string, { category: string; color: string }> = {
-  // EU/UK airports
-  LHR: { category: "EU/UK", color: "bg-blue-200" },
-  LGW: { category: "EU/UK", color: "bg-blue-200" },
-  MAN: { category: "EU/UK", color: "bg-blue-200" },
-  EDI: { category: "EU/UK", color: "bg-blue-200" },
-  BRS: { category: "EU/UK", color: "bg-blue-200" },
-  CDG: { category: "EU/UK", color: "bg-blue-200" },
-  FRA: { category: "EU/UK", color: "bg-blue-200" },
-  MXP: { category: "EU/UK", color: "bg-blue-200" },
-  FCO: { category: "EU/UK", color: "bg-blue-200" },
-  AMS: { category: "EU/UK", color: "bg-blue-200" },
-  MAD: { category: "EU/UK", color: "bg-blue-200" },
-  VIE: { category: "EU/UK", color: "bg-blue-200" },
-  ZUR: { category: "EU/UK", color: "bg-blue-200" },
-  CPH: { category: "EU/UK", color: "bg-blue-200" },
-  ARN: { category: "EU/UK", color: "bg-blue-200" },
-  OSL: { category: "EU/UK", color: "bg-blue-200" },
-  DUB: { category: "EU/UK", color: "bg-blue-200" },
-  BRU: { category: "EU/UK", color: "bg-blue-200" },
-  LIS: { category: "EU/UK", color: "bg-blue-200" },
-  ATH: { category: "EU/UK", color: "bg-blue-200" },
-  VCE: { category: "EU/UK", color: "bg-blue-200" },
-  BCN: { category: "EU/UK", color: "bg-blue-200" },
-  // US airports
-  JFK: { category: "US", color: "bg-pink-200" },
-  LAX: { category: "US", color: "bg-pink-200" },
-  ORD: { category: "US", color: "bg-pink-200" },
-  IAD: { category: "US", color: "bg-pink-200" },
-  SFO: { category: "US", color: "bg-pink-200" },
-  BOS: { category: "US", color: "bg-pink-200" },
-  MIA: { category: "US", color: "bg-pink-200" },
-  DFW: { category: "US", color: "bg-pink-200" },
-  ATL: { category: "US", color: "bg-pink-200" },
-  SEA: { category: "US", color: "bg-pink-200" },
-  IAH: { category: "US", color: "bg-pink-200" },
-  // FE/AUS airports
-  SIN: { category: "FE/AUS", color: "bg-cyan-200" },
-  HKG: { category: "FE/AUS", color: "bg-cyan-200" },
-  SYD: { category: "FE/AUS", color: "bg-cyan-200" },
-  MEL: { category: "FE/AUS", color: "bg-cyan-200" },
-  BKK: { category: "FE/AUS", color: "bg-cyan-200" },
-  NRT: { category: "FE/AUS", color: "bg-cyan-200" },
-  HND: { category: "FE/AUS", color: "bg-cyan-200" },
-  KUL: { category: "FE/AUS", color: "bg-cyan-200" },
-  MNL: { category: "FE/AUS", color: "bg-cyan-200" },
-  BNE: { category: "FE/AUS", color: "bg-cyan-200" },
-  PER: { category: "FE/AUS", color: "bg-cyan-200" },
-  ADL: { category: "FE/AUS", color: "bg-cyan-200" },
-  ICN: { category: "FE/AUS", color: "bg-cyan-200" },
-  PVG: { category: "FE/AUS", color: "bg-cyan-200" },
-  PEK: { category: "FE/AUS", color: "bg-cyan-200" },
-  CAN: { category: "FE/AUS", color: "bg-cyan-200" },
-  // ISUB airports
-  DEL: { category: "ISUB", color: "bg-purple-200" },
-  BOM: { category: "ISUB", color: "bg-purple-200" },
-  DAC: { category: "ISUB", color: "bg-purple-200" },
-  KHI: { category: "ISUB", color: "bg-purple-200" },
-  LHE: { category: "ISUB", color: "bg-purple-200" },
-  ISB: { category: "ISUB", color: "bg-purple-200" },
-  CMB: { category: "ISUB", color: "bg-purple-200" },
-  CCU: { category: "ISUB", color: "bg-purple-200" },
-  MAA: { category: "ISUB", color: "bg-purple-200" },
-  BLR: { category: "ISUB", color: "bg-purple-200" },
-  HYD: { category: "ISUB", color: "bg-purple-200" },
-  COK: { category: "ISUB", color: "bg-purple-200" },
-  // Africa airports
-  JNB: { category: "Africa", color: "bg-green-200" },
-  CPT: { category: "Africa", color: "bg-green-200" },
-  CAI: { category: "Africa", color: "bg-green-200" },
-  ADD: { category: "Africa", color: "bg-green-200" },
-  NBO: { category: "Africa", color: "bg-green-200" },
-  DAR: { category: "Africa", color: "bg-green-200" },
-  LOS: { category: "Africa", color: "bg-green-200" },
-  ACC: { category: "Africa", color: "bg-green-200" },
-  // M/East airports
-  DXB: { category: "M/East", color: "bg-yellow-200" },
-  DOH: { category: "M/East", color: "bg-yellow-200" },
-  BAH: { category: "M/East", color: "bg-yellow-200" },
-  KWI: { category: "M/East", color: "bg-yellow-200" },
-  AMM: { category: "M/East", color: "bg-yellow-200" },
-  BEY: { category: "M/East", color: "bg-yellow-200" },
-  RUH: { category: "M/East", color: "bg-yellow-200" },
-  JED: { category: "M/East", color: "bg-yellow-200" },
-  DMM: { category: "M/East", color: "bg-yellow-200" },
-  AUH: { category: "M/East", color: "bg-yellow-200" },
-  DWC: { category: "M/East", color: "bg-yellow-200" },
-}
-
-// Extract destination airport code from originDestination string (e.g., "DXB-LHR" -> "LHR")
-function extractDestination(originDestination: string): string {
-  if (!originDestination) return ""
-  const parts = originDestination.split("-")
-  return parts.length > 1 ? parts[1].toUpperCase() : ""
-}
-
-// Get region category based on destination airport or flight number ranges
-// Priority: airport mapping > flight number ranges > Other
-function getFlightRegion(flight: string, originDestination: string = ""): { category: string; color: string } {
-  // First, try to get category from airport mapping
-  const destination = extractDestination(originDestination)
-  if (destination && airportToRegion[destination]) {
-    return airportToRegion[destination]
-  }
-  
-  // Fall back to flight number ranges
+// Get region category based on flight number ranges
+// 200-299 → US
+// 300-399 → FE/Australia/WAX (Far East)
+// 500-699 → ISUB (Indian Subcontinent)
+// 700-799 → Africa
+// 800-999 → M/East (Middle East)
+function getFlightRegion(flight: string): { category: string; color: string } {
   const flightNum = extractFlightNumber(flight)
   
   if (flightNum >= 200 && flightNum <= 299) {
@@ -159,17 +58,17 @@ function getFlightRegion(flight: string, originDestination: string = ""): { cate
 }
 
 // Color coding based on flight number - only for origin destination cell
-const getOriginDestinationColor = (flight: string, name: string, sector: string, originDestination: string = ""): string => {
+const getOriginDestinationColor = (flight: string, name: string, sector: string): string => {
   // If both name and sector are filled, return white (no color)
   if (name && sector) {
     return "bg-white"
   }
 
-  return getFlightRegion(flight, originDestination).color
+  return getFlightRegion(flight).color
 }
 
-const getDestinationCategory = (flight: string, originDestination: string = ""): { category: string; color: string } => {
-  return getFlightRegion(flight, originDestination)
+const getDestinationCategory = (flight: string): { category: string; color: string } => {
+  return getFlightRegion(flight)
 }
 
 interface FlightAssignmentScreenProps {
@@ -177,9 +76,8 @@ interface FlightAssignmentScreenProps {
 }
 
 export default function FlightAssignmentScreen({ initialSupervisor }: FlightAssignmentScreenProps = {}) {
-  const { loadPlans, flightAssignments: contextAssignments, bupAllocations, updateFlightAssignment, updateFlightAssignmentSector, setLoadPlans, setActiveSupervisorId } = useLoadPlans()
+  const { loadPlans, flightAssignments: contextAssignments, bupAllocations, updateFlightAssignment, updateFlightAssignmentSector } = useLoadPlans()
   const [isLoading, setIsLoading] = useState(true)
-  const [isRefreshing, setIsRefreshing] = useState(false)
   const [supervisors, setSupervisors] = useState<BuildupStaff[]>([])
   const [operators, setOperators] = useState<BuildupStaff[]>([])
   const [selectedSupervisorId, setSelectedSupervisorId] = useState<string>(initialSupervisor || "")
@@ -351,14 +249,6 @@ export default function FlightAssignmentScreen({ initialSupervisor }: FlightAssi
     }
   }, [initialSupervisor])
 
-  // Set active supervisor in context when supervisor selection changes
-  // NOTE: We don't clear on unmount so notifications work when navigating to Load Plans
-  useEffect(() => {
-    if (selectedSupervisorId) {
-      setActiveSupervisorId(selectedSupervisorId)
-    }
-  }, [selectedSupervisorId, setActiveSupervisorId])
-
   // Show notifications when screen opens or supervisor selection changes
   useEffect(() => {
     if (selectedSupervisorId) {
@@ -411,8 +301,7 @@ export default function FlightAssignmentScreen({ initialSupervisor }: FlightAssi
     const search = supervisorSearch.toLowerCase()
     return supervisorOptions.filter(sup => 
       sup.searchName.includes(search) || 
-      sup.displayName.toLowerCase().includes(search) ||
-      sup.fullName.toLowerCase().includes(search)
+      sup.displayName.toLowerCase().includes(search)
     )
   }, [supervisorOptions, supervisorSearch])
 
@@ -431,66 +320,11 @@ export default function FlightAssignmentScreen({ initialSupervisor }: FlightAssi
     updateFlightAssignmentSector(flight, sector)
   }
 
-  // Handle refresh with new/deleted detection
-  const handleRefresh = async () => {
-    setIsRefreshing(true)
-    try {
-      // Store current flight numbers for comparison
-      const currentFlightNumbers = new Set(loadPlans.map(lp => lp.flight))
-      
-      // Fetch fresh data
-      const freshLoadPlans = await getLoadPlansFromSupabase()
-      setLoadPlans(freshLoadPlans)
-      
-      const freshFlightNumbers = new Set(freshLoadPlans.map(lp => lp.flight))
-      
-      // Find new load plans
-      const newFlights = Array.from(freshFlightNumbers).filter(flight => !currentFlightNumbers.has(flight))
-      // Find deleted load plans
-      const deletedFlights = Array.from(currentFlightNumbers).filter(flight => !freshFlightNumbers.has(flight))
-      
-      // Show notifications
-      if (newFlights.length > 0) {
-        toast({
-          title: "New Load Plans",
-          description: `${newFlights.length} new load plan(s) added: ${newFlights.join(", ")}`,
-          duration: 5000,
-        })
-      }
-      
-      if (deletedFlights.length > 0) {
-        toast({
-          title: "Load Plans Removed",
-          description: `${deletedFlights.length} load plan(s) removed: ${deletedFlights.join(", ")}`,
-          duration: 5000,
-        })
-      }
-      
-      if (newFlights.length === 0 && deletedFlights.length === 0) {
-        toast({
-          title: "Data Refreshed",
-          description: "No changes detected.",
-          duration: 3000,
-        })
-      }
-    } catch (err) {
-      console.error("[FlightAssignmentScreen] Error refreshing load plans:", err)
-      toast({
-        title: "Refresh Failed",
-        description: "Failed to refresh load plans. Please try again.",
-        variant: "destructive",
-        duration: 5000,
-      })
-    } finally {
-      setIsRefreshing(false)
-    }
-  }
-
-  // Calculate pending flights by category (based on destination airport or flight number ranges)
+  // Calculate pending flights by category (based on flight number ranges)
   const pendingByCategory: Record<string, { count: number; color: string }> = {}
   flightAssignments.forEach((assignment) => {
     if (!assignment.name || !assignment.sector) {
-      const { category, color } = getDestinationCategory(assignment.flight, assignment.originDestination)
+      const { category, color } = getDestinationCategory(assignment.flight)
       if (!pendingByCategory[category]) {
         pendingByCategory[category] = { count: 0, color }
       }
@@ -506,16 +340,6 @@ export default function FlightAssignmentScreen({ initialSupervisor }: FlightAssi
           <h2 className="text-lg font-semibold text-gray-900">Flight Assignment</h2>
           <div className="flex items-center gap-3">
             {selectedSupervisorId && <NotificationBadge staffNo={selectedSupervisorId} />}
-            <Button
-              onClick={handleRefresh}
-              disabled={isRefreshing}
-              variant="outline"
-              className="border-gray-300 hover:bg-gray-50"
-              title="Refresh data"
-            >
-              <RefreshCw className={`w-4 h-4 mr-2 ${isRefreshing ? "animate-spin" : ""}`} />
-              Refresh
-            </Button>
             <Popover 
             open={supervisorDropdownOpen} 
             onOpenChange={(open) => {
@@ -578,7 +402,7 @@ export default function FlightAssignmentScreen({ initialSupervisor }: FlightAssi
                               {sup.displayName.charAt(0).toUpperCase()}
                             </span>
                           </div>
-                          <span title={sup.fullName}>{sup.fullName}</span>
+                          <span title={sup.fullName}>{sup.displayName}</span>
                         </CommandItem>
                       ))}
                     </CommandGroup>
@@ -698,14 +522,13 @@ function FlightAssignmentRow({ assignment, operatorOptions, onNameChange, onSect
   const filteredOperators = operatorOptions.filter((op) => {
     if (!nameSearch) return true
     const search = nameSearch.toLowerCase()
-    return op.searchName.includes(search) || op.displayName.toLowerCase().includes(search) || op.fullName.toLowerCase().includes(search)
+    return op.searchName.includes(search) || op.displayName.toLowerCase().includes(search)
   })
 
   const originDestinationColor = getOriginDestinationColor(
     assignment.flight,
     assignment.name,
-    assignment.sector,
-    assignment.originDestination
+    assignment.sector
   )
 
   return (
@@ -764,7 +587,7 @@ function FlightAssignmentRow({ assignment, operatorOptions, onNameChange, onSect
                           assignment.name.toLowerCase() === op.displayName.toLowerCase() ? "opacity-100" : "opacity-0"
                         )}
                       />
-                      {op.fullName}
+                      {op.displayName}
                     </CommandItem>
                   ))}
                 </CommandGroup>
