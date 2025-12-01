@@ -1,18 +1,20 @@
 "use client"
 
 import { useState, useRef, useEffect } from "react"
-import { ChevronRight, Plane, Calendar, Package, Users, Clock, FileText, Upload } from "lucide-react"
+import { ChevronRight, Plane, Calendar, Package, Users, Clock, FileText, Upload, Trash2 } from "lucide-react"
 import LoadPlanDetailScreen from "./load-plan-detail-screen"
 import type { LoadPlanDetail } from "./load-plan-types"
 import { extractTextFromFile } from "@/lib/lists/file-extractors"
 import { UploadModal } from "./lists/upload-modal"
 import { Button } from "@/components/ui/button"
 import { useLoadPlans, type LoadPlan } from "@/lib/load-plan-context"
-import { getLoadPlansFromSupabase, getLoadPlanDetailFromSupabase } from "@/lib/load-plans-supabase"
+import { getLoadPlansFromSupabase, getLoadPlanDetailFromSupabase, deleteLoadPlanFromSupabase } from "@/lib/load-plans-supabase"
 import { parseHeader, parseShipments } from "@/lib/lists/parser"
+import { parseRTFFile } from "@/lib/lists/rtf-parser"
 import { saveListsDataToSupabase } from "@/lib/lists/supabase-save"
 import type { ListsResults } from "@/lib/lists/types"
 import { generateSpecialCargoReport, generateVUNList, generateQRTList } from "@/lib/lists/report-generators"
+import Swal from "sweetalert2"
 
 
 export default function LoadPlansScreen({ onLoadPlanSelect }: { onLoadPlanSelect?: (loadPlan: LoadPlan) => void }) {
@@ -100,6 +102,82 @@ export default function LoadPlansScreen({ onLoadPlanSelect }: { onLoadPlanSelect
     })
   }
 
+  const handleDelete = async (loadPlan: LoadPlan, e: React.MouseEvent) => {
+    e.stopPropagation() // Prevent row click when clicking delete button
+    
+    // Show Sweet Alert confirmation
+    const result = await Swal.fire({
+      title: 'Delete Load Plan?',
+      html: `
+        <p>Are you sure you want to delete the load plan for flight <strong>${loadPlan.flight}</strong>?</p>
+        <p class="text-sm text-gray-600 mt-2">This action will delete the load plan and all related items. This action cannot be undone.</p>
+      `,
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#D71A21',
+      cancelButtonColor: '#6b7280',
+      confirmButtonText: 'Yes, Delete',
+      cancelButtonText: 'Cancel',
+      reverseButtons: true,
+    })
+    
+    if (!result.isConfirmed) {
+      return
+    }
+
+    try {
+      setIsLoading(true)
+      const deleteResult = await deleteLoadPlanFromSupabase(loadPlan.flight)
+      
+      if (deleteResult.success) {
+        // Remove from saved details if exists
+        setSavedDetails((prev) => {
+          const updated = new Map(prev)
+          updated.delete(loadPlan.flight)
+          return updated
+        })
+        
+        // Refresh load plans from Supabase
+        const supabaseLoadPlans = await getLoadPlansFromSupabase()
+        if (supabaseLoadPlans.length > 0) {
+          setLoadPlans(supabaseLoadPlans)
+        } else {
+          setLoadPlans([])
+        }
+        
+        console.log(`[LoadPlansScreen] Successfully deleted load plan ${loadPlan.flight}`)
+        
+        // Show success message
+        await Swal.fire({
+          title: 'Success!',
+          text: `Load plan for flight ${loadPlan.flight} has been deleted.`,
+          icon: 'success',
+          confirmButtonColor: '#D71A21',
+          timer: 2000,
+        })
+      } else {
+        // Show error message
+        await Swal.fire({
+          title: 'Error!',
+          text: `Failed to delete load plan: ${deleteResult.error || "Unknown error"}`,
+          icon: 'error',
+          confirmButtonColor: '#D71A21',
+        })
+      }
+    } catch (err) {
+      console.error("[LoadPlansScreen] Error deleting load plan:", err)
+      // Show error message
+      await Swal.fire({
+        title: 'Error!',
+        text: `An error occurred while deleting the load plan: ${err instanceof Error ? err.message : "Unknown error"}`,
+        icon: 'error',
+        confirmButtonColor: '#D71A21',
+      })
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
   const handleFileUpload = async (files: File | File[]) => {
     setError(null)
     setIsProcessing(true)
@@ -134,18 +212,124 @@ export default function LoadPlansScreen({ onLoadPlanSelect }: { onLoadPlanSelect
         setProgress(fileProgress)
 
         try {
-          const content = await extractTextFromFile(f)
-          console.log('[LoadPlansScreen] Extracted content length:', content.length)
+          // Check if file is RTF and use RTF-specific parser
+          const isRTF = f.name.toLowerCase().endsWith('.rtf')
+          
+          let header, shipments
+          
+          if (isRTF) {
+            // Use RTF-specific parser
+            console.log('[LoadPlansScreen] Using RTF parser for:', f.name)
+            try {
+              const rtfResult = await parseRTFFile(f)
+              header = rtfResult.header
+              shipments = rtfResult.shipments
+              
+              // If RTF parser returns very few shipments, try fallback to regular parser
+              if (shipments.length < 5) {
+                console.warn('[LoadPlansScreen] RTF parser returned only', shipments.length, 'shipments. Trying fallback to regular parser...')
+                try {
+                  // Use direct RTF extraction (same as RTF parser uses) to avoid DOCX conversion
+                  const rtfText = await f.text()
+                  let fallbackContent = rtfText
+                    .replace(/\\par[d]?/gi, "\n")
+                    .replace(/\\line/gi, "\n")
+                    .replace(/\\tab/gi, "\t")
+                    .replace(/\\;/g, ";")
+                    .replace(/\\\\/g, "\\")
+                    .replace(/\\'([0-9a-fA-F]{2})/g, (_m, hex) => String.fromCharCode(parseInt(hex, 16)))
+                    .replace(/\\[a-zA-Z]+-?\d*(?:\s|)/g, "")
+                    .replace(/\{[^}]*\}/g, "")
+                    .replace(/[{}]/g, "")
+                  
+                  // Find table header and extract from there
+                  const lines = fallbackContent.split("\n")
+                  let startIdx = 0
+                  for (let i = 0; i < lines.length; i++) {
+                    if (lines[i].includes("SER.") && lines[i].includes("AWB NO")) {
+                      startIdx = Math.max(0, i - 50)
+                      break
+                    }
+                  }
+                  fallbackContent = lines.slice(startIdx).join("\n")
+                  
+                  const fallbackHeader = parseHeader(fallbackContent)
+                  const fallbackShipments = parseShipments(fallbackContent, fallbackHeader)
+                  
+                  if (fallbackShipments.length > shipments.length) {
+                    console.log('[LoadPlansScreen] Fallback parser found', fallbackShipments.length, 'shipments. Using fallback result.')
+                    header = fallbackHeader
+                    shipments = fallbackShipments
+                  } else {
+                    console.log('[LoadPlansScreen] RTF parser result is better, keeping RTF result.')
+                  }
+                } catch (fallbackError) {
+                  console.error('[LoadPlansScreen] Fallback parser also failed:', fallbackError)
+                }
+              }
+            } catch (rtfError) {
+              console.error('[LoadPlansScreen] RTF parser failed, trying fallback to regular parser:', rtfError)
+              // Fallback to regular parser with direct RTF extraction
+              try {
+                const rtfText = await f.text()
+                let fallbackContent = rtfText
+                  .replace(/\\par[d]?/gi, "\n")
+                  .replace(/\\line/gi, "\n")
+                  .replace(/\\tab/gi, "\t")
+                  .replace(/\\;/g, ";")
+                  .replace(/\\\\/g, "\\")
+                  .replace(/\\'([0-9a-fA-F]{2})/g, (_m, hex) => String.fromCharCode(parseInt(hex, 16)))
+                  .replace(/\\[a-zA-Z]+-?\d*(?:\s|)/g, "")
+                  .replace(/\{[^}]*\}/g, "")
+                  .replace(/[{}]/g, "")
+                
+                // Find table header
+                const lines = fallbackContent.split("\n")
+                let startIdx = 0
+                for (let i = 0; i < lines.length; i++) {
+                  if (lines[i].includes("SER.") && lines[i].includes("AWB NO")) {
+                    startIdx = Math.max(0, i - 50)
+                    break
+                  }
+                }
+                fallbackContent = lines.slice(startIdx).join("\n")
+                
+                header = parseHeader(fallbackContent)
+                if (!header.flightNumber) {
+                  console.error('[LoadPlansScreen] Could not parse flight number from file:', f.name)
+                  failedFiles.push(f.name)
+                  continue
+                }
+                shipments = parseShipments(fallbackContent, header)
+              } catch (fallbackError) {
+                console.error('[LoadPlansScreen] All parsing methods failed:', fallbackError)
+                failedFiles.push(f.name)
+                continue
+              }
+            }
+          } else {
+            // Use regular parser for other file types
+            const content = await extractTextFromFile(f)
+            console.log('[LoadPlansScreen] Extracted content length:', content.length)
 
-          const header = parseHeader(content)
-          if (!header.flightNumber) {
-            console.error('[LoadPlansScreen] Could not parse flight number from file:', f.name)
+            header = parseHeader(content)
+            if (!header.flightNumber) {
+              console.error('[LoadPlansScreen] Could not parse flight number from file:', f.name)
+              failedFiles.push(f.name)
+              continue
+            }
+
+            shipments = parseShipments(content, header)
+          }
+          
+          console.log('[LoadPlansScreen] Parsed shipments from', f.name, ':', shipments.length)
+          
+          // Validate that we have shipments
+          if (!shipments || shipments.length === 0) {
+            console.error('[LoadPlansScreen] No shipments parsed from file:', f.name)
             failedFiles.push(f.name)
             continue
           }
-
-          const shipments = parseShipments(content, header)
-          console.log('[LoadPlansScreen] Parsed shipments from', f.name, ':', shipments.length)
           
           // Log ramp transfer detection
           const rampTransferShipments = shipments.filter(s => s.isRampTransfer)
@@ -175,6 +359,13 @@ export default function LoadPlansScreen({ onLoadPlanSelect }: { onLoadPlanSelect
             shipments 
           }
 
+          // Validate shipments before saving
+          console.log('[LoadPlansScreen] About to save to Supabase:', {
+            flightNumber: header.flightNumber,
+            shipmentsCount: shipments.length,
+            fileName: f.name,
+          })
+          
           // Save to Supabase
           const saveResult = await saveListsDataToSupabase({
             results,
@@ -184,7 +375,8 @@ export default function LoadPlansScreen({ onLoadPlanSelect }: { onLoadPlanSelect
           })
 
           if (saveResult.success) {
-            console.log('[LoadPlansScreen] Data saved to Supabase successfully for', f.name, ', load_plan_id:', saveResult.loadPlanId)
+            console.log('[LoadPlansScreen] ✅ Data saved to Supabase successfully for', f.name, ', load_plan_id:', saveResult.loadPlanId)
+            console.log('[LoadPlansScreen] Saved', shipments.length, 'shipments to load_plan_items')
             
             // Check if flight already exists in current list
             const exists = loadPlans.some((lp) => lp.flight === header.flightNumber)
@@ -195,6 +387,7 @@ export default function LoadPlansScreen({ onLoadPlanSelect }: { onLoadPlanSelect
               totalAddedCount++
             }
           } else {
+            console.error('[LoadPlansScreen] ❌ Failed to save to Supabase:', saveResult.error)
             console.error('[LoadPlansScreen] Failed to save data to Supabase for', f.name, ':', saveResult.error)
             failedFiles.push(f.name)
           }
@@ -351,24 +544,25 @@ export default function LoadPlansScreen({ onLoadPlanSelect }: { onLoadPlanSelect
                     </div>
                   </th>
                   <th className="px-2 py-1 w-10"></th>
+                  <th className="px-2 py-1 w-10"></th>
                 </tr>
               </thead>
               <tbody>
                 {isLoading ? (
                   <tr>
-                    <td colSpan={9} className="px-3 py-2 text-center text-gray-500 text-sm">
+                    <td colSpan={10} className="px-3 py-2 text-center text-gray-500 text-sm">
                       Loading load plans...
                     </td>
                   </tr>
                 ) : loadPlans.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="px-3 py-2 text-center text-gray-500 text-sm">
+                    <td colSpan={10} className="px-3 py-2 text-center text-gray-500 text-sm">
                       No load plans available
                     </td>
                   </tr>
                 ) : (
                   loadPlans.map((loadPlan, index) => (
-                    <LoadPlanRow key={index} loadPlan={loadPlan} onClick={handleRowClick} />
+                    <LoadPlanRow key={index} loadPlan={loadPlan} onClick={handleRowClick} onDelete={handleDelete} />
                   ))
                 )}
               </tbody>
@@ -402,9 +596,10 @@ export default function LoadPlansScreen({ onLoadPlanSelect }: { onLoadPlanSelect
 interface LoadPlanRowProps {
   loadPlan: LoadPlan
   onClick: (loadPlan: LoadPlan) => void
+  onDelete: (loadPlan: LoadPlan, e: React.MouseEvent) => void
 }
 
-function LoadPlanRow({ loadPlan, onClick }: LoadPlanRowProps) {
+function LoadPlanRow({ loadPlan, onClick, onDelete }: LoadPlanRowProps) {
   return (
     <tr
       onClick={() => onClick(loadPlan)}
@@ -422,6 +617,15 @@ function LoadPlanRow({ loadPlan, onClick }: LoadPlanRowProps) {
       <td className="px-2 py-1 text-gray-900 text-xs whitespace-nowrap truncate">{loadPlan.uldVersion}</td>
       <td className="px-2 py-1 w-10">
         <ChevronRight className="h-4 w-4 text-gray-600 hover:text-[#D71A21]" />
+      </td>
+      <td className="px-2 py-1 w-10">
+        <button
+          onClick={(e) => onDelete(loadPlan, e)}
+          className="p-1 hover:bg-red-100 rounded text-red-600 hover:text-red-700 transition-colors"
+          title="Hapus Load Plan"
+        >
+          <Trash2 className="h-4 w-4" />
+        </button>
       </td>
     </tr>
   )

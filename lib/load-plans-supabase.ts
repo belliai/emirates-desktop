@@ -473,3 +473,80 @@ export async function getLoadPlanDetailFromSupabase(flightNumber: string): Promi
   }
 }
 
+/**
+ * Delete load plan and its items from Supabase
+ * This will delete all load_plan_items associated with the load plan, then delete the load plan itself
+ */
+export async function deleteLoadPlanFromSupabase(flightNumber: string): Promise<{ success: boolean; error?: string }> {
+  try {
+    // Check if Supabase is configured
+    const isSupabaseConfigured = 
+      process.env.NEXT_PUBLIC_SUPABASE_URL && 
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY &&
+      process.env.NEXT_PUBLIC_SUPABASE_URL !== "https://placeholder.supabase.co" &&
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY !== "placeholder-anon-key"
+
+    if (!isSupabaseConfigured) {
+      console.log("[LoadPlans] Supabase not configured, cannot delete")
+      return { success: false, error: "Supabase not configured" }
+    }
+
+    const supabase = createClient()
+
+    // First, find the load plan to get its ID
+    const { data: loadPlan, error: loadPlanError } = await supabase
+      .from("load_plans")
+      .select("id")
+      .eq("flight_number", flightNumber)
+      .order("flight_date", { ascending: false })
+      .limit(1)
+      .single()
+
+    if (loadPlanError || !loadPlan) {
+      console.error("[LoadPlans] Error finding load plan to delete:", {
+        code: loadPlanError?.code,
+        message: loadPlanError?.message,
+      })
+      return { success: false, error: loadPlanError?.message || "Load plan not found" }
+    }
+
+    const loadPlanId = loadPlan.id
+
+    // Delete all load_plan_items associated with this load plan first
+    const { error: itemsDeleteError } = await supabase
+      .from("load_plan_items")
+      .delete()
+      .eq("load_plan_id", loadPlanId)
+
+    if (itemsDeleteError) {
+      console.error("[LoadPlans] Error deleting load plan items:", {
+        code: itemsDeleteError.code,
+        message: itemsDeleteError.message,
+      })
+      return { success: false, error: `Failed to delete load plan items: ${itemsDeleteError.message}` }
+    }
+
+    console.log(`[LoadPlans] Successfully deleted load plan items for ${flightNumber}`)
+
+    // Now delete the load plan itself
+    const { error: loadPlanDeleteError } = await supabase
+      .from("load_plans")
+      .delete()
+      .eq("id", loadPlanId)
+
+    if (loadPlanDeleteError) {
+      console.error("[LoadPlans] Error deleting load plan:", {
+        code: loadPlanDeleteError.code,
+        message: loadPlanDeleteError.message,
+      })
+      return { success: false, error: `Failed to delete load plan: ${loadPlanDeleteError.message}` }
+    }
+
+    console.log(`[LoadPlans] Successfully deleted load plan ${flightNumber}`)
+    return { success: true }
+  } catch (error) {
+    console.error("[LoadPlans] Error deleting load plan:", error)
+    return { success: false, error: error instanceof Error ? error.message : "Unknown error occurred" }
+  }
+}
+
