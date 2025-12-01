@@ -20,6 +20,8 @@ interface ResultsDisplayProps {
   onExportQRTList: (format: "csv" | "xlsx") => void
   onReset: () => void
   loadPlanCount?: number
+  shiftFilter?: "day" | "night"
+  onShiftFilterChange?: (shift: "day" | "night") => void
 }
 
 
@@ -30,6 +32,8 @@ export function ResultsDisplay({
   onExportQRTList,
   onReset,
   loadPlanCount,
+  shiftFilter,
+  onShiftFilterChange,
 }: ResultsDisplayProps) {
   const isFromDatabase = loadPlanCount !== undefined && loadPlanCount > 0
   return (
@@ -37,16 +41,29 @@ export function ResultsDisplay({
       <Card className="p-6">
         <div className="flex flex-col lg:flex-row gap-4 mb-6 justify-between">
           <div className="flex-1">
-            <div className="mb-4">
-              <h2 className="text-xl font-semibold text-gray-900 mb-2">
-                {isFromDatabase ? "Load Plans D-12" : "Load Plan Upload"}
-              </h2>
-              <p className="text-sm text-gray-600">
-                {isFromDatabase 
-                  ? `${loadPlanCount} load plan${loadPlanCount > 1 ? 's' : ''} departing within 12 hours`
-                  : "Your load plan has been successfully processed"
-                }
-              </p>
+            <div className="flex items-start justify-between mb-4">
+              <div>
+                <h2 className="text-xl font-semibold text-gray-900 mb-2">
+                  {isFromDatabase ? "Load Plans D-12" : "Load Plan Upload"}
+                </h2>
+                <p className="text-sm text-gray-600">
+                  {isFromDatabase 
+                    ? `${loadPlanCount} load plan${loadPlanCount > 1 ? 's' : ''} departing within 12 hours`
+                    : "Your load plan has been successfully processed"
+                  }
+                </p>
+              </div>
+              {/* Shift Filter - only show for database mode */}
+              {isFromDatabase && onShiftFilterChange && (
+                <select
+                  value={shiftFilter || "day"}
+                  onChange={(e) => onShiftFilterChange(e.target.value as "day" | "night")}
+                  className="h-9 px-3 py-1.5 text-sm font-medium border border-gray-300 rounded-md bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#D71A21] focus:border-transparent"
+                >
+                  <option value="day">Day Shift (1300-2359 Hrs)</option>
+                  <option value="night">Night Shift (0000-1259 Hrs)</option>
+                </select>
+              )}
             </div>
             <div className="flex flex-wrap gap-2">
               <DropdownMenu>
@@ -105,9 +122,6 @@ export function ResultsDisplay({
             <p className="text-sm text-gray-600 mb-1">Special Cargo Items</p>
             <p className="text-xl font-semibold text-[#D71A21]">
               {results.specialCargo.regular.length + results.specialCargo.weapons.length}
-            </p>
-            <p className="text-xs text-gray-500 mt-1">
-              {results.specialCargo.weapons.length > 0 && `${results.specialCargo.weapons.length} weapons`}
             </p>
           </div>
           <div className="bg-gray-50 p-4 rounded-lg">

@@ -45,6 +45,9 @@ export default function ListsScreen() {
   const [loadPlanCount, setLoadPlanCount] = useState(0)
   const [databaseError, setDatabaseError] = useState<string | null>(null)
   const [hasInitialized, setHasInitialized] = useState(false)
+  
+  // Shift filter - DAY (1300-2359) or NIGHT (0000-1259)
+  const [shiftFilter, setShiftFilter] = useState<"day" | "night">("day")
 
   // Load from database on mount
   useEffect(() => {
@@ -396,6 +399,8 @@ export default function ListsScreen() {
             onExportQRTList={handleExportQRTList}
             onReset={handleReset}
             loadPlanCount={dataSource === "database" ? loadPlanCount : undefined}
+            shiftFilter={dataSource === "database" ? shiftFilter : undefined}
+            onShiftFilterChange={dataSource === "database" ? setShiftFilter : undefined}
           />
         )}
       </div>
