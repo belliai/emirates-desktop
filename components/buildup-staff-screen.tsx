@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button"
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { cn } from "@/lib/utils"
+import { NotificationBadge } from "./notification-badge"
 
 interface BuildupStaffScreenProps {
   initialStaff?: string
@@ -153,6 +154,7 @@ export default function BuildupStaffScreen({ initialStaff, onNavigate }: Buildup
         <div className="flex justify-between items-center mb-4 px-2">
           <h2 className="text-lg font-semibold text-gray-900">Build-up Staff</h2>
           <div className="flex items-center gap-3">
+            {selectedStaffId && <NotificationBadge staffNo={selectedStaffId} />}
             <Popover 
               open={staffDropdownOpen} 
               onOpenChange={(open) => {

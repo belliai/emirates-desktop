@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { cn } from "@/lib/utils"
 import { getSupervisors, getOperators, parseStaffName, parseStaffDisplayName, type BuildupStaff } from "@/lib/buildup-staff"
+import { NotificationBadge } from "./notification-badge"
 
 type FlightAssignment = {
   flight: string
@@ -68,12 +69,16 @@ const getDestinationCategory = (flight: string): { category: string; color: stri
   return getFlightRegion(flight)
 }
 
-export default function FlightAssignmentScreen() {
+interface FlightAssignmentScreenProps {
+  initialSupervisor?: string
+}
+
+export default function FlightAssignmentScreen({ initialSupervisor }: FlightAssignmentScreenProps = {}) {
   const { loadPlans, flightAssignments: contextAssignments, bupAllocations, updateFlightAssignment, updateFlightAssignmentSector } = useLoadPlans()
   const [isLoading, setIsLoading] = useState(true)
   const [supervisors, setSupervisors] = useState<BuildupStaff[]>([])
   const [operators, setOperators] = useState<BuildupStaff[]>([])
-  const [selectedSupervisorId, setSelectedSupervisorId] = useState<string>("")
+  const [selectedSupervisorId, setSelectedSupervisorId] = useState<string>(initialSupervisor || "")
   const [supervisorDropdownOpen, setSupervisorDropdownOpen] = useState(false)
   const [supervisorSearch, setSupervisorSearch] = useState("")
 
@@ -196,14 +201,31 @@ export default function FlightAssignmentScreen() {
         setSupervisors(supervisorsData)
         setOperators(operatorsData)
         
-        // Set default supervisor if available - prefer "roosevelt"
-        if (supervisorsData.length > 0 && !selectedSupervisorId) {
-          const rooseveltSupervisor = supervisorsData.find(sup => {
-            const parsed = parseStaffName(sup.name)
-            return parsed.displayName.toLowerCase() === "roosevelt"
-          })
-          const defaultSupervisor = rooseveltSupervisor || supervisorsData[0]
-          setSelectedSupervisorId(defaultSupervisor.staff_no.toString())
+        // Set supervisor: use initialSupervisor if provided, otherwise prefer "roosevelt", then first available
+        if (supervisorsData.length > 0) {
+          if (initialSupervisor) {
+            // Check if initialSupervisor is a valid staff_no
+            const supervisorByStaffNo = supervisorsData.find(sup => sup.staff_no.toString() === initialSupervisor)
+            if (supervisorByStaffNo) {
+              setSelectedSupervisorId(initialSupervisor)
+            } else {
+              // Fallback to default if initialSupervisor not found
+              const rooseveltSupervisor = supervisorsData.find(sup => {
+                const parsed = parseStaffName(sup.name)
+                return parsed.displayName.toLowerCase() === "roosevelt"
+              })
+              const defaultSupervisor = rooseveltSupervisor || supervisorsData[0]
+              setSelectedSupervisorId(defaultSupervisor.staff_no.toString())
+            }
+          } else {
+            // No initialSupervisor provided, use default
+            const rooseveltSupervisor = supervisorsData.find(sup => {
+              const parsed = parseStaffName(sup.name)
+              return parsed.displayName.toLowerCase() === "roosevelt"
+            })
+            const defaultSupervisor = rooseveltSupervisor || supervisorsData[0]
+            setSelectedSupervisorId(defaultSupervisor.staff_no.toString())
+          }
         }
       } catch (error) {
         console.error("[FlightAssignment] Error fetching staff data:", error)
@@ -213,7 +235,14 @@ export default function FlightAssignmentScreen() {
     }
     
     fetchStaffData()
-  }, [])
+  }, [initialSupervisor])
+  
+  // Update selectedSupervisorId if initialSupervisor prop changes
+  useEffect(() => {
+    if (initialSupervisor) {
+      setSelectedSupervisorId(initialSupervisor)
+    }
+  }, [initialSupervisor])
 
   // Get operator name options for the name dropdown
   const operatorOptions = useMemo(() => {
@@ -284,7 +313,9 @@ export default function FlightAssignmentScreen() {
         {/* Header with Searchable Supervisor Dropdown */}
         <div className="flex justify-between items-center mb-4 px-2">
           <h2 className="text-lg font-semibold text-gray-900">Flight Assignment</h2>
-          <Popover 
+          <div className="flex items-center gap-3">
+            {selectedSupervisorId && <NotificationBadge staffNo={selectedSupervisorId} />}
+            <Popover 
             open={supervisorDropdownOpen} 
             onOpenChange={(open) => {
               setSupervisorDropdownOpen(open)
@@ -355,6 +386,7 @@ export default function FlightAssignmentScreen() {
               </Command>
             </PopoverContent>
           </Popover>
+          </div>
         </div>
 
         {/* Pending Summary by Location */}
