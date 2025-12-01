@@ -866,11 +866,12 @@ function CombinedTable({
               {/* Group by Sector - Show AWBs grouped by sector */}
               {sortedSectors.map(([sectorName, group], sectorGroupIndex) => {
                 const hasMultipleSectors = sortedSectors.length > 1
+                const hasSectorName = sectorName && sectorName !== "UNKNOWN"
                 
                 return (
                   <React.Fragment key={sectorName}>
-                    {/* Sector Header - only show if multiple sectors */}
-                    {hasMultipleSectors && (
+                    {/* Sector Header - show if sector name exists (even if only one sector) */}
+                    {hasSectorName && (
                       <tr className="bg-blue-50 border-t-2 border-blue-200">
                         <td colSpan={enableBulkCheckboxes ? (isQRTList ? 24 : 21) : (isQRTList ? 23 : 20)} className="px-2 py-2 font-bold text-blue-900 text-center">
                           SECTOR: {sectorName}
