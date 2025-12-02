@@ -65,6 +65,7 @@
     "sweetalert2": "^11.26.3",
     "tailwind-merge": "^2.5.5",
     "tailwindcss-animate": "^1.0.7",
+    "tesseract.js": "^6.0.1",
     "tw-animate-css": "latest",
     "vaul": "latest",
     "xlsx": "^0.18.5"

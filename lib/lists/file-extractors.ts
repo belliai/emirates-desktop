@@ -309,6 +309,90 @@ async function extractTextFromRTF(file: File): Promise<string> {
 }
 
 /**
+ * Extract images from DOCX file using mammoth
+ */
+export async function extractImagesFromDOCX(file: File): Promise<Array<{ buffer: ArrayBuffer; type: string }>> {
+  try {
+    console.log('[v0] Starting image extraction from DOCX:', file.name)
+    const mammoth = await import('mammoth')
+    const arrayBuffer = await file.arrayBuffer()
+    console.log('[v0] DOCX file size:', arrayBuffer.byteLength, 'bytes')
+    
+    // Extract images using mammoth.images()
+    console.log('[v0] Calling mammoth.images()...')
+    const imagesResult = await mammoth.images({ arrayBuffer })
+    console.log('[v0] mammoth.images() returned', imagesResult.length, 'image(s)')
+    
+    const images: Array<{ buffer: ArrayBuffer; type: string }> = []
+    
+    for (let i = 0; i < imagesResult.length; i++) {
+      const image = imagesResult[i]
+      try {
+        console.log(`[v0] Processing image ${i + 1}/${imagesResult.length}:`, {
+          contentType: image.contentType,
+          srcType: typeof image.src,
+          srcIsArrayBuffer: image.src instanceof ArrayBuffer,
+          srcIsBuffer: Buffer.isBuffer ? Buffer.isBuffer(image.src) : false,
+          srcIsUint8Array: image.src instanceof Uint8Array,
+        })
+        
+        // image.src can be Buffer (Node.js) or ArrayBuffer (browser)
+        let buffer: ArrayBuffer
+        
+        if (image.src instanceof ArrayBuffer) {
+          buffer = image.src
+          console.log(`[v0] Image ${i + 1}: Using ArrayBuffer directly, size:`, buffer.byteLength)
+        } else if (typeof Buffer !== 'undefined' && Buffer.isBuffer(image.src)) {
+          // Convert Node.js Buffer to ArrayBuffer
+          buffer = image.src.buffer.slice(
+            image.src.byteOffset,
+            image.src.byteOffset + image.src.byteLength
+          )
+          console.log(`[v0] Image ${i + 1}: Converted Buffer to ArrayBuffer, size:`, buffer.byteLength)
+        } else if (image.src instanceof Uint8Array) {
+          buffer = image.src.buffer
+          console.log(`[v0] Image ${i + 1}: Using Uint8Array.buffer, size:`, buffer.byteLength)
+        } else {
+          // Try to convert to ArrayBuffer
+          console.log(`[v0] Image ${i + 1}: Attempting conversion, src type:`, typeof image.src)
+          const uint8Array = new Uint8Array(image.src as any)
+          buffer = uint8Array.buffer
+          console.log(`[v0] Image ${i + 1}: Converted to ArrayBuffer, size:`, buffer.byteLength)
+        }
+        
+        // Determine image type from content type or extension
+        const contentType = image.contentType || 'image/png'
+        
+        if (buffer && buffer.byteLength > 0) {
+          images.push({
+            buffer,
+            type: contentType
+          })
+          console.log(`[v0] ✅ Successfully added image ${i + 1}, size:`, buffer.byteLength, 'bytes, type:', contentType)
+        } else {
+          console.warn(`[v0] ⚠️ Image ${i + 1} has empty or invalid buffer`)
+        }
+      } catch (imgError) {
+        console.error(`[v0] ❌ Error processing image ${i + 1}:`, imgError)
+        if (imgError instanceof Error) {
+          console.error(`[v0] Error message:`, imgError.message)
+        }
+      }
+    }
+    
+    console.log(`[v0] ✅ Extracted ${images.length} image(s) from DOCX (out of ${imagesResult.length} found)`)
+    return images
+  } catch (error) {
+    console.error('[v0] ❌ Error extracting images from DOCX:', error)
+    if (error instanceof Error) {
+      console.error('[v0] Error message:', error.message)
+      console.error('[v0] Error stack:', error.stack)
+    }
+    return []
+  }
+}
+
+/**
  * Extract text from DOCX file using mammoth
  */
 async function extractTextFromDOCX(file: File): Promise<string> {

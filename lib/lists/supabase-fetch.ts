@@ -23,6 +23,7 @@ type LoadPlanRow = {
   uld_version: string | null
   sector: string | null
   header_warning: string | null
+  is_critical: boolean | null
 }
 
 type LoadPlanItemRow = {
@@ -149,6 +150,7 @@ function createAggregatedHeader(loadPlans: LoadPlanRow[]): LoadPlanHeader {
       ttlPlnUld: lp.total_planned_uld || undefined,
       uldVersion: lp.uld_version || undefined,
       headerWarning: lp.header_warning || undefined,
+      isCritical: lp.is_critical || undefined,
     }
   }
 

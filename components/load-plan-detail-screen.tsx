@@ -416,7 +416,7 @@ export default function LoadPlanDetailScreen({ loadPlan, onBack, onSave, onNavig
         onSave={onSave ? handleSave : undefined}
       />
 
-      <div className="bg-gray-50">
+      <div className="bg-gray-50 relative">
         <FlightHeaderRow
           plan={{
             ...editedPlan,
@@ -428,7 +428,20 @@ export default function LoadPlanDetailScreen({ loadPlan, onBack, onSave, onNavig
 
         {/* Header Warning Display - Same format as original document */}
         {editedPlan.headerWarning && (
-          <div className="mx-4 mt-4 mb-2">
+          <div className="mx-4 mt-4 mb-2 relative">
+            {/* CRITICAL Stamp Indicator - Top Right of Header Warning */}
+            {editedPlan.isCritical && (
+              <div className="absolute top-2 right-2 z-20 pointer-events-none">
+                <img 
+                  src="/images/critical.png" 
+                  alt="CRITICAL Stamp" 
+                  className="w-32 h-32 object-contain drop-shadow-2xl transform rotate-[-3deg]"
+                  style={{
+                    filter: 'drop-shadow(0 4px 8px rgba(0,0,0,0.3))',
+                  }}
+                />
+              </div>
+            )}
             <div className="bg-white border border-gray-200 rounded-lg p-4">
               <div className="text-center space-y-2">
                 {editedPlan.headerWarning.split("\n").map((warningLine, index) => {
@@ -454,6 +467,22 @@ export default function LoadPlanDetailScreen({ loadPlan, onBack, onSave, onNavig
                   )
                 })}
               </div>
+            </div>
+          </div>
+        )}
+        
+        {/* CRITICAL Stamp - Show even if no headerWarning */}
+        {editedPlan.isCritical && !editedPlan.headerWarning && (
+          <div className="mx-4 mt-4 mb-2 relative">
+            <div className="absolute top-2 right-2 z-20 pointer-events-none">
+              <img 
+                src="/images/critical.png" 
+                alt="CRITICAL Stamp" 
+                className="w-32 h-32 object-contain drop-shadow-2xl transform rotate-[-3deg]"
+                style={{
+                  filter: 'drop-shadow(0 4px 8px rgba(0,0,0,0.3))',
+                }}
+              />
             </div>
           </div>
         )}

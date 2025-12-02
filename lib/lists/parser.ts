@@ -1,4 +1,6 @@
 import type { LoadPlanHeader, Shipment } from "./types"
+import { extractImagesFromDOCX } from "./file-extractors"
+import { detectCriticalFromImages } from "./ocr-detector"
 
 export function parseHeader(content: string): LoadPlanHeader {
   const flightMatch = content.match(/EK\s*(\d{4})/i)
@@ -112,6 +114,31 @@ export function parseHeader(content: string): LoadPlanHeader {
     headerWarning = warningLines.join("\n").trim()
   }
 
+  // Detect CRITICAL stamp - check if "CRITICAL" text appears anywhere in the content
+  // The stamp can appear as:
+  // 1. Visual stamp (image) - might not be detected in text extraction
+  // 2. Text "CRITICAL" anywhere in document
+  // 3. "CRITICAL SECTOR" or similar patterns
+  // Search in entire document, not just header area
+  const contentUpper = content.toUpperCase()
+  const hasCriticalText = /CRITICAL/i.test(content)
+  const hasCriticalSector = /CRITICAL\s+SECTOR/i.test(contentUpper)
+  const hasCriticalStamp = /CRITICAL\s+STAMP/i.test(contentUpper)
+  const isCritical = hasCriticalText || hasCriticalSector || hasCriticalStamp || contentUpper.includes("CRITICAL")
+  
+  // Log detection for debugging
+  if (isCritical) {
+    console.log('[Parser] ✅ CRITICAL detected:', {
+      hasCriticalText,
+      hasCriticalSector,
+      hasCriticalStamp,
+      sample: content.substring(0, 500).replace(/\n/g, ' ')
+    })
+  } else {
+    // Log first 1000 chars to help debug why CRITICAL wasn't detected
+    console.log('[Parser] ⚠️ CRITICAL not detected. First 1000 chars:', content.substring(0, 1000))
+  }
+
   return { 
     flightNumber, 
     date, 
@@ -124,6 +151,45 @@ export function parseHeader(content: string): LoadPlanHeader {
     ttlPlnUld: ttlPlnUld || undefined,
     uldVersion: uldVersion || undefined,
     headerWarning: headerWarning || undefined,
+    isCritical: isCritical || undefined,
+  }
+}
+
+/**
+ * Detect CRITICAL stamp from images in DOCX file using OCR
+ * This is called separately after text-based detection fails
+ * @param file - DOCX file to check for images
+ * @returns Promise<boolean> - true if CRITICAL is detected in images
+ */
+export async function detectCriticalFromFileImages(file: File): Promise<boolean> {
+  const fileName = file.name.toLowerCase()
+  console.log('[Parser] detectCriticalFromFileImages called for file:', file.name)
+  console.log('[Parser] File name (lowercase):', fileName)
+  console.log('[Parser] Ends with .docx?', fileName.endsWith('.docx'))
+  console.log('[Parser] Ends with .doc?', fileName.endsWith('.doc'))
+  
+  // Only check DOCX files for now (RTF image extraction is more complex)
+  if (!fileName.endsWith('.docx') && !fileName.endsWith('.doc')) {
+    console.log('[Parser] ⚠️ File is not DOCX/DOC, skipping OCR detection')
+    return false
+  }
+  
+  try {
+    console.log('[Parser] ✅ File is DOCX/DOC, extracting images for OCR detection...')
+    const images = await extractImagesFromDOCX(file)
+    
+    if (images.length === 0) {
+      console.log('[Parser] No images found in DOCX file')
+      return false
+    }
+    
+    console.log(`[Parser] Found ${images.length} image(s), running OCR...`)
+    const isCritical = await detectCriticalFromImages(images)
+    
+    return isCritical
+  } catch (error) {
+    console.error('[Parser] Error detecting CRITICAL from images:', error)
+    return false
   }
 }
 

@@ -200,6 +200,7 @@ export async function saveListsDataToSupabase({
         prepared_on: preparedOn,
         sector: results.header.sector || null,
         header_warning: results.header.headerWarning || null,
+        is_critical: results.header.isCritical || false,
       })
       .select()
       .single()
