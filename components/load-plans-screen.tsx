@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button"
 import { useLoadPlans, type LoadPlan } from "@/lib/load-plan-context"
 import { getLoadPlansFromSupabase, getLoadPlanDetailFromSupabase, deleteLoadPlanFromSupabase } from "@/lib/load-plans-supabase"
 import { parseHeader, parseShipments } from "@/lib/lists/parser"
-import { parseRTFFile } from "@/lib/lists/rtf-parser"
+import { parseRTFHeader, parseRTFShipments, parseRTFFileWithStreamParser } from "@/lib/lists/rtf-parser"
 import { saveListsDataToSupabase } from "@/lib/lists/supabase-save"
 import type { ListsResults } from "@/lib/lists/types"
 import { generateSpecialCargoReport, generateVUNList, generateQRTList } from "@/lib/lists/report-generators"
@@ -337,117 +337,50 @@ export default function LoadPlansScreen({ onLoadPlanSelect }: { onLoadPlanSelect
         setProgress(fileProgress)
 
         try {
-          // Check if file is RTF and use RTF-specific parser
+          // Check if file is RTF
           const isRTF = f.name.toLowerCase().endsWith('.rtf')
-          
           let header, shipments
           
           if (isRTF) {
-            // Use RTF-specific parser
-            console.log('[LoadPlansScreen] Using RTF parser for:', f.name)
+            // Use new rtf-stream-parser function - NO DOCX conversion, direct RTF processing
+            console.log('[LoadPlansScreen] Processing RTF file directly with rtf-stream-parser (no DOCX conversion):', f.name)
+            
             try {
-              const rtfResult = await parseRTFFile(f)
-              header = rtfResult.header
-              shipments = rtfResult.shipments
+              const result = await parseRTFFileWithStreamParser(f)
+              header = result.header
+              shipments = result.shipments
               
-              // If RTF parser returns very few shipments, try fallback to regular parser
-              if (shipments.length < 5) {
-                console.warn('[LoadPlansScreen] RTF parser returned only', shipments.length, 'shipments. Trying fallback to regular parser...')
-                try {
-                  // Use direct RTF extraction (same as RTF parser uses) to avoid DOCX conversion
-                  const rtfText = await f.text()
-                  let fallbackContent = rtfText
-                    .replace(/\\par[d]?/gi, "\n")
-                    .replace(/\\line/gi, "\n")
-                    .replace(/\\tab/gi, "\t")
-                    .replace(/\\;/g, ";")
-                    .replace(/\\\\/g, "\\")
-                    .replace(/\\'([0-9a-fA-F]{2})/g, (_m, hex) => String.fromCharCode(parseInt(hex, 16)))
-                    .replace(/\\[a-zA-Z]+-?\d*(?:\s|)/g, "")
-                    .replace(/\{[^}]*\}/g, "")
-                    .replace(/[{}]/g, "")
-                  
-                  // Find table header and extract from there
-                  const lines = fallbackContent.split("\n")
-                  let startIdx = 0
-                  for (let i = 0; i < lines.length; i++) {
-                    if (lines[i].includes("SER.") && lines[i].includes("AWB NO")) {
-                      startIdx = Math.max(0, i - 50)
-                      break
-                    }
-                  }
-                  fallbackContent = lines.slice(startIdx).join("\n")
-                  
-                  const fallbackHeader = parseHeader(fallbackContent)
-                  const fallbackShipments = parseShipments(fallbackContent, fallbackHeader)
-                  
-                  if (fallbackShipments.length > shipments.length) {
-                    console.log('[LoadPlansScreen] Fallback parser found', fallbackShipments.length, 'shipments. Using fallback result.')
-                    header = fallbackHeader
-                    shipments = fallbackShipments
-                  } else {
-                    console.log('[LoadPlansScreen] RTF parser result is better, keeping RTF result.')
-                  }
-                } catch (fallbackError) {
-                  console.error('[LoadPlansScreen] Fallback parser also failed:', fallbackError)
-                }
-              }
+              console.log('[LoadPlansScreen] ✅ Successfully parsed RTF file with rtf-stream-parser')
+              console.log('[LoadPlansScreen] Parsed shipments:', shipments.length)
             } catch (rtfError) {
-              console.error('[LoadPlansScreen] RTF parser failed, trying fallback to regular parser:', rtfError)
-              // Fallback to regular parser with direct RTF extraction
-              try {
-                const rtfText = await f.text()
-                let fallbackContent = rtfText
-                  .replace(/\\par[d]?/gi, "\n")
-                  .replace(/\\line/gi, "\n")
-                  .replace(/\\tab/gi, "\t")
-                  .replace(/\\;/g, ";")
-                  .replace(/\\\\/g, "\\")
-                  .replace(/\\'([0-9a-fA-F]{2})/g, (_m, hex) => String.fromCharCode(parseInt(hex, 16)))
-                  .replace(/\\[a-zA-Z]+-?\d*(?:\s|)/g, "")
-                  .replace(/\{[^}]*\}/g, "")
-                  .replace(/[{}]/g, "")
-                
-                // Find table header
-                const lines = fallbackContent.split("\n")
-                let startIdx = 0
-                for (let i = 0; i < lines.length; i++) {
-                  if (lines[i].includes("SER.") && lines[i].includes("AWB NO")) {
-                    startIdx = Math.max(0, i - 50)
-                    break
-                  }
-                }
-                fallbackContent = lines.slice(startIdx).join("\n")
-                
-                header = parseHeader(fallbackContent)
-                if (!header.flightNumber) {
-                  console.error('[LoadPlansScreen] Could not parse flight number from file:', f.name)
-                  failedFiles.push(f.name)
-                  continue
-                }
-                shipments = parseShipments(fallbackContent, header)
-              } catch (fallbackError) {
-                console.error('[LoadPlansScreen] All parsing methods failed:', fallbackError)
+              console.error('[LoadPlansScreen] Error parsing RTF file:', rtfError)
+              failedFiles.push(f.name)
+              continue
+            }
+          } else {
+            // Process file normally (DOCX, PDF, etc.)
+            console.log('[LoadPlansScreen] Processing non-RTF file:', f.name)
+            const content = await extractTextFromFile(f)
+            console.log('[LoadPlansScreen] Extracted content length:', content.length)
+            
+            header = parseHeader(content)
+            if (!header.flightNumber) {
+              // Try to extract from filename
+              const filenameMatch = f.name.match(/EK\s*[-]?\s*(\d{4})/i)
+              if (filenameMatch) {
+                header.flightNumber = `EK${filenameMatch[1]}`
+                console.log('[LoadPlansScreen] Extracted flight number from filename:', header.flightNumber)
+              } else {
+                console.error('[LoadPlansScreen] Could not parse flight number from file:', f.name)
                 failedFiles.push(f.name)
                 continue
               }
             }
-          } else {
-            // Use regular parser for other file types
-            const content = await extractTextFromFile(f)
-            console.log('[LoadPlansScreen] Extracted content length:', content.length)
-
-            header = parseHeader(content)
-            if (!header.flightNumber) {
-              console.error('[LoadPlansScreen] Could not parse flight number from file:', f.name)
-              failedFiles.push(f.name)
-              continue
-            }
-
             shipments = parseShipments(content, header)
           }
           
-          console.log('[LoadPlansScreen] Parsed shipments from', f.name, ':', shipments.length)
+          const processingNote = isRTF ? '(RTF processed directly with rtf-stream-parser)' : ''
+          console.log('[LoadPlansScreen] Parsed shipments from', f.name, processingNote, ':', shipments.length)
           
           // Validate that we have shipments
           if (!shipments || shipments.length === 0) {
@@ -500,7 +433,7 @@ export default function LoadPlansScreen({ onLoadPlanSelect }: { onLoadPlanSelect
           })
 
           if (saveResult.success) {
-            console.log('[LoadPlansScreen] ✅ Data saved to Supabase successfully for', f.name, ', load_plan_id:', saveResult.loadPlanId)
+            console.log('[LoadPlansScreen] ✅ Data saved to Supabase successfully for', f.name, isRTF ? '(converted from RTF)' : '', ', load_plan_id:', saveResult.loadPlanId)
             console.log('[LoadPlansScreen] Saved', shipments.length, 'shipments to load_plan_items')
             
             // Check if flight already exists in current list

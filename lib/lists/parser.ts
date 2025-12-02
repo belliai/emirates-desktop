@@ -213,31 +213,53 @@ export function parseShipments(content: string, header: LoadPlanHeader): Shipmen
     if (!line) continue
 
     // Check for ULD section - more flexible pattern matching
-    // Format: XX 06AKE XX, XX 02PMC 03AKE XX, XX BULK XX, or xx 01PMC xx (case insensitive)
+    // Format: XX 06AKE XX, XX 02PMC 03AKE XX, XX BULK XX, XX XYP BOX XX, XX TOP UP JNG UNIT XX, etc.
+    // Also: XX 01ALF 01AKE XX --- HL ON EK041 (include everything after XX markers)
     // Check if line contains XX/xx markers and ULD content between them
     // More flexible: allow for case variations (XX, xx, Xx) and variable spacing
     const hasULDMarkers = /xx\s+/i.test(line) && /\s+xx/i.test(line)
     if (hasULDMarkers) {
-      // Extract content between XX markers
-      // Pattern: XX/xx followed by content, then XX/xx
+      // Extract ALL content including everything after XX markers
+      // Pattern: XX ... content ... XX (and everything after, like "--- HL ON EK041")
       let uldContent: string | null = null
       
-      // Try BULK first (no numbers)
-      const bulkMatch = line.match(/xx\s+(bulk)\s+xx/i)
-      if (bulkMatch) {
-        uldContent = bulkMatch[1].toUpperCase()
-      } else {
-        // Try numbered ULD pattern: digits + type codes
-        const numberedMatch = line.match(/xx\s+(\d+(?:pmc|ake|pag|amp)(?:\s+\d+(?:pmc|ake|pag|amp))*)\s+xx/i)
-        if (numberedMatch) {
-          // Normalize to uppercase for consistency
-          uldContent = numberedMatch[1].toUpperCase().replace(/\s+/g, " ")
+      // Try to extract everything between XX markers AND everything after
+      // Pattern: XX (with optional spaces) ... content ... (with optional spaces) XX (and rest of line)
+      const uldMatch = line.match(/xx\s+(.+?)\s+xx(.*)/i)
+      if (uldMatch) {
+        const betweenXX = uldMatch[1].trim()
+        const afterXX = uldMatch[2].trim()
+        // Combine both parts, normalize spaces
+        uldContent = (betweenXX + (afterXX ? " " + afterXX : "")).trim()
+        // Normalize multiple spaces to single space, but preserve structure
+        uldContent = uldContent.replace(/\s+/g, " ").toUpperCase()
+      }
+      
+      // If no match with spaces, try without spaces requirement (XX...XX)
+      if (!uldContent) {
+        const uldMatchNoSpace = line.match(/xx(.+?)xx(.*)/i)
+        if (uldMatchNoSpace) {
+          const betweenXX = uldMatchNoSpace[1].trim()
+          const afterXX = uldMatchNoSpace[2].trim()
+          uldContent = (betweenXX + (afterXX ? " " + afterXX : "")).trim()
+          uldContent = uldContent.replace(/\s+/g, " ").toUpperCase()
         }
       }
       
-      if (uldContent) {
-        // Format ULD untuk disimpan: "XX 06AKE XX" or "XX BULK XX"
-        const formattedULD = `XX ${uldContent} XX`
+      if (uldContent && uldContent.length > 0) {
+        // Format ULD untuk disimpan: "XX {content} XX" - preserve original format including after XX
+        // If there's content after XX, include it: "XX {content} XX {after}"
+        // Example: "XX 01ALF 01AKE XX --- HL ON EK041" should become "XX 01ALF 01AKE XX --- HL ON EK041"
+        const afterPart = line.match(/xx\s+.+?\s+xx\s+(.+)/i)?.[1]?.trim()
+        let formattedULD: string
+        if (afterPart) {
+          // Extract content between XX markers (without the after part that was merged)
+          const betweenXXMatch = line.match(/xx\s+(.+?)\s+xx/i)
+          const betweenXX = betweenXXMatch ? betweenXXMatch[1].trim().toUpperCase() : uldContent.replace(/\s+---.*$/i, "").trim()
+          formattedULD = `XX ${betweenXX} XX ${afterPart}`
+        } else {
+          formattedULD = `XX ${uldContent} XX`
+        }
         
         console.log("[v0] ✅ ULD section detected:", formattedULD, "- buffer has", awbBuffer.length, "AWB rows")
         
@@ -278,9 +300,21 @@ export function parseShipments(content: string, header: LoadPlanHeader): Shipmen
       // PC can be optional, and there can be multiple spaces between PCODE and THC
       // Use \s+ to match one or more spaces (more flexible for RTF-extracted text)
       // Normalize line first: collapse multiple spaces to single space for regex matching
+      // But preserve spacing in MAN.DESC field which can have multiple words
       const normalizedLine = line.replace(/\s+/g, " ")
+      // Updated regex to handle various date/time formats from RTF files:
+      // Examples from user's RTF:
+      // - "001 ... EK0323 29Feb0454 33:10/ N" (date with embedded time + separate time)
+      // - "002 ... EK9918 29Feb0315 25:35/34:50 N" (date with embedded time + multiple times)
+      // - "011 ... N" (no FLTIN/ARRDT/TIME)
+      // Pattern breakdown:
+      // - FLTIN: EK0323 or empty
+      // - ARRDT: 29Feb0454 (date + HHMM time embedded) or 29Feb2024 or 29Feb24
+      // - TIME: 33:10/ or 25:35/34:50 (time with optional multiple values separated by /)
+      // Note: MAN.DESC uses (.+?) which is non-greedy to stop at PCODE
+      // THC can be empty (just spaces), so use * instead of + for optional matching
       let shipmentMatch = normalizedLine.match(
-        /^(\d{3})\s+(\d{3}-\d{8})\s+([A-Z]{3})([A-Z]{3})\s+(\d+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([A-Z-]+)\s+(.+?)\s+([A-Z]{3})\s+([A-Z]\d)?\s+([A-Z0-9\s]+?)\s+(SS)\s+([YN])\s+([A-Z]+\d+)?\s*(\d{2}[A-Za-z]{3}\d{4})?\s*([\d:\/]+)?\s*([YN])?/i,
+        /^(\d{3})\s+(\d{3}-\d{8})\s+([A-Z]{3})([A-Z]{3})\s+(\d+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([A-Z-]+)\s+(.+?)\s+([A-Z]{3})\s+([A-Z]\d)?\s*([A-Z0-9\s]*?)\s+(SS)\s+([YN])\s+([A-Z]+\d+)?\s*(\d{2}[A-Za-z]{3}\d{2,4}(?:\s+[\d:\/]+)?)?\s*([\d:\/\s]+)?\s*([YN])?$/i,
       )
       
       // If first regex doesn't match, try format without FLTIN/ARRDT.TIME (e.g., shipment 002)
@@ -516,16 +550,15 @@ export function parseShipments(content: string, header: LoadPlanHeader): Shipmen
           })
         }
       } else if ((line.startsWith("[") || line.startsWith("**["))) {
-        // Special notes seperti "[Must be load in Fire containment equipment]"
-        // Harus disimpan ke ULD field, bukan ke SI atau kolom lainnya
-        const note = line.replace(/\*\*/g, "").replace(/[[\]]/g, "").trim()
+        // Special notes HANYA untuk yang ada bracket "[ ]"
+        // Contoh: "[Must be load in Fire containment equipment]"
+        // Simpan dengan bracket "[ ]" tetap ada
+        const note = line.replace(/\*\*/g, "").trim()
         if (currentShipment) {
           const shipment = currentShipment as Partial<Shipment> & { specialNotes?: string[] }
           if (!shipment.specialNotes) {
             shipment.specialNotes = []
           }
-          // Store note temporarily in specialNotes array
-          // It will be appended to ULD when ULD is assigned
           shipment.specialNotes.push(note)
         } else if (awbBuffer.length > 0) {
           // Assign ke shipment terakhir di buffer
@@ -534,9 +567,41 @@ export function parseShipments(content: string, header: LoadPlanHeader): Shipmen
             if (!lastShipment.specialNotes) {
               lastShipment.specialNotes = []
             }
-            // Store note temporarily in specialNotes array
-            // It will be appended to ULD when ULD is assigned
             lastShipment.specialNotes.push(note)
+          }
+        }
+      } else if (inShipmentSection && line.length > 0 && !line.match(/^\d{3}/) && !line.match(/^xx\s+/i) && !line.match(/^SECTOR:/i) && !line.match(/^TOTALS:/i) && !line.match(/^BAGG|COUR/i) && !line.match(/^RAMP|MAIL/i) && !line.match(/^GO SHOW/i)) {
+        // Baris seperti "SHPT RELOC X EK0005 , 29FEB DUE LATE BREAKDOWN --- SAME PLND ON EK041 AS HL"
+        // Harus masuk ke ULD, bukan specialNotes
+        // Kondisi: 
+        // - Di dalam shipment section
+        // - Tidak kosong
+        // - Tidak dimulai dengan 3 digit (bukan shipment line)
+        // - Tidak dimulai dengan XX (bukan ULD marker)
+        // - Tidak dimulai dengan SECTOR, TOTALS, BAGG, COUR, RAMP, MAIL, GO SHOW (bukan section marker)
+        const note = line.trim()
+        if (note.length > 0) {
+          // Append ke ULD shipment terakhir (currentShipment atau terakhir di buffer)
+          if (currentShipment) {
+            // Jika currentShipment sudah punya ULD, append dengan separator
+            if (currentShipment.uld && currentShipment.uld.trim()) {
+              currentShipment.uld = `${currentShipment.uld} --- ${note}`
+            } else {
+              // Jika belum ada ULD, simpan sebagai ULD
+              currentShipment.uld = note
+            }
+            console.log("[v0] ✅ ULD note detected (non-XX):", note.substring(0, 100))
+          } else if (awbBuffer.length > 0) {
+            // Assign ke shipment terakhir di buffer
+            const lastShipment = awbBuffer[awbBuffer.length - 1]
+            if (lastShipment) {
+              if (lastShipment.uld && lastShipment.uld.trim()) {
+                lastShipment.uld = `${lastShipment.uld} --- ${note}`
+              } else {
+                lastShipment.uld = note
+              }
+              console.log("[v0] ✅ ULD note detected (non-XX) for buffered shipment:", note.substring(0, 100))
+            }
           }
         }
       }

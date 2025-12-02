@@ -103,49 +103,207 @@ function rtfToPlainText(rtf: string): string {
 }
 
 /**
- * Extract text from RTF file by converting to DOCX first, then using DOCX extraction
- * This approach is more reliable than direct RTF parsing
+ * Extract text from RTF file using rtf-stream-parser first, then rtf-parser, then manual extraction
  */
 async function extractTextFromRTF(file: File): Promise<string> {
+  const rtfText = await file.text()
+  
+  // Method 1: Try using rtf-stream-parser (most reliable)
   try {
-    console.log('[v0] Converting RTF to DOCX via API route...')
+    console.log('[v0] Extracting RTF using rtf-stream-parser library...')
+    const RTFStreamParserModule = await import('rtf-stream-parser')
     
-    // Convert RTF to DOCX using API route
-    const formData = new FormData()
-    formData.append('file', file)
+    // Try different ways to access the parser
+    const RTFStreamParser = RTFStreamParserModule.default || RTFStreamParserModule
     
-    const response = await fetch('/api/convert-rtf-to-docx', {
-      method: 'POST',
-      body: formData,
-    })
+    let textContent = ''
+    let parser: any
     
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
-      throw new Error(`RTF to DOCX conversion failed: ${errorData.error || response.statusText}`)
+    // Try different initialization methods
+    if (typeof RTFStreamParser === 'function') {
+      parser = new RTFStreamParser()
+    } else if (RTFStreamParser.default && typeof RTFStreamParser.default === 'function') {
+      parser = new RTFStreamParser.default()
+    } else {
+      throw new Error('Could not initialize rtf-stream-parser')
     }
     
-    // Get DOCX file from response
-    const docxBlob = await response.blob()
-    const docxFile = new File([docxBlob], file.name.replace(/\.rtf$/i, '.docx'), {
-      type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    // Set up event listeners
+    if (parser.on) {
+      parser.on('text', (text: string) => {
+        textContent += text
+      })
+      
+      parser.on('paragraph', () => {
+        textContent += '\n'
+      })
+      
+      // Parse the RTF content
+      if (parser.write) {
+        parser.write(rtfText)
+      }
+      if (parser.end) {
+        parser.end()
+      }
+    } else {
+      throw new Error('rtf-stream-parser API not recognized')
+    }
+    
+    const extractedText = textContent.trim()
+    
+    if (extractedText && extractedText.length > 100) {
+      console.log('[v0] ✅ Successfully extracted RTF using rtf-stream-parser, length:', extractedText.length)
+      
+      // Check for table header
+      if (extractedText.includes("SER") && extractedText.includes("AWB")) {
+        console.log('[v0] ✅ Table header found in rtf-stream-parser extraction')
+      }
+      
+      // Check for shipment-like lines
+      const shipmentLines = extractedText.split("\n").filter(l => /^\d{3}\s+\d{3}-\d{8}/.test(l.trim())).slice(0, 5)
+      if (shipmentLines.length > 0) {
+        console.log('[v0] ✅ Found shipment-like lines in rtf-stream-parser:', shipmentLines.length)
+      }
+      
+      return extractedText
+    } else {
+      throw new Error('rtf-stream-parser extracted too little text')
+    }
+  } catch (streamParserError) {
+    console.warn('[v0] rtf-stream-parser failed, trying rtf-parser:', streamParserError)
+  }
+  
+  // Method 2: Try using rtf-parser library (fallback)
+  try {
+    console.log('[v0] Extracting RTF using rtf-parser library...')
+    const rtfParser = await import('rtf-parser')
+    const parsedRTF = await new Promise<any>((resolve, reject) => {
+      rtfParser.string(rtfText, (err: Error | null, doc: any) => {
+        if (err) {
+          reject(err)
+          return
+        }
+        resolve(doc)
+      })
     })
     
-    console.log('[v0] RTF converted to DOCX, now extracting text using mammoth...')
+    let extractedText = ''
+    function extractTextFromContent(content: any[]): void {
+      if (!content || !Array.isArray(content)) return
+      for (const item of content) {
+        if (typeof item === 'string') {
+          extractedText += item
+        } else if (item.text) {
+          extractedText += item.text
+        }
+        // Add newline for paragraphs
+        if (item.type === 'paragraph' || item.type === 'par') {
+          extractedText += '\n'
+        }
+        if (item.content) {
+          extractTextFromContent(item.content)
+        }
+      }
+    }
     
-    // Use existing DOCX extraction logic
-    return await extractTextFromDOCX(docxFile)
-  } catch (error) {
-    console.error('[v0] Error converting RTF to DOCX:', error)
-    // Fallback to direct RTF text extraction if conversion fails
-    console.warn('[v0] Falling back to direct RTF text extraction...')
+    if (parsedRTF?.content) {
+      extractTextFromContent(parsedRTF.content)
+    }
+    
+    // If extracted text is too short, try to extract from document structure differently
+    if (!extractedText || extractedText.trim().length < 100) {
+      // Try extracting from document body or other structures
+      if (parsedRTF?.body) {
+        extractTextFromContent(parsedRTF.body)
+      }
+      if (parsedRTF?.document) {
+        extractTextFromContent(parsedRTF.document)
+      }
+    }
+    
+    if (extractedText && extractedText.trim().length > 100) {
+      console.log('[v0] Successfully extracted RTF using rtf-parser library, length:', extractedText.length)
+      // Log sample to verify extraction
+      const sample = extractedText.substring(0, 1000)
+      console.log('[v0] Sample extracted RTF text:', sample)
+      
+      // Check for table header
+      if (extractedText.includes("SER") && extractedText.includes("AWB")) {
+        console.log('[v0] ✅ Table header found in extracted RTF text')
+      } else {
+        console.warn('[v0] ⚠️ Table header not found in extracted RTF text')
+      }
+      
+      // Check for shipment-like lines
+      const shipmentLines = extractedText.split("\n").filter(l => /^\d{3}\s+\d{3}-\d{8}/.test(l.trim())).slice(0, 5)
+      if (shipmentLines.length > 0) {
+        console.log('[v0] ✅ Found shipment-like lines in RTF:', shipmentLines.map(l => l.substring(0, 150)))
+      } else {
+        console.warn('[v0] ⚠️ No shipment-like lines found in RTF extraction')
+      }
+      
+      return extractedText
+    } else {
+      console.warn('[v0] rtf-parser extracted too little text:', extractedText.length)
+      throw new Error('rtf-parser extracted too little text')
+    }
+  } catch (parserError) {
+    console.warn('[v0] rtf-parser library failed, trying manual extraction:', parserError)
+    
+    // Method 2: Manual RTF extraction (fallback)
     try {
       const text = await file.text()
       const strippedText = rtfToPlainText(text)
-      console.log('[v0] RTF fallback extraction, length:', strippedText.length)
+      console.log('[v0] RTF manual extraction, length:', strippedText.length)
+      
+      // Log sample and check for content
+      const sample = strippedText.substring(0, 1000)
+      console.log('[v0] Sample manual RTF extraction:', sample)
+      
+      // Check for table header
+      if (strippedText.includes("SER") && strippedText.includes("AWB")) {
+        console.log('[v0] ✅ Table header found in manual RTF extraction')
+      } else {
+        console.warn('[v0] ⚠️ Table header not found in manual RTF extraction')
+      }
+      
+      // Check for shipment-like lines
+      const shipmentLines = strippedText.split("\n").filter(l => /^\d{3}\s+\d{3}-\d{8}/.test(l.trim())).slice(0, 5)
+      if (shipmentLines.length > 0) {
+        console.log('[v0] ✅ Found shipment-like lines in manual RTF:', shipmentLines.map(l => l.substring(0, 150)))
+      } else {
+        console.warn('[v0] ⚠️ No shipment-like lines found in manual RTF extraction')
+      }
+      
       return strippedText
     } catch (fallbackError) {
-      console.error('[v0] RTF fallback extraction failed:', fallbackError)
-      throw new Error('Failed to extract text from RTF file')
+      console.error('[v0] RTF manual extraction also failed:', fallbackError)
+      
+      // Method 3: Try DOCX conversion as last resort
+      console.warn('[v0] Trying DOCX conversion as last resort...')
+      try {
+        const formData = new FormData()
+        formData.append('file', file)
+        
+        const response = await fetch('/api/convert-rtf-to-docx', {
+          method: 'POST',
+          body: formData,
+        })
+        
+        if (response.ok) {
+          const docxBlob = await response.blob()
+          const docxFile = new File([docxBlob], file.name.replace(/\.rtf$/i, '.docx'), {
+            type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          })
+          console.log('[v0] RTF converted to DOCX, extracting text...')
+          return await extractTextFromDOCX(docxFile)
+        } else {
+          throw new Error('DOCX conversion failed')
+        }
+      } catch (docxError) {
+        console.error('[v0] All RTF extraction methods failed:', docxError)
+        throw new Error('Failed to extract text from RTF file using all methods')
+      }
     }
   }
 }
