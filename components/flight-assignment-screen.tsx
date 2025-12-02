@@ -1,8 +1,8 @@
 "use client"
 
-import React, { useState, useEffect, useMemo } from "react"
-import { Plane, Clock, MapPin, Users, FileText, Check, ChevronsUpDown } from "lucide-react"
-import { useLoadPlans } from "@/lib/load-plan-context"
+import React, { useState, useEffect, useMemo, useRef } from "react"
+import { Plane, Clock, MapPin, Users, FileText, Check, ChevronsUpDown, Plus, Search, SlidersHorizontal, Settings2, ArrowUpDown, X } from "lucide-react"
+import { useLoadPlans, type ShiftType, type PeriodType, type WaveType } from "@/lib/load-plan-context"
 import { Button } from "@/components/ui/button"
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
@@ -20,6 +20,41 @@ type FlightAssignment = {
   originDestination: string
   name: string
   sector: string
+}
+
+// Parse STD time (e.g., "02:50", "09:35") to hours
+function parseStdToHours(std: string): number {
+  const [hours, minutes] = std.split(":").map(Number)
+  return hours + (minutes || 0) / 60
+}
+
+// Determine period and wave based on ETD/STD time
+function determinePeriodAndWave(etd: string): { period: PeriodType; wave: WaveType | null; shiftType: ShiftType } {
+  const [hours, minutes] = etd.split(":").map(Number)
+  const timeInMinutes = hours * 60 + (minutes || 0)
+  
+  // Night Shift Early Morning: 00:01-05:59
+  if (timeInMinutes >= 1 && timeInMinutes < 360) {
+    return { period: "early-morning", wave: null, shiftType: "night" }
+  }
+  // Night Shift Late Morning First Wave: 06:00-09:00
+  if (timeInMinutes >= 360 && timeInMinutes <= 540) {
+    return { period: "late-morning", wave: "first-wave", shiftType: "night" }
+  }
+  // Night Shift Late Morning Second Wave: 09:01-12:59
+  if (timeInMinutes > 540 && timeInMinutes < 780) {
+    return { period: "late-morning", wave: "second-wave", shiftType: "night" }
+  }
+  // Day Shift Afternoon First Wave: 13:00-15:59
+  if (timeInMinutes >= 780 && timeInMinutes < 960) {
+    return { period: "afternoon", wave: "first-wave", shiftType: "day" }
+  }
+  // Day Shift Afternoon Second Wave: 16:00-23:59
+  if (timeInMinutes >= 960 && timeInMinutes <= 1439) {
+    return { period: "afternoon", wave: "second-wave", shiftType: "day" }
+  }
+  // Default to early morning for edge cases
+  return { period: "early-morning", wave: null, shiftType: "night" }
 }
 
 // Extract flight number from flight string (e.g., "EK0205" -> 205)
@@ -87,6 +122,14 @@ export default function FlightAssignmentScreen({ initialSupervisor }: FlightAssi
   const { getNotificationsForStaff } = useNotifications()
   const { toast } = useToast()
   const shownNotificationIdsRef = React.useRef<Set<string>>(new Set())
+  const [showAddFilterDropdown, setShowAddFilterDropdown] = useState(false)
+  const [showViewOptions, setShowViewOptions] = useState(false)
+  const [searchQuery, setSearchQuery] = useState("")
+  const [shiftFilter, setShiftFilter] = useState<ShiftType>("current")
+  const [periodFilter, setPeriodFilter] = useState<PeriodType>("all")
+  const [waveFilter, setWaveFilter] = useState<WaveType>("all")
+  const addFilterRef = useRef<HTMLDivElement>(null)
+  const viewOptionsRef = useRef<HTMLDivElement>(null)
 
   // Create a set of flight numbers that have actual uploaded load plans
   const loadPlanFlights = useMemo(() => {
@@ -180,21 +223,71 @@ export default function FlightAssignmentScreen({ initialSupervisor }: FlightAssi
       }
     })
     
-    // Convert map to array and sort:
-    // 1. Flights with actual load plans first (for demo)
-    // 2. Then by flight number within each group
-    return Array.from(assignmentsMap.values()).sort((a, b) => {
-      const aHasLoadPlan = loadPlanFlights.has(a.flight)
-      const bHasLoadPlan = loadPlanFlights.has(b.flight)
-      
-      // Prioritize flights with uploaded load plans
-      if (aHasLoadPlan && !bHasLoadPlan) return -1
-      if (!aHasLoadPlan && bHasLoadPlan) return 1
-      
-      // Within same category, sort by flight number
-      return a.flight.localeCompare(b.flight)
-    })
+    return Array.from(assignmentsMap.values())
   }, [loadPlans, contextAssignments, loadPlanFlights, bupAllocations, bupRoutingMap])
+
+  // Filter and sort flight assignments
+  const filteredAssignments = useMemo(() => {
+    let filtered = [...flightAssignments]
+
+    // Filter by shift type
+    if (shiftFilter === "current") {
+      // Show all flights (no shift filter)
+    } else if (shiftFilter === "night") {
+      filtered = filtered.filter((a) => {
+        const { shiftType } = determinePeriodAndWave(a.std)
+        return shiftType === "night"
+      })
+    } else if (shiftFilter === "day") {
+      filtered = filtered.filter((a) => {
+        const { shiftType } = determinePeriodAndWave(a.std)
+        return shiftType === "day"
+      })
+    }
+
+    // Filter by period
+    if (periodFilter !== "all") {
+      filtered = filtered.filter((a) => {
+        const { period } = determinePeriodAndWave(a.std)
+        return period === periodFilter
+      })
+    }
+
+    // Filter by wave (only applies to late-morning and afternoon periods)
+    if (periodFilter === "early-morning" && waveFilter !== "all") {
+      // Early morning doesn't have waves, so don't filter by wave
+    } else if (waveFilter !== "all") {
+      filtered = filtered.filter((a) => {
+        const { period, wave } = determinePeriodAndWave(a.std)
+        if (period === "late-morning" || period === "afternoon") {
+          return wave === waveFilter
+        }
+        return true // Early morning doesn't have waves
+      })
+    }
+
+    // Filter by search query
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase()
+      filtered = filtered.filter((a) => 
+        a.flight.toLowerCase().includes(query) ||
+        a.originDestination.toLowerCase().includes(query) ||
+        a.name?.toLowerCase().includes(query) ||
+        a.sector?.toLowerCase().includes(query)
+      )
+    }
+
+    // Sort by STD descending (most recent first)
+    // Note: We don't have date info in FlightAssignment, so we'll sort by STD time only
+    return filtered.sort((a, b) => {
+      const hoursA = parseStdToHours(a.std)
+      const hoursB = parseStdToHours(b.std)
+      return hoursB - hoursA // Descending - latest time first
+    })
+  }, [flightAssignments, shiftFilter, periodFilter, waveFilter, searchQuery])
+
+  // Determine if wave filter should be shown
+  const showWaveFilter = periodFilter === "late-morning" || periodFilter === "afternoon"
 
   // Fetch staff data from Supabase on mount
   useEffect(() => {
@@ -270,6 +363,25 @@ export default function FlightAssignmentScreen({ initialSupervisor }: FlightAssi
     }
   }, [selectedSupervisorId, getNotificationsForStaff, toast])
 
+  // Close dropdowns when clicking outside
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (addFilterRef.current && !addFilterRef.current.contains(event.target as Node)) {
+        setShowAddFilterDropdown(false)
+      }
+      if (viewOptionsRef.current && !viewOptionsRef.current.contains(event.target as Node)) {
+        setShowViewOptions(false)
+      }
+    }
+
+    if (showAddFilterDropdown || showViewOptions) {
+      document.addEventListener('mousedown', handleClickOutside)
+      return () => {
+        document.removeEventListener('mousedown', handleClickOutside)
+      }
+    }
+  }, [showAddFilterDropdown, showViewOptions])
+
   // Get operator name options for the name dropdown
   const operatorOptions = useMemo(() => {
     return operators.map(op => {
@@ -323,7 +435,7 @@ export default function FlightAssignmentScreen({ initialSupervisor }: FlightAssi
 
   // Calculate pending flights by category (based on flight number ranges)
   const pendingByCategory: Record<string, { count: number; color: string }> = {}
-  flightAssignments.forEach((assignment) => {
+  filteredAssignments.forEach((assignment) => {
     if (!assignment.name || !assignment.sector) {
       const { category, color } = getDestinationCategory(assignment.flight)
       if (!pendingByCategory[category]) {
@@ -415,6 +527,217 @@ export default function FlightAssignmentScreen({ initialSupervisor }: FlightAssi
           </div>
         </div>
 
+        {/* Filters */}
+        <div className="flex items-center gap-2 mb-4 px-2 flex-wrap">
+          {/* Default View Dropdown */}
+          <div className="flex items-center">
+            <select
+              className="px-2 py-1.5 text-xs border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-[#D71A21] focus:border-transparent"
+            >
+              <option value="default">≡ Default</option>
+              <option value="custom">Custom View</option>
+            </select>
+          </div>
+
+          {/* Add Filter Dropdown */}
+          <div className="relative" ref={addFilterRef}>
+            <button
+              type="button"
+              onClick={() => setShowAddFilterDropdown(!showAddFilterDropdown)}
+              className="flex items-center gap-1 px-2 py-1.5 text-xs border border-gray-300 rounded-md bg-white hover:border-gray-400 transition-colors"
+            >
+              <Plus className="w-3 h-3" />
+              <span>Add Filter</span>
+            </button>
+            
+            {showAddFilterDropdown && (
+              <div className="absolute top-full left-0 mt-1 z-50 bg-white border border-gray-200 rounded-lg shadow-lg w-48">
+                <div className="p-2">
+                  <div className="relative mb-2">
+                    <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 w-3 h-3 text-gray-400" />
+                    <input
+                      type="text"
+                      placeholder="Search column..."
+                      className="w-full pl-7 pr-2 py-1.5 text-xs border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-[#D71A21]"
+                    />
+                  </div>
+                  <div className="space-y-0.5">
+                    {["Flight", "STD", "Origin Destination", "Name", "Sector"].map((col) => (
+                      <button
+                        key={col}
+                        className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-gray-700 hover:bg-gray-50 rounded transition-colors text-left"
+                        onClick={() => setShowAddFilterDropdown(false)}
+                      >
+                        <span className="text-gray-400">≡</span>
+                        {col}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Search Assignments */}
+          <div className="relative">
+            <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 w-3 h-3 text-gray-400" />
+            <input
+              type="text"
+              placeholder="Search assignments..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-7 pr-2 py-1.5 text-xs border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-[#D71A21] focus:border-transparent w-36"
+            />
+          </div>
+
+          <div className="w-px h-6 bg-gray-200" />
+
+          {/* Shift Type Filter - Compact */}
+          <select
+            id="shift-filter"
+            value={shiftFilter}
+            onChange={(e) => {
+              const newShift = e.target.value as ShiftType
+              setShiftFilter(newShift)
+              setPeriodFilter("all")
+              setWaveFilter("all")
+            }}
+            className="px-2 py-1.5 text-xs border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-[#D71A21] focus:border-transparent"
+          >
+            <option value="current">Current (All)</option>
+            <option value="night">Night Shift</option>
+            <option value="day">Day Shift</option>
+          </select>
+
+          {/* Period Filter - Compact (conditional based on shift) */}
+          <select
+            id="period-filter"
+            value={periodFilter}
+            onChange={(e) => {
+              setPeriodFilter(e.target.value as PeriodType)
+              if (e.target.value === "early-morning") {
+                setWaveFilter("all")
+              }
+            }}
+            className="px-2 py-1.5 text-xs border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-[#D71A21] focus:border-transparent"
+          >
+            {shiftFilter === "current" && (
+              <>
+                <option value="all">All Periods</option>
+                <option value="early-morning">Early Morning (00:01-05:59)</option>
+                <option value="late-morning">Late Morning (06:00-12:59)</option>
+                <option value="afternoon">Afternoon (13:00-23:59)</option>
+              </>
+            )}
+            {shiftFilter === "night" && (
+              <>
+                <option value="all">All Periods</option>
+                <option value="early-morning">Early Morning (00:01-05:59)</option>
+                <option value="late-morning">Late Morning (06:00-12:59)</option>
+              </>
+            )}
+            {shiftFilter === "day" && (
+              <>
+                <option value="all">All Periods</option>
+                <option value="afternoon">Afternoon (13:00-23:59)</option>
+              </>
+            )}
+          </select>
+
+          {/* Wave Filter - Compact (conditional) */}
+          {showWaveFilter && (
+            <select
+              id="wave-filter"
+              value={waveFilter}
+              onChange={(e) => setWaveFilter(e.target.value as WaveType)}
+              className="px-2 py-1.5 text-xs border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-[#D71A21] focus:border-transparent"
+            >
+              <option value="all">All Waves</option>
+              <option value="first-wave">
+                {periodFilter === "late-morning" ? "First Wave (06:00-09:00)" : "First Wave (13:00-15:59)"}
+              </option>
+              <option value="second-wave">
+                {periodFilter === "late-morning" ? "Second Wave (09:01-12:59)" : "Second Wave (16:00-23:59)"}
+              </option>
+            </select>
+          )}
+
+          <div className="flex-1" />
+
+          {/* View Options Panel */}
+          <div className="relative" ref={viewOptionsRef}>
+            <button
+              type="button"
+              onClick={() => setShowViewOptions(!showViewOptions)}
+              className="flex items-center gap-1 px-2 py-1.5 text-xs border border-gray-300 rounded-md bg-white hover:border-gray-400 transition-colors"
+            >
+              <SlidersHorizontal className="w-3 h-3" />
+            </button>
+            
+            {showViewOptions && (
+              <div className="absolute top-full right-0 mt-1 z-50 bg-white border border-gray-200 rounded-lg shadow-lg w-64">
+                <div className="p-3">
+                  <h3 className="text-sm font-semibold text-gray-900 mb-3">View Options</h3>
+                  
+                  {/* Show Assignments */}
+                  <div className="mb-3">
+                    <div className="flex items-center gap-1.5 text-xs text-gray-600 mb-1.5">
+                      <Plane className="w-3 h-3 text-[#D71A21]" />
+                      <span>Show Assignments</span>
+                    </div>
+                    <select className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded">
+                      <option>All Assignments</option>
+                      <option>Assigned Only</option>
+                      <option>Unassigned Only</option>
+                    </select>
+                  </div>
+                  
+                  {/* Ordering */}
+                  <div className="mb-3">
+                    <div className="flex items-center gap-1.5 text-xs text-gray-600 mb-1.5">
+                      <ArrowUpDown className="w-3 h-3" />
+                      <span>Ordering</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <select className="flex-1 px-2 py-1.5 text-xs border border-gray-200 rounded">
+                        <option>STD Time</option>
+                        <option>Flight Number</option>
+                        <option>Origin Destination</option>
+                      </select>
+                      <button className="p-1.5 border border-gray-200 rounded hover:bg-gray-50">
+                        <ArrowUpDown className="w-3 h-3 text-gray-500" />
+                      </button>
+                    </div>
+                  </div>
+                  
+                  {/* Display Fields */}
+                  <div>
+                    <div className="flex items-center gap-1.5 text-xs text-gray-600 mb-1.5">
+                      <Settings2 className="w-3 h-3" />
+                      <span>Display Fields</span>
+                    </div>
+                    <div className="flex flex-wrap gap-1">
+                      {["Flight", "STD", "Origin Destination", "Name", "Sector"].map((field) => (
+                        <span
+                          key={field}
+                          className="px-1.5 py-0.5 text-[10px] bg-[#D71A21]/10 text-[#D71A21] border border-[#D71A21]/20 rounded cursor-pointer hover:bg-[#D71A21]/20 transition-colors"
+                        >
+                          {field}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Assignment count */}
+          <div className="text-xs text-gray-500 whitespace-nowrap">
+            {filteredAssignments.length} of {flightAssignments.length} assignments
+          </div>
+        </div>
+
         {/* Pending Summary by Location */}
         <div className="mb-4 px-2">
           <div className="flex flex-wrap gap-2 items-center">
@@ -476,14 +799,14 @@ export default function FlightAssignmentScreen({ initialSupervisor }: FlightAssi
                       Loading flight assignments...
                     </td>
                   </tr>
-                ) : flightAssignments.length === 0 ? (
+                ) : filteredAssignments.length === 0 ? (
                   <tr>
                     <td colSpan={5} className="px-3 py-2 text-center text-gray-500 text-sm">
-                      No flight assignments available
+                      {flightAssignments.length === 0 ? "No flight assignments available" : "No assignments match the selected filters"}
                     </td>
                   </tr>
                 ) : (
-                  flightAssignments.map((assignment) => (
+                  filteredAssignments.map((assignment) => (
                     <FlightAssignmentRow
                       key={assignment.flight}
                       assignment={assignment}

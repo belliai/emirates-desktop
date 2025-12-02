@@ -1,10 +1,10 @@
 "use client"
 
 import { useState, useEffect, useMemo, useRef } from "react"
-import { ChevronRight, ChevronDown, Plane, Calendar, Package, Users, Clock, FileText, Phone, User, Filter, X } from "lucide-react"
+import { ChevronRight, ChevronDown, Plane, Calendar, Package, Users, Clock, FileText, Phone, User, Filter, X, Plus, Search, SlidersHorizontal, Settings2, ArrowUpDown } from "lucide-react"
 import LoadPlanDetailScreen from "./load-plan-detail-screen"
 import type { LoadPlanDetail, AWBRow, ULDSection } from "./load-plan-types"
-import { useLoadPlans, type LoadPlan, type SentBCR } from "@/lib/load-plan-context"
+import { useLoadPlans, type LoadPlan, type SentBCR, type ShiftType, type PeriodType, type WaveType } from "@/lib/load-plan-context"
 import { getLoadPlansFromSupabase, getLoadPlanDetailFromSupabase } from "@/lib/load-plans-supabase"
 import { parseULDSection } from "@/lib/uld-parser"
 import { getULDEntriesFromStorage } from "@/lib/uld-storage"
@@ -43,6 +43,35 @@ function getShiftFromStd(std: string): Shift {
   }
   // 9pm to 9am: 21:00 - 8:59 (overnight)
   return "9pm to 9am"
+}
+
+// Determine period and wave based on STD time (for new shift structure)
+function determinePeriodAndWave(std: string): { period: PeriodType; wave: WaveType | null; shiftType: ShiftType } {
+  const [hours, minutes] = std.split(":").map(Number)
+  const timeInMinutes = hours * 60 + (minutes || 0)
+  
+  // Night Shift Early Morning: 00:01-05:59
+  if (timeInMinutes >= 1 && timeInMinutes < 360) {
+    return { period: "early-morning", wave: null, shiftType: "night" }
+  }
+  // Night Shift Late Morning First Wave: 06:00-09:00
+  if (timeInMinutes >= 360 && timeInMinutes <= 540) {
+    return { period: "late-morning", wave: "first-wave", shiftType: "night" }
+  }
+  // Night Shift Late Morning Second Wave: 09:01-12:59
+  if (timeInMinutes > 540 && timeInMinutes < 780) {
+    return { period: "late-morning", wave: "second-wave", shiftType: "night" }
+  }
+  // Day Shift Afternoon First Wave: 13:00-15:59
+  if (timeInMinutes >= 780 && timeInMinutes < 960) {
+    return { period: "afternoon", wave: "first-wave", shiftType: "day" }
+  }
+  // Day Shift Afternoon Second Wave: 16:00-23:59
+  if (timeInMinutes >= 960 && timeInMinutes <= 1439) {
+    return { period: "afternoon", wave: "second-wave", shiftType: "day" }
+  }
+  // Default to early morning for edge cases
+  return { period: "early-morning", wave: null, shiftType: "night" }
 }
 
 type FlightCompletion = {
@@ -303,6 +332,11 @@ export default function SituationalAwarenessScreen() {
   const [selectedBCR, setSelectedBCR] = useState<SentBCR | null>(null)
   const [showBCRModal, setShowBCRModal] = useState(false)
   const [uldUpdateTrigger, setUldUpdateTrigger] = useState(0) // Trigger for progress bar recalculation
+  const [showAddFilterDropdown, setShowAddFilterDropdown] = useState(false)
+  const [showViewOptions, setShowViewOptions] = useState(false)
+  const [searchQuery, setSearchQuery] = useState("")
+  const addFilterRef = useRef<HTMLDivElement>(null)
+  const viewOptionsRef = useRef<HTMLDivElement>(null)
 
   // Fetch load plans from Supabase on mount
   useEffect(() => {
@@ -396,23 +430,30 @@ export default function SituationalAwarenessScreen() {
     return options
   }, [])
 
+  // Close dropdowns when clicking outside
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (timeRangePickerRef.current && !timeRangePickerRef.current.contains(event.target as Node)) {
         setShowTimeRangePicker(false)
       }
+      if (addFilterRef.current && !addFilterRef.current.contains(event.target as Node)) {
+        setShowAddFilterDropdown(false)
+      }
+      if (viewOptionsRef.current && !viewOptionsRef.current.contains(event.target as Node)) {
+        setShowViewOptions(false)
+      }
     }
 
-    if (showTimeRangePicker) {
+    if (showTimeRangePicker || showAddFilterDropdown || showViewOptions) {
       document.addEventListener('mousedown', handleClickOutside)
       return () => {
         document.removeEventListener('mousedown', handleClickOutside)
       }
     }
-  }, [showTimeRangePicker])
+  }, [showTimeRangePicker, showAddFilterDropdown, showViewOptions])
 
   const filteredLoadPlans = useMemo(() => {
-    return loadPlans.filter(plan => {
+    let filtered = loadPlans.filter(plan => {
       const completion = flightCompletions.get(plan.flight) || calculateFlightCompletion(plan)
       
       const matchesShift = selectedShift === "All" || completion.shift === selectedShift
@@ -433,7 +474,39 @@ export default function SituationalAwarenessScreen() {
       
       return matchesShift && matchesTimeRange
     })
-  }, [loadPlans, flightCompletions, selectedShift, customTimeRange])
+
+    // Filter by search query
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase()
+      filtered = filtered.filter((plan) => 
+        plan.flight.toLowerCase().includes(query) ||
+        plan.date?.toLowerCase().includes(query) ||
+        plan.acftType?.toLowerCase().includes(query) ||
+        plan.acftReg?.toLowerCase().includes(query) ||
+        plan.std?.toLowerCase().includes(query)
+      )
+    }
+
+    // Sort by STD descending (most recent first)
+    // Combines date and STD time for proper chronological sorting
+    return filtered.sort((a, b) => {
+      // Parse date and STD for comparison
+      const dateA = a.date || ""
+      const dateB = b.date || ""
+      const stdA = a.std || "00:00"
+      const stdB = b.std || "00:00"
+      
+      // Compare dates first (descending - latest date first)
+      if (dateA !== dateB) {
+        return dateB.localeCompare(dateA)
+      }
+      
+      // If same date, compare STD times (descending - latest time first)
+      const hoursA = parseStdToHours(stdA)
+      const hoursB = parseStdToHours(stdB)
+      return hoursB - hoursA
+    })
+  }, [loadPlans, flightCompletions, selectedShift, customTimeRange, searchQuery])
 
   const filterCounts = useMemo(() => {
     const counts = {
@@ -489,16 +562,28 @@ export default function SituationalAwarenessScreen() {
       .map((plan) => ({
         flight: plan.flight,
         std: plan.std,
+        date: plan.date,
         destination: extractDestination(plan.pax),
         uldBreakdown: parseULDCount(plan.ttlPlnUld),
         ttlPlnUld: plan.ttlPlnUld,
       }))
       .sort((a, b) => {
-        const [aHours, aMinutes] = a.std.split(":").map(Number)
-        const [bHours, bMinutes] = b.std.split(":").map(Number)
-        const aTime = aHours * 60 + (aMinutes || 0)
-        const bTime = bHours * 60 + (bMinutes || 0)
-        return aTime - bTime
+        // Sort by STD descending (most recent first)
+        // Combines date and STD time for proper chronological sorting
+        const dateA = a.date || ""
+        const dateB = b.date || ""
+        const stdA = a.std || "00:00"
+        const stdB = b.std || "00:00"
+        
+        // Compare dates first (descending - latest date first)
+        if (dateA !== dateB) {
+          return dateB.localeCompare(dateA)
+        }
+        
+        // If same date, compare STD times (descending - latest time first)
+        const hoursA = parseStdToHours(stdA)
+        const hoursB = parseStdToHours(stdB)
+        return hoursB - hoursA
       })
   }, [loadPlans])
 
@@ -689,164 +774,223 @@ export default function SituationalAwarenessScreen() {
           </div>
 
           {/* Filters */}
-          <div className="flex items-center gap-4 mb-4 px-2">
-            <div className="flex items-center gap-2">
-              <label htmlFor="work-area-filter" className="text-sm font-medium text-gray-700">
-                Work Area:
-              </label>
+          <div className="flex items-center gap-2 mb-4 px-2 flex-wrap">
+            {/* Default View Dropdown */}
+            <div className="flex items-center">
               <select
-                id="work-area-filter"
-                value={selectedWorkArea}
-                onChange={(e) => setSelectedWorkArea(e.target.value as WorkArea)}
-                className="px-3 py-1.5 text-sm border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-[#D71A21] focus:border-transparent"
+                className="px-2 py-1.5 text-xs border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-[#D71A21] focus:border-transparent"
               >
-                <option value="All">All</option>
-                <option value="GCR">GCR</option>
-                <option value="PIL and PER">PIL and PER</option>
+                <option value="default">≡ Default</option>
+                <option value="custom">Custom View</option>
               </select>
             </div>
 
-            <div className="flex items-center gap-2">
-              <label htmlFor="shift-filter" className="text-sm font-medium text-gray-700">
-                Shift:
-              </label>
-              <select
-                id="shift-filter"
-                value={selectedShift}
-                onChange={(e) => {
-                  setSelectedShift(e.target.value as Shift)
-                  if (e.target.value !== "All") {
-                    setCustomTimeRange(null)
-                  }
-                }}
-                className="px-3 py-1.5 text-sm border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-[#D71A21] focus:border-transparent"
+            {/* Add Filter Dropdown */}
+            <div className="relative" ref={addFilterRef}>
+              <button
+                type="button"
+                onClick={() => setShowAddFilterDropdown(!showAddFilterDropdown)}
+                className="flex items-center gap-1 px-2 py-1.5 text-xs border border-gray-300 rounded-md bg-white hover:border-gray-400 transition-colors"
               >
-                {SHIFTS.map(shift => (
-                  <option key={shift} value={shift}>
-                    {shift} ({filterCounts.shifts[shift] || 0})
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="flex items-center gap-2 relative" ref={timeRangePickerRef}>
-              <label className="text-sm font-medium text-gray-700">
-                Time Range:
-              </label>
-              <div className="relative">
-                <button
-                  type="button"
-                  onClick={() => setShowTimeRangePicker(!showTimeRangePicker)}
-                  className={`px-3 py-1.5 text-sm border rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-[#D71A21] focus:border-transparent transition-colors ${
-                    customTimeRange 
-                      ? "border-[#D71A21] text-[#D71A21]" 
-                      : "border-gray-300 text-gray-700 hover:border-gray-400"
-                  }`}
-                >
-                  <div className="flex items-center gap-2">
-                    <Clock className="w-4 h-4" />
-                    <span>
-                      {customTimeRange 
-                        ? `${customTimeRange.start} - ${customTimeRange.end}`
-                        : "Custom"}
-                    </span>
-                    {customTimeRange && (
-                      <X 
-                        className="w-3 h-3 ml-1" 
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          setCustomTimeRange(null)
-                          setShowTimeRangePicker(false)
-                        }}
+                <Plus className="w-3 h-3" />
+                <span>Add Filter</span>
+              </button>
+              
+              {showAddFilterDropdown && (
+                <div className="absolute top-full left-0 mt-1 z-50 bg-white border border-gray-200 rounded-lg shadow-lg w-48">
+                  <div className="p-2">
+                    <div className="relative mb-2">
+                      <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 w-3 h-3 text-gray-400" />
+                      <input
+                        type="text"
+                        placeholder="Search column..."
+                        className="w-full pl-7 pr-2 py-1.5 text-xs border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-[#D71A21]"
                       />
-                    )}
-                  </div>
-                </button>
-                
-                {showTimeRangePicker && (
-                  <div className="absolute top-full left-0 mt-1 z-50 bg-white border border-gray-200 rounded-lg shadow-lg p-4 min-w-[280px]">
-                    <div className="flex items-center justify-between mb-3">
-                      <h3 className="text-sm font-semibold text-gray-900">Select Time Range</h3>
-                      <button
-                        onClick={() => setShowTimeRangePicker(false)}
-                        className="text-gray-400 hover:text-gray-600 transition-colors"
-                      >
-                        <X className="w-4 h-4" />
-                      </button>
                     </div>
-                    
-                    <div className="flex items-center gap-3 mb-3">
-                      <div className="flex-1">
-                        <label className="block text-xs font-medium text-gray-700 mb-1">
-                          Start Time
-                        </label>
-                        <select
-                          value={customTimeRange?.start || "00:00"}
-                          onChange={(e) => {
-                            setCustomTimeRange(prev => ({
-                              start: e.target.value,
-                              end: prev?.end || e.target.value
-                            }))
-                          }}
-                          className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-[#D71A21] focus:border-transparent"
+                    <div className="space-y-0.5">
+                      {["Flight Number", "Departure Date", "Destination", "Origin", "Departure", "Arrival", "Weight (kg)", "Volume (m³)"].map((col) => (
+                        <button
+                          key={col}
+                          className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-gray-700 hover:bg-gray-50 rounded transition-colors text-left"
+                          onClick={() => setShowAddFilterDropdown(false)}
                         >
-                          {timeOptions.map(time => (
-                            <option key={time} value={time}>{time}</option>
-                          ))}
-                        </select>
-                      </div>
-                      
-                      <div className="flex-1">
-                        <label className="block text-xs font-medium text-gray-700 mb-1">
-                          End Time
-                        </label>
-                        <select
-                          value={customTimeRange?.end || "23:00"}
-                          onChange={(e) => {
-                            setCustomTimeRange(prev => ({
-                              start: prev?.start || "00:00",
-                              end: e.target.value
-                            }))
-                          }}
-                          className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-[#D71A21] focus:border-transparent"
-                        >
-                          {timeOptions.map(time => (
-                            <option key={time} value={time}>{time}</option>
-                          ))}
-                        </select>
-                      </div>
+                          <span className="text-gray-400">≡</span>
+                          {col}
+                        </button>
+                      ))}
                     </div>
-                    
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => {
-                          setCustomTimeRange(null)
-                          setShowTimeRangePicker(false)
-                        }}
-                        className="flex-1 px-3 py-1.5 text-sm border border-gray-300 rounded-md bg-white text-gray-700 hover:bg-gray-50 transition-colors"
-                      >
-                        Clear
-                      </button>
-                      <button
-                        onClick={() => setShowTimeRangePicker(false)}
-                        className="flex-1 px-3 py-1.5 text-sm bg-[#D71A21] text-white rounded-md hover:bg-[#B0151A] transition-colors"
-                      >
-                        Apply
-                      </button>
-                    </div>
-                    
-                    {customTimeRange && customTimeRange.start === customTimeRange.end && (
-                      <p className="mt-2 text-xs text-amber-600">
-                        Start and end times are the same
-                      </p>
-                    )}
                   </div>
-                )}
-              </div>
+                </div>
+              )}
             </div>
 
-            <div className="text-sm text-gray-500">
-              Showing {filteredLoadPlans.length} of {loadPlans.length} flights
+            {/* Search Flights */}
+            <div className="relative">
+              <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 w-3 h-3 text-gray-400" />
+              <input
+                type="text"
+                placeholder="Search flights..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-7 pr-2 py-1.5 text-xs border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-[#D71A21] focus:border-transparent w-32"
+              />
+            </div>
+
+            <div className="w-px h-6 bg-gray-200" />
+
+            {/* Work Area Filter - Compact */}
+            <select
+              id="work-area-filter"
+              value={selectedWorkArea}
+              onChange={(e) => setSelectedWorkArea(e.target.value as WorkArea)}
+              className="px-2 py-1.5 text-xs border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-[#D71A21] focus:border-transparent"
+            >
+              <option value="All">Work Area: All</option>
+              <option value="GCR">Work Area: GCR</option>
+              <option value="PIL and PER">Work Area: PIL/PER</option>
+            </select>
+
+            {/* Shift Filter - Compact */}
+            <select
+              id="shift-filter"
+              value={selectedShift}
+              onChange={(e) => {
+                setSelectedShift(e.target.value as Shift)
+                if (e.target.value !== "All") {
+                  setCustomTimeRange(null)
+                }
+              }}
+              className="px-2 py-1.5 text-xs border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-[#D71A21] focus:border-transparent"
+            >
+              {SHIFTS.map(shift => (
+                <option key={shift} value={shift}>
+                  Shift: {shift} ({filterCounts.shifts[shift] || 0})
+                </option>
+              ))}
+            </select>
+
+            {/* Time Range - Compact */}
+            <div className="relative" ref={timeRangePickerRef}>
+              <button
+                type="button"
+                onClick={() => setShowTimeRangePicker(!showTimeRangePicker)}
+                className={`flex items-center gap-1 px-2 py-1.5 text-xs border rounded-md bg-white transition-colors ${
+                  customTimeRange ? "border-[#D71A21] text-[#D71A21]" : "border-gray-300 text-gray-700 hover:border-gray-400"
+                }`}
+              >
+                <Clock className="w-3 h-3" />
+                <span>{customTimeRange ? `${customTimeRange.start}-${customTimeRange.end}` : "Time"}</span>
+                {customTimeRange && (
+                  <X className="w-3 h-3" onClick={(e) => { e.stopPropagation(); setCustomTimeRange(null) }} />
+                )}
+              </button>
+              
+              {showTimeRangePicker && (
+                <div className="absolute top-full left-0 mt-1 z-50 bg-white border border-gray-200 rounded-lg shadow-lg p-3 w-56">
+                  <div className="flex items-center justify-between mb-2">
+                    <h3 className="text-xs font-semibold text-gray-900">Time Range</h3>
+                    <button onClick={() => setShowTimeRangePicker(false)} className="text-gray-400 hover:text-gray-600">
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                  <div className="flex items-center gap-2 mb-2">
+                    <select
+                      value={customTimeRange?.start || "00:00"}
+                      onChange={(e) => setCustomTimeRange(prev => ({ start: e.target.value, end: prev?.end || e.target.value }))}
+                      className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded"
+                    >
+                      {timeOptions.map(time => <option key={time} value={time}>{time}</option>)}
+                    </select>
+                    <span className="text-xs text-gray-400">to</span>
+                    <select
+                      value={customTimeRange?.end || "23:00"}
+                      onChange={(e) => setCustomTimeRange(prev => ({ start: prev?.start || "00:00", end: e.target.value }))}
+                      className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded"
+                    >
+                      {timeOptions.map(time => <option key={time} value={time}>{time}</option>)}
+                    </select>
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={() => { setCustomTimeRange(null); setShowTimeRangePicker(false) }} className="flex-1 px-2 py-1 text-xs border rounded">Clear</button>
+                    <button onClick={() => setShowTimeRangePicker(false)} className="flex-1 px-2 py-1 text-xs bg-[#D71A21] text-white rounded">Apply</button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="flex-1" />
+
+            {/* View Options Panel */}
+            <div className="relative" ref={viewOptionsRef}>
+              <button
+                type="button"
+                onClick={() => setShowViewOptions(!showViewOptions)}
+                className="flex items-center gap-1 px-2 py-1.5 text-xs border border-gray-300 rounded-md bg-white hover:border-gray-400 transition-colors"
+              >
+                <SlidersHorizontal className="w-3 h-3" />
+              </button>
+              
+              {showViewOptions && (
+                <div className="absolute top-full right-0 mt-1 z-50 bg-white border border-gray-200 rounded-lg shadow-lg w-64">
+                  <div className="p-3">
+                    <h3 className="text-sm font-semibold text-gray-900 mb-3">View Options</h3>
+                    
+                    {/* Show Flights */}
+                    <div className="mb-3">
+                      <div className="flex items-center gap-1.5 text-xs text-gray-600 mb-1.5">
+                        <Plane className="w-3 h-3 text-[#D71A21]" />
+                        <span>Show Flights</span>
+                      </div>
+                      <select className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded">
+                        <option>Show Upcoming Flights Only</option>
+                        <option>Show All Flights</option>
+                        <option>Show Past Flights</option>
+                      </select>
+                    </div>
+                    
+                    {/* Ordering */}
+                    <div className="mb-3">
+                      <div className="flex items-center gap-1.5 text-xs text-gray-600 mb-1.5">
+                        <ArrowUpDown className="w-3 h-3" />
+                        <span>Ordering</span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <select className="flex-1 px-2 py-1.5 text-xs border border-gray-200 rounded">
+                          <option>Departure Time</option>
+                          <option>Flight Number</option>
+                          <option>Completion %</option>
+                        </select>
+                        <button className="p-1.5 border border-gray-200 rounded hover:bg-gray-50">
+                          <ArrowUpDown className="w-3 h-3 text-gray-500" />
+                        </button>
+                      </div>
+                    </div>
+                    
+                    {/* Display Fields */}
+                    <div>
+                      <div className="flex items-center gap-1.5 text-xs text-gray-600 mb-1.5">
+                        <Settings2 className="w-3 h-3" />
+                        <span>Display Fields</span>
+                      </div>
+                      <div className="flex flex-wrap gap-1">
+                        {["Flight Number", "Departure Date", "Destination", "Origin", "Departure", "Arrival", "Weight (kg)", "Volume (m³)", "Status", "Tail Number", "Aircraft Type"].map((field) => (
+                          <span
+                            key={field}
+                            className="px-1.5 py-0.5 text-[10px] bg-[#D71A21]/10 text-[#D71A21] border border-[#D71A21]/20 rounded cursor-pointer hover:bg-[#D71A21]/20 transition-colors"
+                          >
+                            {field}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Flight count */}
+            <div className="text-xs text-gray-500 whitespace-nowrap">
+              {filteredLoadPlans.length} of {loadPlans.length} flights
             </div>
           </div>
           

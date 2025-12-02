@@ -1,11 +1,11 @@
 "use client"
 
 import { useState, useEffect, useRef, useMemo } from 'react'
-import { ChevronRight, Plane, Calendar, Package, Users, Clock, FileText, Upload, ChevronDown, ClipboardPaste } from 'lucide-react'
+import { ChevronRight, Plane, Calendar, Package, Users, Clock, FileText, Upload, ChevronDown, ClipboardPaste, Plus, Search, SlidersHorizontal, Settings2, ArrowUpDown } from 'lucide-react'
 import LoadPlanDetailScreen from './load-plan-detail-screen'
 import type { LoadPlanDetail } from './load-plan-types'
 import { getLoadPlansFromSupabase, getLoadPlanDetailFromSupabase } from '@/lib/load-plans-supabase'
-import { useLoadPlans, type LoadPlan } from '@/lib/load-plan-context'
+import { useLoadPlans, type LoadPlan, type ShiftType, type PeriodType, type WaveType } from '@/lib/load-plan-context'
 import { Button } from '@/components/ui/button'
 import { UploadModal } from './lists/upload-modal'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
@@ -25,6 +25,41 @@ export type BayInfo = {
   term: string       // TERM - Terminal
   belt: string       // BELT
   remarks: string    // REMARKS
+}
+
+// Parse STD time (e.g., "02:50", "09:35") to hours
+function parseStdToHours(std: string): number {
+  const [hours, minutes] = std.split(":").map(Number)
+  return hours + (minutes || 0) / 60
+}
+
+// Determine period and wave based on STD time
+function determinePeriodAndWave(std: string): { period: PeriodType; wave: WaveType | null; shiftType: ShiftType } {
+  const [hours, minutes] = std.split(":").map(Number)
+  const timeInMinutes = hours * 60 + (minutes || 0)
+  
+  // Night Shift Early Morning: 00:01-05:59
+  if (timeInMinutes >= 1 && timeInMinutes < 360) {
+    return { period: "early-morning", wave: null, shiftType: "night" }
+  }
+  // Night Shift Late Morning First Wave: 06:00-09:00
+  if (timeInMinutes >= 360 && timeInMinutes <= 540) {
+    return { period: "late-morning", wave: "first-wave", shiftType: "night" }
+  }
+  // Night Shift Late Morning Second Wave: 09:01-12:59
+  if (timeInMinutes > 540 && timeInMinutes < 780) {
+    return { period: "late-morning", wave: "second-wave", shiftType: "night" }
+  }
+  // Day Shift Afternoon First Wave: 13:00-15:59
+  if (timeInMinutes >= 780 && timeInMinutes < 960) {
+    return { period: "afternoon", wave: "first-wave", shiftType: "day" }
+  }
+  // Day Shift Afternoon Second Wave: 16:00-23:59
+  if (timeInMinutes >= 960 && timeInMinutes <= 1439) {
+    return { period: "afternoon", wave: "second-wave", shiftType: "day" }
+  }
+  // Default to early morning for edge cases
+  return { period: "early-morning", wave: null, shiftType: "night" }
 }
 
 // Normalize flight number for matching (remove spaces, uppercase)
@@ -70,6 +105,14 @@ export default function QRTListScreen({ onBack }: QRTListScreenProps) {
   const [isBayNumbersOpen, setIsBayNumbersOpen] = useState(false)
   const [bayNumberData, setBayNumberData] = useState<{ headers: string[]; rows: string[][] } | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const [showAddFilterDropdown, setShowAddFilterDropdown] = useState(false)
+  const [showViewOptions, setShowViewOptions] = useState(false)
+  const [searchQuery, setSearchQuery] = useState("")
+  const [shiftFilter, setShiftFilter] = useState<ShiftType>("current")
+  const [periodFilter, setPeriodFilter] = useState<PeriodType>("all")
+  const [waveFilter, setWaveFilter] = useState<WaveType>("all")
+  const addFilterRef = useRef<HTMLDivElement>(null)
+  const viewOptionsRef = useRef<HTMLDivElement>(null)
 
   // Create a lookup map from bay data by normalized flight number
   const bayInfoLookup = useMemo(() => {
@@ -109,6 +152,102 @@ export default function QRTListScreen({ onBack }: QRTListScreenProps) {
 
     fetchLoadPlans()
   }, [setLoadPlans])
+
+  // Close dropdowns when clicking outside
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (addFilterRef.current && !addFilterRef.current.contains(event.target as Node)) {
+        setShowAddFilterDropdown(false)
+      }
+      if (viewOptionsRef.current && !viewOptionsRef.current.contains(event.target as Node)) {
+        setShowViewOptions(false)
+      }
+    }
+
+    if (showAddFilterDropdown || showViewOptions) {
+      document.addEventListener('mousedown', handleClickOutside)
+      return () => {
+        document.removeEventListener('mousedown', handleClickOutside)
+      }
+    }
+  }, [showAddFilterDropdown, showViewOptions])
+
+  // Filter and sort load plans
+  const filteredLoadPlans = useMemo(() => {
+    let filtered = [...loadPlans]
+
+    // Filter by shift type
+    if (shiftFilter === "current") {
+      // Show all flights (no shift filter)
+    } else if (shiftFilter === "night") {
+      filtered = filtered.filter((plan) => {
+        const { shiftType } = determinePeriodAndWave(plan.std)
+        return shiftType === "night"
+      })
+    } else if (shiftFilter === "day") {
+      filtered = filtered.filter((plan) => {
+        const { shiftType } = determinePeriodAndWave(plan.std)
+        return shiftType === "day"
+      })
+    }
+
+    // Filter by period
+    if (periodFilter !== "all") {
+      filtered = filtered.filter((plan) => {
+        const { period } = determinePeriodAndWave(plan.std)
+        return period === periodFilter
+      })
+    }
+
+    // Filter by wave (only applies to late-morning and afternoon periods)
+    if (periodFilter === "early-morning" && waveFilter !== "all") {
+      // Early morning doesn't have waves, so don't filter by wave
+    } else if (waveFilter !== "all") {
+      filtered = filtered.filter((plan) => {
+        const { period, wave } = determinePeriodAndWave(plan.std)
+        if (period === "late-morning" || period === "afternoon") {
+          return wave === waveFilter
+        }
+        return true // Early morning doesn't have waves
+      })
+    }
+
+    // Filter by search query
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase()
+      filtered = filtered.filter((plan) => 
+        plan.flight.toLowerCase().includes(query) ||
+        plan.date?.toLowerCase().includes(query) ||
+        plan.acftType?.toLowerCase().includes(query) ||
+        plan.acftReg?.toLowerCase().includes(query) ||
+        plan.pax?.toLowerCase().includes(query) ||
+        plan.std?.toLowerCase().includes(query)
+      )
+    }
+
+    // Sort by STD descending (most recent first)
+    // Combines date and STD time for proper chronological sorting
+    return filtered.sort((a, b) => {
+      // Parse date and STD for comparison
+      const dateA = a.date || ""
+      const dateB = b.date || ""
+      const stdA = a.std || "00:00"
+      const stdB = b.std || "00:00"
+      
+      // Compare dates first (descending - latest date first)
+      if (dateA !== dateB) {
+        return dateB.localeCompare(dateA)
+      }
+      
+      // If same date, compare STD times (descending - latest time first)
+      const hoursA = parseStdToHours(stdA)
+      const hoursB = parseStdToHours(stdB)
+      return hoursB - hoursA
+    })
+  }, [loadPlans, shiftFilter, periodFilter, waveFilter, searchQuery])
+
+  // Determine if wave filter should be shown
+  const showWaveFilter = periodFilter === "late-morning" || periodFilter === "afternoon"
 
   // Sample bay info for demo when no data is pasted
   const sampleBayInfo: BayInfo = {
@@ -404,14 +543,14 @@ export default function QRTListScreen({ onBack }: QRTListScreenProps) {
                       Loading load plans...
                     </td>
                   </tr>
-                ) : loadPlans.length === 0 ? (
+                ) : filteredLoadPlans.length === 0 ? (
                   <tr>
                     <td colSpan={9} className="px-3 py-2 text-center text-gray-500 text-sm">
-                      No load plans available
+                      {loadPlans.length === 0 ? "No load plans available" : "No load plans match the selected filters"}
                     </td>
                   </tr>
                 ) : (
-                  loadPlans.map((loadPlan, index) => (
+                  filteredLoadPlans.map((loadPlan, index) => (
                     <LoadPlanRow key={index} loadPlan={loadPlan} onClick={handleRowClick} />
                   ))
                 )}
