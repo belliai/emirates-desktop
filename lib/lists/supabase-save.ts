@@ -201,6 +201,19 @@ export async function saveListsDataToSupabase({
       header_warning: results.header.headerWarning || null,
     }
     
+    // Log header data for debugging
+    console.log("[v0] Header data to save:", {
+      flight_number: loadPlanData.flight_number,
+      aircraft_type: loadPlanData.aircraft_type,
+      aircraft_registration: loadPlanData.aircraft_registration,
+      total_planned_uld: loadPlanData.total_planned_uld,
+      uld_version: loadPlanData.uld_version,
+      sector: loadPlanData.sector,
+      route_origin: loadPlanData.route_origin,
+      route_destination: loadPlanData.route_destination,
+      route_full: loadPlanData.route_full,
+    })
+    
     // Add is_critical if available (with fallback if column doesn't exist)
     console.log("[v0] Checking isCritical value:", {
       isCritical: results.header.isCritical,
@@ -305,44 +318,53 @@ export async function saveListsDataToSupabase({
         return str.length > maxLength ? str.substring(0, maxLength) : str
       }
 
-      const loadPlanItems = shipments.map((shipment) => ({
-        load_plan_id: loadPlanId,
-        serial_number: shipment.serialNo ? parseInt(shipment.serialNo, 10) : null,
-        awb_number: truncate(shipment.awbNo, 50),
-        origin_destination: shipment.origin && shipment.destination 
-          ? truncate(`${shipment.origin}${shipment.destination}`, 50)
-          : null,
-        pieces: shipment.pieces || null,
-        weight: shipment.weight || null,
-        volume: shipment.volume || null,
-        load_volume: shipment.lvol || null,
-        special_handling_code: truncate(shipment.shc, 50),
-        // Manual description - DO NOT include special notes here
-        // Special notes like "[Must be load in Fire containment equipment]" should be stored separately
-        manual_description: shipment.manDesc || null, // This is TEXT, no limit
-        product_code_pc: truncate(shipment.pcode, 50),
-        total_handling_charge: shipment.thc && !isNaN(parseFloat(shipment.thc)) ? parseFloat(shipment.thc) : null,
-        additional_total_handling_charge: null, // Not available in parsed data
-        booking_status: truncate(shipment.bs, 50),
-        priority_indicator: truncate(shipment.pi, 50),
-        flight_in: truncate(shipment.fltIn, 50),
-        arrival_date_time: shipment.arrDtTime ? parseDateTimeString(shipment.arrDtTime) : null,
-        quantity_aqnn: truncate(shipment.qnnAqnn, 50),
-        payment_terms: null, // Not available in parsed data
-        warehouse_code: truncate(shipment.whs, 50),
-        // SI field - only store original SI value, NOT special notes
-        special_instructions: truncate(shipment.si, 50),
-        // ULD allocation - store only ULD, special notes are stored separately
-        uld_allocation: truncate(shipment.uld, 50),
-        // Special notes - store in separate column (e.g., "[Must be load in Fire containment equipment]")
-        // Join multiple special notes with newline
-        special_notes: shipment.specialNotes && shipment.specialNotes.length > 0
-          ? shipment.specialNotes.join("\n")
-          : null,
-        // Sector information for grouping items by sector
-        sector: truncate(shipment.sector, 50),
-        is_ramp_transfer: shipment.isRampTransfer === true,
-      }))
+      const loadPlanItems = shipments.map((shipment) => {
+        const item = {
+          load_plan_id: loadPlanId,
+          serial_number: shipment.serialNo ? parseInt(shipment.serialNo, 10) : null,
+          awb_number: truncate(shipment.awbNo, 50),
+          origin_destination: shipment.origin && shipment.destination 
+            ? truncate(`${shipment.origin}${shipment.destination}`, 50)
+            : null,
+          pieces: shipment.pieces || null,
+          weight: shipment.weight || null,
+          volume: shipment.volume || null,
+          load_volume: shipment.lvol || null,
+          special_handling_code: truncate(shipment.shc, 50),
+          // Manual description - DO NOT include special notes here
+          // Special notes like "[Must be load in Fire containment equipment]" should be stored separately
+          manual_description: shipment.manDesc || null, // This is TEXT, no limit
+          product_code_pc: truncate(shipment.pcode, 50),
+          total_handling_charge: shipment.thc && !isNaN(parseFloat(shipment.thc)) ? parseFloat(shipment.thc) : null,
+          additional_total_handling_charge: null, // Not available in parsed data
+          booking_status: truncate(shipment.bs, 50),
+          priority_indicator: truncate(shipment.pi, 50),
+          flight_in: truncate(shipment.fltIn, 50),
+          arrival_date_time: shipment.arrDtTime ? parseDateTimeString(shipment.arrDtTime) : null,
+          quantity_aqnn: truncate(shipment.qnnAqnn, 50),
+          payment_terms: null, // Not available in parsed data
+          warehouse_code: truncate(shipment.whs, 50),
+          // SI field - only store original SI value, NOT special notes
+          special_instructions: truncate(shipment.si, 50),
+          // ULD allocation - store only ULD, special notes are stored separately
+          uld_allocation: truncate(shipment.uld, 50),
+          // Special notes - store in separate column (e.g., "[Must be load in Fire containment equipment]")
+          // Join multiple special notes with newline
+          special_notes: shipment.specialNotes && shipment.specialNotes.length > 0
+            ? shipment.specialNotes.join("\n")
+            : null,
+          // Sector information for grouping items by sector
+          sector: truncate(shipment.sector, 50),
+          is_ramp_transfer: shipment.isRampTransfer === true,
+        }
+        
+        // Log if ULD is being saved to special_notes (this should NOT happen)
+        if (item.uld_allocation && item.special_notes && item.special_notes.includes(item.uld_allocation)) {
+          console.warn(`[v0] ⚠️ WARNING: ULD "${item.uld_allocation}" found in special_notes for shipment ${item.serial_number}`)
+        }
+        
+        return item
+      })
       
       // Log ramp transfer items being saved
       const rampTransferItems = loadPlanItems.filter(item => item.is_ramp_transfer)

@@ -35,108 +35,114 @@ function preprocessRTFContent(content: string): string {
  * Uses the same logic as regular parser but with RTF preprocessing
  */
 export function parseRTFHeader(content: string): LoadPlanHeader {
+  console.log('[RTFParser] ========== Starting Header Parsing ==========')
+  console.log('[RTFParser] Content length:', content.length)
+  console.log('[RTFParser] First 500 chars:', content.substring(0, 500))
+  
   // Preprocess RTF content first
   let processedContent = preprocessRTFContent(content)
+  console.log('[RTFParser] After preprocessing, length:', processedContent.length)
+  console.log('[RTFParser] First 500 chars after preprocessing:', processedContent.substring(0, 500))
   
-  // Try multiple patterns for flight number (RTF may have different formatting)
-  let flightNumber = ""
-  
-  // Pattern 1: EK followed by 4 digits (with optional spaces/dashes)
-  let flightMatch = processedContent.match(/EK\s*[-]?\s*(\d{4})/i)
-  if (flightMatch) {
-    flightNumber = `EK${flightMatch[1]}`
-  } else {
-    // Pattern 2: EK followed by digits (more flexible)
-    flightMatch = processedContent.match(/EK\s*(\d{3,5})/i)
-    if (flightMatch) {
-      flightNumber = `EK${flightMatch[1].padStart(4, '0')}`
-    } else {
-      // Pattern 3: Look for "FLIGHT" or "FLT" followed by EK and numbers
-      flightMatch = processedContent.match(/(?:FLIGHT|FLT)[\s:]*EK\s*(\d{4})/i)
-      if (flightMatch) {
-        flightNumber = `EK${flightMatch[1]}`
-      } else {
-        // Pattern 4: Just look for EK followed by any 4 digits anywhere
-        flightMatch = processedContent.match(/EK(\d{4})/i)
-        if (flightMatch) {
-          flightNumber = `EK${flightMatch[1]}`
-        }
+  // Helper function to try multiple patterns and log results
+  const tryPattern = (name: string, patterns: Array<{ pattern: RegExp; extract: (match: RegExpMatchArray) => string }>, contentToSearch: string = processedContent): string => {
+    for (const { pattern, extract } of patterns) {
+      const match = contentToSearch.match(pattern)
+      if (match) {
+        const result = extract(match)
+        console.log(`[RTFParser] ✅ ${name} found:`, result)
+        return result
       }
     }
+    console.warn(`[RTFParser] ⚠️ ${name} not found with any pattern`)
+    return ""
   }
   
-  // If still not found, try without preprocessing (maybe preprocessing removed important info)
+  // Try multiple patterns for flight number (RTF may have different formatting)
+  let flightNumber = tryPattern('Flight Number', [
+    { pattern: /EK\s*[-]?\s*(\d{4})/i, extract: (m) => `EK${m[1]}` },
+    { pattern: /EK\s*(\d{3,5})/i, extract: (m) => `EK${m[1].padStart(4, '0')}` },
+    { pattern: /(?:FLIGHT|FLT)[\s:]*EK\s*(\d{4})/i, extract: (m) => `EK${m[1]}` },
+    { pattern: /EK(\d{4})/i, extract: (m) => `EK${m[1]}` },
+  ])
+  
+  // If still not found, try original content
   if (!flightNumber) {
     console.warn('[RTFParser] Flight number not found after preprocessing, trying original content...')
-    // Try with original content (less processed)
     const originalContent = content.replace(/\r\n/g, "\n").replace(/\r/g, "\n")
+    flightNumber = tryPattern('Flight Number (original)', [
+      { pattern: /EK\s*[-]?\s*(\d{4})/i, extract: (m) => `EK${m[1]}` },
+      { pattern: /EK\s*(\d{3,5})/i, extract: (m) => `EK${m[1].padStart(4, '0')}` },
+      { pattern: /EK(\d{4})/i, extract: (m) => `EK${m[1]}` },
+    ], originalContent)
     
-    flightMatch = originalContent.match(/EK\s*[-]?\s*(\d{4})/i)
-    if (flightMatch) {
-      flightNumber = `EK${flightMatch[1]}`
-    } else {
-      flightMatch = originalContent.match(/EK\s*(\d{3,5})/i)
-      if (flightMatch) {
-        flightNumber = `EK${flightMatch[1].padStart(4, '0')}`
-      } else {
-        flightMatch = originalContent.match(/EK(\d{4})/i)
-        if (flightMatch) {
-          flightNumber = `EK${flightMatch[1]}`
-        }
-      }
-    }
-    
-    // If found in original, use original content for rest of parsing
     if (flightNumber) {
       processedContent = originalContent
       console.log('[RTFParser] Found flight number in original content, using original for parsing')
     }
   }
-  
-  // Debug logging if flight number still not found
-  if (!flightNumber) {
-    console.warn('[RTFParser] Could not find flight number. First 500 chars of processed content:', processedContent.substring(0, 500))
-    // Try to find any EK pattern for debugging
-    const debugMatch = processedContent.match(/EK[^\s]*/gi)
-    if (debugMatch) {
-      console.warn('[RTFParser] Found EK patterns:', debugMatch.slice(0, 5))
-    }
-    // Also check original content
-    const originalDebugMatch = content.match(/EK[^\s]*/gi)
-    if (originalDebugMatch) {
-      console.warn('[RTFParser] Found EK patterns in original:', originalDebugMatch.slice(0, 5))
-    }
-  }
 
   // Parse date - support multiple months
-  const dateMatch = processedContent.match(/(\d{1,2})\s*[-]?\s*(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)(?:\s*[-]?\s*(\d{4}))?/i)
-  const date = dateMatch ? dateMatch[0] : ""
+  const date = tryPattern('Date', [
+    { pattern: /(\d{1,2})\s*[-]?\s*(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)(?:\s*[-]?\s*(\d{4}))?/i, extract: (m) => m[0] },
+  ])
 
-  const acftTypeMatch = processedContent.match(/ACFT\s+TYPE:\s*(\S+)/i)
-  const aircraftType = acftTypeMatch ? acftTypeMatch[1] : ""
+  // Parse ACFT TYPE - try multiple patterns
+  const aircraftType = tryPattern('ACFT TYPE', [
+    { pattern: /ACFT\s+TYPE:\s*([A-Z0-9]+(?:\s+[A-Z0-9]+)*)/i, extract: (m) => m[1].trim().replace(/\s+/g, "") },
+    { pattern: /ACFT\s+TYPE:\s*(\S+)/i, extract: (m) => m[1].trim() },
+    { pattern: /ACFT\s+TYPE[:\s]+([A-Z0-9]+)/i, extract: (m) => m[1].trim() },
+  ])
 
-  const acftRegMatch = processedContent.match(/ACFT\s+REG:\s*(\S+)/i)
-  const aircraftReg = acftRegMatch ? acftRegMatch[1] : ""
+  // Parse ACFT REG - try multiple patterns
+  const aircraftReg = tryPattern('ACFT REG', [
+    { pattern: /ACFT\s+REG:\s*([A-Z0-9-]+)/i, extract: (m) => m[1].trim() },
+    { pattern: /ACFT\s+REG[:\s]+([A-Z0-9-]+)/i, extract: (m) => m[1].trim() },
+  ])
 
-  const stdMatch = processedContent.match(/STD:\s*(\d{2}:\d{2})/i)
-  const std = stdMatch ? stdMatch[1] : ""
+  // Parse STD
+  const std = tryPattern('STD', [
+    { pattern: /STD:\s*(\d{2}:\d{2})/i, extract: (m) => m[1] },
+    { pattern: /STD[:\s]+(\d{2}:\d{2})/i, extract: (m) => m[1] },
+  ])
 
-  const sectorMatch = processedContent.match(/SECTOR:\s*([A-Z]{6})/i)
-  const sector = sectorMatch ? sectorMatch[1] : ""
+  // Parse SECTOR
+  const sector = tryPattern('SECTOR', [
+    { pattern: /SECTOR:\s*([A-Z]{6})/i, extract: (m) => m[1] },
+    { pattern: /SECTOR[:\s]+([A-Z]{6})/i, extract: (m) => m[1] },
+  ])
 
-  const prepByMatch = processedContent.match(/PREPARED\s+BY:\s*(\S+)/i)
-  const preparedBy = prepByMatch ? prepByMatch[1] : ""
+  // Parse PREPARED BY
+  const preparedBy = tryPattern('PREPARED BY', [
+    { pattern: /PREPARED\s+BY:\s*(\S+)/i, extract: (m) => m[1] },
+    { pattern: /PREPARED\s+BY[:\s]+([A-Z0-9]+)/i, extract: (m) => m[1] },
+  ])
 
-  const prepOnMatch = processedContent.match(/PREPARED\s+ON:\s*([\d-]+\s+[\d:]+)/i)
-  const preparedOn = prepOnMatch ? prepOnMatch[1] : ""
+  // Parse PREPARED ON
+  const preparedOn = tryPattern('PREPARED ON', [
+    { pattern: /PREPARED\s+ON:\s*([\d-]+\s+[\d:]+)/i, extract: (m) => m[1] },
+    { pattern: /PREPARED\s+ON[:\s]+([\d-]+\s+[\d:]+)/i, extract: (m) => m[1] },
+  ])
 
-  // Parse TTL PLN ULD
-  const ttlPlnUldMatch = processedContent.match(/TTL\s+PLN\s+ULD:\s*([A-Z0-9\/]+)/i)
-  const ttlPlnUld = ttlPlnUldMatch ? ttlPlnUldMatch[1].trim() : ""
+  // Parse PAX - try multiple patterns
+  const pax = tryPattern('PAX', [
+    { pattern: /PAX:\s*([A-Z0-9\/\s]+?)(?:\s+STD|\s+PREPARED|$)/i, extract: (m) => m[1].trim() },
+    { pattern: /PAX[:\s]+([A-Z0-9\/]+)/i, extract: (m) => m[1].trim() },
+  ])
 
-  // Parse ULD VERSION
-  const uldVersionMatch = processedContent.match(/ULD\s+VERSION:\s*([A-Z0-9\/]+)/i)
-  const uldVersion = uldVersionMatch ? uldVersionMatch[1].trim() : ""
+  // Parse TTL PLN ULD - try multiple patterns
+  const ttlPlnUld = tryPattern('TTL PLN ULD', [
+    { pattern: /TTL\s+PLN\s+ULD:\s*([A-Z0-9\/\s]+?)(?:\s+ULD\s+VERSION|\s+PREPARED|$)/i, extract: (m) => m[1].trim().replace(/\s+/g, "") },
+    { pattern: /TTL\s+PLN\s+ULD[:\s]+([A-Z0-9\/]+)/i, extract: (m) => m[1].trim() },
+    { pattern: /TTL\s+PLN\s+ULD:\s*([A-Z0-9\/]+)/i, extract: (m) => m[1].trim() },
+  ])
+
+  // Parse ULD VERSION - try multiple patterns
+  const uldVersion = tryPattern('ULD VERSION', [
+    { pattern: /ULD\s+VERSION:\s*([A-Z0-9\/\s]+?)(?:\s+PREPARED|$)/i, extract: (m) => m[1].trim().replace(/\s+/g, "") },
+    { pattern: /ULD\s+VERSION[:\s]+([A-Z0-9\/]+)/i, extract: (m) => m[1].trim() },
+    { pattern: /ULD\s+VERSION:\s*([A-Z0-9\/]+)/i, extract: (m) => m[1].trim() },
+  ])
 
   // Parse header warning - same logic as regular parser
   let headerWarning = ""
@@ -213,6 +219,46 @@ export function parseRTFHeader(content: string): LoadPlanHeader {
   } else {
     // Log first 1000 chars to help debug why CRITICAL wasn't detected
     console.log('[RTFParser] ⚠️ CRITICAL not detected. First 1000 chars:', processedContent.substring(0, 1000))
+  }
+
+  // Log parsed header fields for debugging
+  const parsedHeader = {
+    flightNumber,
+    date,
+    aircraftType,
+    aircraftReg,
+    sector,
+    std,
+    preparedBy,
+    preparedOn,
+    pax,
+    ttlPlnUld,
+    uldVersion,
+    hasHeaderWarning: !!headerWarning,
+    isCritical,
+  }
+  
+  console.log('[RTFParser] ========== Parsed Header Fields ==========')
+  console.log('[RTFParser] Flight Number:', parsedHeader.flightNumber || '❌ NOT FOUND')
+  console.log('[RTFParser] Date:', parsedHeader.date || '❌ NOT FOUND')
+  console.log('[RTFParser] ACFT TYPE:', parsedHeader.aircraftType || '❌ NOT FOUND')
+  console.log('[RTFParser] ACFT REG:', parsedHeader.aircraftReg || '❌ NOT FOUND')
+  console.log('[RTFParser] SECTOR:', parsedHeader.sector || '❌ NOT FOUND')
+  console.log('[RTFParser] STD:', parsedHeader.std || '❌ NOT FOUND')
+  console.log('[RTFParser] PREPARED BY:', parsedHeader.preparedBy || '❌ NOT FOUND')
+  console.log('[RTFParser] PREPARED ON:', parsedHeader.preparedOn || '❌ NOT FOUND')
+  console.log('[RTFParser] PAX:', parsedHeader.pax || '❌ NOT FOUND')
+  console.log('[RTFParser] TTL PLN ULD:', parsedHeader.ttlPlnUld || '❌ NOT FOUND')
+  console.log('[RTFParser] ULD VERSION:', parsedHeader.uldVersion || '❌ NOT FOUND')
+  console.log('[RTFParser] Header Warning:', parsedHeader.hasHeaderWarning ? '✅ Found' : '❌ Not found')
+  console.log('[RTFParser] Is Critical:', parsedHeader.isCritical ? '✅ Yes' : '❌ No')
+  console.log('[RTFParser] ==========================================')
+  
+  // If critical fields are missing, log sample content for debugging
+  if (!parsedHeader.aircraftType || !parsedHeader.ttlPlnUld || !parsedHeader.uldVersion) {
+    console.warn('[RTFParser] ⚠️ Some critical header fields are missing. Sample content around header:')
+    const headerSection = processedContent.split('\n').slice(0, 10).join('\n')
+    console.warn('[RTFParser] First 10 lines:', headerSection)
   }
 
   return { 
@@ -348,44 +394,80 @@ export function parseRTFShipments(content: string, header: LoadPlanHeader): Ship
     // Then normalize remaining: replace 2+ spaces with single space for regex matching
     normalizedLine = normalizedLine.replace(/\s{2,}/g, " ")
     
-    // Try full match first - use \s+ for flexible spacing
+    // Try full match first - more flexible regex for RTF format
+    // Format: SER AWB ORG/DES PCS WGT VOL LVOL SHC MAN.DESC PCODE PC THC BS PI FLTIN ARRDT.TIME SI
+    // Based on example: "001 176-92204630 ICNAMM 6 70.0 0.5 0.5 AXA-COL MEDICAL KITS AXA P1 SS N EK0323 29Feb0454 33:10/ N"
+    // MAN.DESC can have spaces (MEDICAL KITS, CHILLED BONE-IN, etc.)
+    // PC can be empty (some shipments don't have PC)
+    // THC can be empty, NORM, QWT, QRT, etc.
+    // FLTIN and ARRDT.TIME are optional
+    
+    // First try: standard format with all fields
     let shipmentMatch = normalizedLine.match(
-      /^(\d{3})\s+(\d{3}-\d{8})\s+([A-Z]{3})([A-Z]{3})\s+(\d+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([A-Z-]+)\s+(.+?)\s+([A-Z]{3})\s+([A-Z]\d)?\s+([A-Z0-9\s]+?)\s+(SS)\s+([YN])\s+([A-Z]+\d+)?\s*(\d{2}[A-Za-z]{3}\d{2,4}(?:\s+[\d:\/]+)?)?\s*([\d:\/\s]+)?\s*([YN])?$/i,
+      /^(\d{3})\s+(\d{3}-\d{8})\s+([A-Z]{3})([A-Z]{3})\s+(\d+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([A-Z-]+)\s+(.+?)\s+([A-Z]{3})\s+([A-Z]\d)?\s*([A-Z0-9]*)?\s+(SS|BS|NN)\s+([YN])\s+([A-Z]+\d+)?\s*(\d{2}[A-Za-z]{3}\d{2,4}(?:\s+[\d:\/]+)?)?\s*([\d:\/\s]+)?\s*([YN])?$/i,
     )
     
-    // First, try to match minimal format (just SER and AWB) - RTF might have incomplete lines
+    // If regex doesn't match, try a more flexible approach: parse field by field
     if (!shipmentMatch) {
-      const minimalMatch = normalizedLine.match(/^(\d{3})\s+(\d{3}-\d{8})(?:\s+(.{6}))?/i)
-      if (minimalMatch) {
-        // This looks like a shipment but is incomplete - log it for debugging
-        console.warn(`[RTFParser] ⚠️ Found minimal shipment line at line ${i}:`, line.substring(0, 150))
-        console.warn(`[RTFParser] Normalized line:`, normalizedLine.substring(0, 150))
+      // Try to extract fields manually by finding patterns
+      const serMatch = normalizedLine.match(/^(\d{3})\s+(\d{3}-\d{8})/)
+      if (serMatch) {
+        // Found SER and AWB, try to parse the rest more flexibly
+        const afterAWB = normalizedLine.substring(serMatch[0].length).trim()
+        const orgDesMatch = afterAWB.match(/^([A-Z]{3})([A-Z]{3})\s+(\d+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([A-Z-]+)\s+(.+)/)
+        if (orgDesMatch) {
+          // We have ORG/DES, PCS, WGT, VOL, LVOL, SHC, and the rest
+          // The rest should contain MAN.DESC, PCODE, PC, THC, BS, PI, FLTIN, ARRDT.TIME, SI
+          // MAN.DESC is tricky - it can have spaces and ends before PCODE
+          // PCODE is always 3 letters (AXA, COU, GCR, etc.)
+          const rest = orgDesMatch[8]
+          // Try to find PCODE pattern (3 uppercase letters) - this marks end of MAN.DESC
+          const pcodeMatch = rest.match(/\s+([A-Z]{3})\s+([A-Z]\d)?\s*([A-Z0-9]*)?\s+(SS|BS|NN)\s+([YN])\s+([A-Z]+\d+)?\s*(\d{2}[A-Za-z]{3}\d{2,4}(?:\s+[\d:\/]+)?)?\s*([\d:\/\s]+)?\s*([YN])?$/i)
+          if (pcodeMatch) {
+            // Found PCODE pattern - extract MAN.DESC (everything before PCODE)
+            const manDescEnd = rest.indexOf(pcodeMatch[0])
+            const manDesc = rest.substring(0, manDescEnd).trim()
+            
+            shipmentMatch = [
+              normalizedLine,
+              serMatch[1], // serial
+              serMatch[2], // awb
+              orgDesMatch[1], // origin
+              orgDesMatch[2], // destination
+              orgDesMatch[3], // pcs
+              orgDesMatch[4], // wgt
+              orgDesMatch[5], // vol
+              orgDesMatch[6], // lvol
+              orgDesMatch[7], // shc
+              manDesc, // manDesc
+              pcodeMatch[1], // pcode
+              pcodeMatch[2] || "", // pc
+              pcodeMatch[3] || "", // thc
+              pcodeMatch[4], // bs
+              pcodeMatch[5], // pi
+              pcodeMatch[6] || "", // fltIn
+              pcodeMatch[7] || "", // arrDate
+              pcodeMatch[8] || "", // arrTime
+              pcodeMatch[9] || "N", // si
+            ]
+          }
+        }
       }
     }
     
-    // If first regex doesn't match, try format without FLTIN/ARRDT.TIME
+    // If regex doesn't match, try format without FLTIN/ARRDT.TIME (shipments 011-017)
     if (!shipmentMatch) {
+      // Pattern: SER AWB ORG/DES PCS WGT VOL LVOL SHC MAN.DESC PCODE PC THC BS PI SI (no FLTIN/ARRDT)
+      // Example: "011 176-96384385 DXBAMM 4 46.0 0.2 0.2 RCM SODIUM GCR P2 NORM SS N N"
       const altMatch = normalizedLine.match(
-        /^(\d{3})\s+(\d{3}-\d{8})\s+([A-Z]{3})([A-Z]{3})\s+(\d+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([A-Z-]+)\s+(.+?)\s+([A-Z]{3})\s+([A-Z]\d)\s+(.+?)\s+([YN])?$/i,
+        /^(\d{3})\s+(\d{3}-\d{8})\s+([A-Z]{3})([A-Z]{3})\s+(\d+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([A-Z-]+)\s+(.+?)\s+([A-Z]{3})\s+([A-Z]\d)?\s*([A-Z0-9]*)?\s+(SS|BS|NN)\s+([YN])\s+([YN])?$/i,
       )
       if (altMatch) {
-        const rest = altMatch[13] || ""
-        const thcParts: string[] = []
-        const restWords = rest.split(/\s+/)
-        let thcEndIndex = restWords.length
-        
-        for (let i = 0; i < restWords.length; i++) {
-          const word = restWords[i]
-          if (word === "NORM" || word === "NN" || word === "N" || word === "Y" || 
-              word.match(/^[YN]$/) || word === "SS" || word === "BS" || word === "PI") {
-            thcEndIndex = i
-            break
-          }
-          thcParts.push(word)
-        }
-        
-        const thc = thcParts.join(" ").trim()
-        const si = restWords[restWords.length - 1] || "N"
+        const pc = altMatch[12] || ""
+        const thc = altMatch[13] || ""
+        const bs = altMatch[14] || "SS"
+        const pi = altMatch[15] || "N"
+        const si = altMatch[16] || "N"
         
         shipmentMatch = [
           altMatch[0],
@@ -400,44 +482,418 @@ export function parseRTFShipments(content: string, header: LoadPlanHeader): Ship
           altMatch[9], // shc
           altMatch[10], // manDesc
           altMatch[11], // pcode
-          altMatch[12], // pc
+          pc, // pc
           thc, // thc
-          "SS", // bs
-          "N", // pi
+          bs, // bs
+          pi, // pi
           "", // fltIn
           "", // arrDate
           "", // arrTime
           si, // si
         ]
-      } else {
-        // Try pattern for shipment without PC
-        const noPCMatch = normalizedLine.match(
-          /^(\d{3})\s+(\d{3}-\d{8})\s+([A-Z]{3})([A-Z]{3})\s+(\d+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([A-Z-]+)\s+(.+?)\s+([A-Z]{3})\s+([A-Z0-9]+)\s+(SS)\s+([YN])\s+([A-Z]+\d+)?\s*(\d{2}[A-Za-z]{3}\d{4})?\s*([\d:\/]+)?\s*([YN])?/i,
-        )
-        if (noPCMatch) {
-          shipmentMatch = [
-            noPCMatch[0],
-            noPCMatch[1], // serial
-            noPCMatch[2], // awb
-            noPCMatch[3], // origin
-            noPCMatch[4], // destination
-            noPCMatch[5], // pcs
-            noPCMatch[6], // wgt
-            noPCMatch[7], // vol
-            noPCMatch[8], // lvol
-            noPCMatch[9], // shc
-            noPCMatch[10], // manDesc
-            noPCMatch[11], // pcode
-            "", // pc (empty)
-            noPCMatch[12], // thc
-            noPCMatch[13], // bs
-            noPCMatch[14], // pi
-            noPCMatch[15] || "", // fltIn
-            noPCMatch[16] || "", // arrDate
-            noPCMatch[17] || "", // arrTime
-            noPCMatch[18] || "N", // si
-          ]
+      }
+    }
+    
+    // If still no match, try pattern for shipment without PC (PC field is empty, THC comes right after PCODE)
+    if (!shipmentMatch) {
+      // Example: "010 ... COU P2 QWT SS N ..." - but wait, this has PC (P2)
+      // Actually, some shipments might have format: PCODE THC SS (no PC)
+      // Let's try a more flexible pattern that handles missing PC
+      const flexibleMatch = normalizedLine.match(
+        /^(\d{3})\s+(\d{3}-\d{8})\s+([A-Z]{3})([A-Z]{3})\s+(\d+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([A-Z-]+)\s+(.+?)\s+([A-Z]{3})\s+([A-Z]\d\s+)?([A-Z0-9]+)?\s+(SS|BS|NN)\s+([YN])\s+([A-Z]+\d+)?\s*(\d{2}[A-Za-z]{3}\d{2,4}(?:\s+[\d:\/]+)?)?\s*([\d:\/\s]+)?\s*([YN])?/i,
+      )
+      if (flexibleMatch) {
+        const pc = flexibleMatch[12]?.trim() || ""
+        const thc = flexibleMatch[13] || ""
+        const bs = flexibleMatch[14] || "SS"
+        const pi = flexibleMatch[15] || "N"
+        const fltIn = flexibleMatch[16] || ""
+        const arrDate = flexibleMatch[17] || ""
+        const arrTime = flexibleMatch[18] || ""
+        const si = flexibleMatch[19] || "N"
+        
+        shipmentMatch = [
+          flexibleMatch[0],
+          flexibleMatch[1], // serial
+          flexibleMatch[2], // awb
+          flexibleMatch[3], // origin
+          flexibleMatch[4], // destination
+          flexibleMatch[5], // pcs
+          flexibleMatch[6], // wgt
+          flexibleMatch[7], // vol
+          flexibleMatch[8], // lvol
+          flexibleMatch[9], // shc
+          flexibleMatch[10], // manDesc
+          flexibleMatch[11], // pcode
+          pc, // pc
+          thc, // thc
+          bs, // bs
+          pi, // pi
+          fltIn, // fltIn
+          arrDate, // arrDate
+          arrTime, // arrTime
+          si, // si
+        ]
+      }
+    }
+    
+    // If regex doesn't match, try field-by-field parsing (more robust for RTF)
+    if (!shipmentMatch && /^\d{3}\s+\d{3}-\d{8}/.test(normalizedLine)) {
+      console.log(`[RTFParser] Trying field-by-field parsing for line ${i}`)
+      
+      try {
+        // Extract fields one by one using pattern matching
+        const parts = normalizedLine.split(/\s+/)
+        
+        // Field 0: SER (3 digits)
+        // Field 1: AWB (3-8 digits)
+        if (parts.length >= 2 && /^\d{3}$/.test(parts[0]) && /^\d{3}-\d{8}$/.test(parts[1])) {
+          const serial = parts[0]
+          const awb = parts[1]
+          
+          // Find ORG/DES - should be 6 letters (3+3) after AWB
+          let orgDesIdx = 2
+          let origin = ""
+          let destination = ""
+          let pcs = ""
+          let wgt = ""
+          let vol = ""
+          let lvol = ""
+          let shc = ""
+          let manDesc = ""
+          let pcode = ""
+          let pc = ""
+          let thc = ""
+          let bs = "SS"
+          let pi = "N"
+          let fltIn = ""
+          let arrDate = ""
+          let arrTime = ""
+          let si = "N"
+          
+          // Try to find ORG/DES (6 consecutive uppercase letters)
+          // Handle cases like "BOMAMM1" (BOM + AMM + 1) or "BOMAMM" (BOM + AMM)
+          for (let j = orgDesIdx; j < parts.length; j++) {
+            const part = parts[j]
+            // Check if this part contains 6 uppercase letters (ORG/DES) possibly followed by digits
+            const orgDesMatch = part.match(/^([A-Z]{3})([A-Z]{3})(\d*)$/)
+            if (orgDesMatch) {
+              origin = orgDesMatch[1]
+              destination = orgDesMatch[2]
+              pcs = orgDesMatch[3] || parts[j + 1] || ""
+              orgDesIdx = j + (orgDesMatch[3] ? 0 : 1)
+              break
+            } else if (part.length >= 6 && /^[A-Z]{6}/.test(part)) {
+              // Extract first 6 letters as ORG/DES
+              origin = part.substring(0, 3)
+              destination = part.substring(3, 6)
+              // Check if there are digits after (PCS)
+              const remaining = part.substring(6)
+              if (/^\d+$/.test(remaining)) {
+                pcs = remaining
+                orgDesIdx = j
+              } else {
+                pcs = parts[j + 1] || ""
+                orgDesIdx = j + 1
+              }
+              break
+            } else if (part.length >= 3 && /^[A-Z]{3}$/.test(part) && j + 1 < parts.length) {
+              // Check if next part is also 3 uppercase letters (ORG + DES)
+              const nextPart = parts[j + 1]
+              if (/^[A-Z]{3}/.test(nextPart)) {
+                origin = part
+                destination = nextPart.substring(0, 3)
+                // Check if nextPart has digits after (like "AMM1")
+                const remaining = nextPart.substring(3)
+                if (/^\d+$/.test(remaining)) {
+                  pcs = remaining
+                  orgDesIdx = j + 1
+                } else {
+                  pcs = parts[j + 2] || ""
+                  orgDesIdx = j + 2
+                }
+                break
+              }
+            }
+          }
+          
+          if (origin && destination) {
+            // Extract PCS, WGT, VOL, LVOL (should be numbers)
+            let idx = orgDesIdx
+            if (!pcs && idx < parts.length && /^\d+$/.test(parts[idx])) {
+              pcs = parts[idx++]
+            }
+            if (idx < parts.length && /^[\d.]+$/.test(parts[idx])) {
+              wgt = parts[idx++]
+            }
+            if (idx < parts.length && /^[\d.]+$/.test(parts[idx])) {
+              vol = parts[idx++]
+            }
+            if (idx < parts.length && /^[\d.]+$/.test(parts[idx])) {
+              lvol = parts[idx++]
+            }
+            
+            // Extract SHC (starts with uppercase letters and may contain hyphens)
+            if (idx < parts.length && /^[A-Z-]+$/.test(parts[idx])) {
+              shc = parts[idx++]
+            }
+            
+            // MAN.DESC is tricky - it can have spaces and ends before PCODE
+            // PCODE is always 3 uppercase letters
+            // Handle cases like "PILASPERSHIPPERAXDP2" where everything is concatenated
+            // Strategy: Look for 3-letter PCODE pattern, then work backwards
+            
+            // First, try to find PCODE by looking for 3 uppercase letters followed by P# pattern
+            let pcodeIdx = -1
+            let foundPcode = false
+            
+            // Look for pattern like "AXDP2", "COUP2", etc. (PCODE + PC concatenated)
+            for (let j = idx; j < parts.length; j++) {
+              const part = parts[j]
+              
+              // Check if part contains PCODE+PC pattern (e.g., "AXDP2", "COUP2")
+              const pcodePcMatch = part.match(/^([A-Z]{3})(P\d)$/)
+              if (pcodePcMatch) {
+                pcode = pcodePcMatch[1]
+                pc = pcodePcMatch[2]
+                pcodeIdx = j
+                foundPcode = true
+                break
+              }
+              
+              // Check if part is just PCODE (3 letters) and next is PC
+              if (/^[A-Z]{3}$/.test(part) && j + 1 < parts.length) {
+                const nextPart = parts[j + 1]
+                if (/^P\d$/.test(nextPart) || /^[A-Z0-9]+$/.test(nextPart)) {
+                  pcode = part
+                  pc = nextPart
+                  pcodeIdx = j
+                  foundPcode = true
+                  break
+                }
+              }
+            }
+            
+            // If PCODE not found, try to extract from concatenated string
+            if (!foundPcode && idx < parts.length) {
+              // Look for long concatenated strings that might contain PCODE+PC
+              for (let j = idx; j < parts.length; j++) {
+                const part = parts[j]
+                // Check if part is very long and might contain multiple fields
+                if (part.length > 10) {
+                  // Try to find PCODE pattern (3 uppercase letters) in the string
+                  const pcodeMatch = part.match(/([A-Z]{3})(P\d)/)
+                  if (pcodeMatch) {
+                    const pcodeStart = part.indexOf(pcodeMatch[0])
+                    pcode = pcodeMatch[1]
+                    pc = pcodeMatch[2]
+                    // Extract MAN.DESC from before PCODE
+                    const beforePcode = part.substring(0, pcodeStart)
+                    manDesc = (parts.slice(idx, j).join(" ") + " " + beforePcode).trim()
+                    pcodeIdx = j
+                    foundPcode = true
+                    break
+                  }
+                }
+              }
+            }
+            
+            // Extract MAN.DESC (everything between SHC and PCODE)
+            if (foundPcode && pcodeIdx > idx) {
+              if (manDesc === "") {
+                manDesc = parts.slice(idx, pcodeIdx).join(" ")
+              }
+            } else if (idx < parts.length) {
+              // No PCODE found, try to extract MAN.DESC differently
+              // Look for pattern: ... PCODE PC ...
+              for (let j = idx; j < parts.length - 1; j++) {
+                if (/^[A-Z]{3}$/.test(parts[j])) {
+                  pcode = parts[j]
+                  pc = parts[j + 1] || ""
+                  manDesc = parts.slice(idx, j).join(" ")
+                  pcodeIdx = j + 1
+                  foundPcode = true
+                  break
+                }
+              }
+            }
+            
+            // If still no PCODE found, try to extract from the last long part
+            if (!foundPcode && idx < parts.length) {
+              // Get the part after SHC
+              const afterShc = parts.slice(idx).join(" ")
+              // Try to find PCODE pattern anywhere in the string
+              const pcodePattern = afterShc.match(/([A-Z]{3})(\s+P\d|\s+[A-Z0-9]+)/i)
+              if (pcodePattern) {
+                const pcodeStart = afterShc.indexOf(pcodePattern[0])
+                pcode = pcodePattern[1]
+                pc = pcodePattern[2].trim()
+                manDesc = afterShc.substring(0, pcodeStart).trim()
+                foundPcode = true
+              }
+            }
+            
+            // Extract THC, BS, PI, FLTIN, ARRDT.TIME, SI
+            let currentIdx = pcodeIdx > 0 ? pcodeIdx + 1 : idx + 1
+            if (currentIdx < parts.length) {
+              // THC can be empty, NORM, QWT, QRT, etc.
+              if (currentIdx < parts.length && /^[A-Z0-9]+$/.test(parts[currentIdx]) && 
+                  !/^(SS|BS|NN|N|Y)$/i.test(parts[currentIdx])) {
+                thc = parts[currentIdx++]
+              }
+              
+              // BS (SS, BS, NN)
+              if (currentIdx < parts.length && /^(SS|BS|NN)$/i.test(parts[currentIdx])) {
+                bs = parts[currentIdx++].toUpperCase()
+              }
+              
+              // PI (N, Y)
+              if (currentIdx < parts.length && /^[YN]$/i.test(parts[currentIdx])) {
+                pi = parts[currentIdx++].toUpperCase()
+              }
+              
+              // FLTIN (EK####)
+              if (currentIdx < parts.length && /^[A-Z]+\d+$/i.test(parts[currentIdx])) {
+                fltIn = parts[currentIdx++]
+              }
+              
+              // ARRDT (date pattern: ##Mon## or ##Mon####)
+              if (currentIdx < parts.length && /\d{2}[A-Za-z]{3}\d{2,4}/.test(parts[currentIdx])) {
+                arrDate = parts[currentIdx++]
+                // Check if next part is time
+                if (currentIdx < parts.length && /[\d:\/]+/.test(parts[currentIdx])) {
+                  arrTime = parts[currentIdx++]
+                }
+              }
+              
+              // SI (last field, N or Y)
+              if (currentIdx < parts.length && /^[YN]$/i.test(parts[currentIdx])) {
+                si = parts[currentIdx].toUpperCase()
+              }
+            }
+            
+            // Create shipment with extracted fields
+            if (serial && awb && origin && destination) {
+              console.log(`[RTFParser] ✅ Field-by-field parsing succeeded for line ${i}`)
+              shipmentMatch = [
+                normalizedLine,
+                serial,
+                awb,
+                origin,
+                destination,
+                pcs || "0",
+                wgt || "0",
+                vol || "0",
+                lvol || "0",
+                shc || "",
+                manDesc || "",
+                pcode || "",
+                pc || "",
+                thc || "",
+                bs,
+                pi,
+                fltIn || "",
+                arrDate || "",
+                arrTime || "",
+                si,
+              ]
+            }
+          }
         }
+      } catch (fieldParseError) {
+        console.warn(`[RTFParser] Field-by-field parsing failed for line ${i}:`, fieldParseError)
+      }
+    }
+    
+    // Log if we still couldn't parse it
+    if (!shipmentMatch && /^\d{3}\s+\d{3}-\d{8}/.test(normalizedLine)) {
+      console.warn(`[RTFParser] ⚠️ Found shipment-like line but couldn't parse at line ${i}:`, line.substring(0, 200))
+      console.warn(`[RTFParser] Normalized line:`, normalizedLine.substring(0, 200))
+      
+      // Try minimal parsing - just extract SER, AWB, ORG/DES, PCS, WGT, VOL, LVOL
+      const minimalMatch = normalizedLine.match(/^(\d{3})\s+(\d{3}-\d{8})\s+([A-Z]{3})([A-Z]{3})(\d*)/i)
+      if (minimalMatch) {
+        const serial = minimalMatch[1]
+        const awb = minimalMatch[2]
+        const origin = minimalMatch[3]
+        const destination = minimalMatch[4]
+        let pcs = minimalMatch[5] || "0"
+        
+        // Try to extract WGT, VOL, LVOL from remaining parts
+        const remaining = normalizedLine.substring(minimalMatch[0].length).trim()
+        const remainingParts = remaining.split(/\s+/)
+        let wgt = "0"
+        let vol = "0"
+        let lvol = "0"
+        
+        // Also check if PCS is in the ORG/DES part (like "BOMAMM1")
+        if (pcs === "0" && minimalMatch[5] && /^\d+$/.test(minimalMatch[5])) {
+          pcs = minimalMatch[5]
+        }
+        
+        for (let j = 0; j < Math.min(3, remainingParts.length); j++) {
+          if (/^[\d.]+$/.test(remainingParts[j])) {
+            if (wgt === "0") wgt = remainingParts[j]
+            else if (vol === "0") vol = remainingParts[j]
+            else if (lvol === "0") lvol = remainingParts[j]
+          }
+        }
+        
+        // If still no PCS found, try to extract from the ORG/DES part
+        if (pcs === "0") {
+          const orgDesPart = normalizedLine.match(/\d{3}\s+\d{3}-\d{8}\s+([A-Z]{6,})/)?.[1]
+          if (orgDesPart) {
+            const pcsMatch = orgDesPart.match(/(\d+)$/)
+            if (pcsMatch) {
+              pcs = pcsMatch[1]
+            }
+          }
+        }
+        
+        console.log(`[RTFParser] ⚠️ Using minimal parsing for line ${i} - only basic fields`)
+        
+        // Create minimal shipment
+        const minimalShipment: Partial<Shipment> = {
+          serialNo: serial,
+          awbNo: awb.replace(/\s+/g, ""),
+          origin: origin,
+          destination: destination,
+          pieces: Number.parseInt(pcs) || 0,
+          weight: Number.parseFloat(wgt) || 0,
+          volume: Number.parseFloat(vol) || 0,
+          lvol: Number.parseFloat(lvol) || 0,
+          shc: "",
+          manDesc: "",
+          pcode: "",
+          pc: "",
+          thc: "",
+          bs: "SS",
+          pi: "N",
+          fltIn: "",
+          arrDtTime: "",
+          qnnAqnn: "",
+          whs: "",
+          si: "N",
+          uld: currentULD || "",
+          specialNotes: [],
+          isRampTransfer: isRampTransfer,
+          sector: currentSector,
+        }
+        
+        // Add to buffer or shipments
+        if (currentULD) {
+          minimalShipment.uld = currentULD
+          const s = minimalShipment as Partial<Shipment> & { sector?: string }
+          s.sector = currentSector
+          shipments.push(minimalShipment as Shipment)
+          currentULD = ""
+        } else {
+          const s = minimalShipment as Partial<Shipment> & { sector?: string }
+          s.sector = currentSector
+          awbBuffer.push(minimalShipment)
+        }
+        
+        continue
       }
     }
     
@@ -599,25 +1055,33 @@ export function parseRTFShipments(content: string, header: LoadPlanHeader): Ship
     // Check for special notes - HANYA yang ada bracket "[ ]"
     // Examples: "[Must be load in Fire containment equipment]"
     // Simpan dengan bracket "[ ]" tetap ada
+    // IMPORTANT: Check this BEFORE ULD parsing to avoid conflicts
     if (inShipmentSection && (line.startsWith("[") || line.startsWith("**["))) {
-      const note = line.replace(/\*\*/g, "").trim()
-      if (note.length > 0) {
-        if (currentShipment) {
-          const shipment = currentShipment as Partial<Shipment> & { specialNotes?: string[] }
-          if (!shipment.specialNotes) {
-            shipment.specialNotes = []
-          }
-          shipment.specialNotes.push(note)
-        } else if (awbBuffer.length > 0) {
-          const lastShipment = awbBuffer[awbBuffer.length - 1]
-          if (lastShipment) {
-            if (!lastShipment.specialNotes) {
-              lastShipment.specialNotes = []
+      // Make sure this is NOT a ULD line (should not contain XX markers)
+      if (!/xx\s+/i.test(line) && !/\s+xx/i.test(line)) {
+        const note = line.replace(/\*\*/g, "").trim()
+        if (note.length > 0) {
+          if (currentShipment) {
+            const shipment = currentShipment as Partial<Shipment> & { specialNotes?: string[] }
+            if (!shipment.specialNotes) {
+              shipment.specialNotes = []
             }
-            lastShipment.specialNotes.push(note)
+            shipment.specialNotes.push(note)
+            console.log("[RTFParser] ✅ Special note added to currentShipment:", note.substring(0, 100))
+          } else if (awbBuffer.length > 0) {
+            const lastShipment = awbBuffer[awbBuffer.length - 1]
+            if (lastShipment) {
+              if (!lastShipment.specialNotes) {
+                lastShipment.specialNotes = []
+              }
+              lastShipment.specialNotes.push(note)
+              console.log("[RTFParser] ✅ Special note added to buffered shipment:", note.substring(0, 100))
+            }
           }
         }
       }
+      // Continue to next line - don't process ULD if this was a special note
+      continue
     }
     
     // Check for ULD notes that don't start with XX markers
@@ -667,10 +1131,17 @@ export function parseRTFShipments(content: string, header: LoadPlanHeader): Ship
     console.log(`[RTFParser] Flushing ${awbBuffer.length} items from buffer at end of parsing`)
     awbBuffer.forEach((shipment) => {
       const s = shipment as Partial<Shipment> & { sector?: string }
-      s.sector = currentSector
+      // Ensure sector is set
+      if (!s.sector) {
+        s.sector = currentSector
+      }
       // If no ULD assigned, use empty string
       if (!s.uld) {
         s.uld = ""
+      }
+      // Ensure specialNotes is initialized
+      if (!s.specialNotes) {
+        s.specialNotes = []
       }
     })
     shipments.push(...(awbBuffer as Shipment[]))
@@ -679,9 +1150,17 @@ export function parseRTFShipments(content: string, header: LoadPlanHeader): Ship
   
   if (currentShipment) {
     const s = currentShipment as Partial<Shipment> & { sector?: string }
-    s.sector = currentSector
+    // Ensure sector is set
+    if (!s.sector) {
+      s.sector = currentSector
+    }
+    // If no ULD assigned, use empty string
     if (!s.uld) {
       s.uld = ""
+    }
+    // Ensure specialNotes is initialized
+    if (!s.specialNotes) {
+      s.specialNotes = []
     }
     shipments.push(currentShipment as Shipment)
   }
@@ -694,6 +1173,41 @@ export function parseRTFShipments(content: string, header: LoadPlanHeader): Ship
     })
   )
   console.log(`[RTFParser] Ramp transfer shipments:`, shipments.filter(s => s.isRampTransfer).length)
+  
+  // Log sample shipments for debugging - check ULD and specialNotes
+  if (shipments.length > 0) {
+    const samplesWithULD = shipments.filter(s => s.uld && s.uld.trim()).slice(0, 3)
+    const samplesWithNotes = shipments.filter(s => s.specialNotes && s.specialNotes.length > 0).slice(0, 3)
+    
+    console.log(`[RTFParser] Sample shipments with ULD (${samplesWithULD.length}):`, 
+      samplesWithULD.map(s => ({
+        serialNo: s.serialNo,
+        awbNo: s.awbNo,
+        uld: s.uld,
+        sector: s.sector,
+      }))
+    )
+    
+    console.log(`[RTFParser] Sample shipments with specialNotes (${samplesWithNotes.length}):`, 
+      samplesWithNotes.map(s => ({
+        serialNo: s.serialNo,
+        awbNo: s.awbNo,
+        specialNotes: s.specialNotes,
+        uld: s.uld, // Check if ULD is also set
+      }))
+    )
+    
+    console.log(`[RTFParser] Sample shipment (first):`, {
+      serialNo: shipments[0].serialNo,
+      awbNo: shipments[0].awbNo,
+      origin: shipments[0].origin,
+      destination: shipments[0].destination,
+      uld: shipments[0].uld,
+      sector: shipments[0].sector,
+      isRampTransfer: shipments[0].isRampTransfer,
+      specialNotes: shipments[0].specialNotes,
+    })
+  }
   
   return shipments
 }
@@ -731,6 +1245,8 @@ async function extractTextFromRTFDirect(file: File): Promise<string> {
 
     // Step 4: Remove ALL RTF control words (more aggressive)
     // Remove control words with optional parameters
+    // Remove patterns like \*013f, \*f, etc.
+    text = text.replace(/\\\*[0-9a-fA-F]*/g, "") // Remove \* followed by hex digits
     text = text.replace(/\\[a-zA-Z]+\d*\s*/g, "")
     text = text.replace(/\\[a-zA-Z]+\-?\d+\s*/g, "")
     
@@ -783,7 +1299,36 @@ async function extractTextFromRTFDirect(file: File): Promise<string> {
       console.warn('[RTFParser] Table header not found, processing entire file')
     }
     
-    // Step 6: Clean up lines - remove RTF artifacts and reconstruct broken lines
+    // Step 6: Remove remaining RTF artifacts more aggressively
+    // Remove patterns like \*013f, \*f, LayoutInCell, rotation, cropFrom, etc.
+    // Do multiple passes to catch all variations
+    for (let pass = 0; pass < 3; pass++) {
+      text = text.replace(/\\\*[0-9a-fA-F]*/g, "") // Remove \* followed by hex
+      text = text.replace(/\\\*[a-zA-Z]/g, "") // Remove \* followed by letter
+      text = text.replace(/LayoutInCell\d+/g, "")
+      text = text.replace(/rotation\d+/g, "")
+      text = text.replace(/cropFrom[A-Z]+\d+/g, "")
+      text = text.replace(/wzDescription/g, "")
+      text = text.replace(/\bimage\b/g, "") // Only whole word "image"
+      text = text.replace(/dxWrapDist[A-Z]+\d+/g, "")
+      text = text.replace(/dyWrapDist[A-Z]+\d+/g, "")
+      text = text.replace(/posrel[hv]\d+/g, "")
+      text = text.replace(/fAllowOverlap\d+/g, "")
+      text = text.replace(/shapeType\d+/g, "")
+      text = text.replace(/pibName[A-Za-z0-9_]*/g, "")
+      text = text.replace(/pibFlags\d+/g, "")
+      text = text.replace(/pib\\\*[0-9a-fA-F]*/g, "") // Remove pib\*hex patterns
+      text = text.replace(/Normal;heading\s+\d+;/g, "") // Remove RTF style definitions at end
+    }
+    
+    // Remove binary/hex data patterns (long sequences of hex)
+    text = text.replace(/[0-9a-fA-F]{50,}/g, (match) => {
+      // If it's mostly hex and very long, it's likely binary data
+      if (match.length > 100) return ""
+      return match
+    })
+    
+    // Step 7: Clean up lines - remove RTF artifacts and reconstruct broken lines
     // First, remove newlines that are in the middle of words/numbers
     // Pattern: letter/number followed by newline followed by letter/number (should be joined)
     // Also handle cases like "EK\n0903" -> "EK0903" or "EK 0903"
@@ -822,8 +1367,45 @@ async function extractTextFromRTFDirect(file: File): Promise<string> {
       if ((line.match(/\\[a-zA-Z]+\d*/g) || []).length > 3) continue
       
       // Remove any remaining RTF artifacts
+      line = line.replace(/\\\*[0-9a-fA-F]*/g, "") // Remove \*hex patterns
       line = line.replace(/\\[a-zA-Z]+\d*/g, "")
       line = line.replace(/[{}]/g, "")
+      
+      // IMPORTANT: Split multiple shipments that are joined in one line
+      // Pattern: shipment ends with "N " or "Y " followed by another shipment starting with 3 digits
+      // Example: "001 ... N 002 ..." should be split into two lines
+      // Also handle cases like "038 ... N XXBULKXX **** MAIL**** 039 ..."
+      const shipmentSplitPattern = /(\d{3}\s+\d{3}-\d{8}[\s\S]*?)\s+([YN])\s+(?=\d{3}\s+\d{3}-\d{8})/g
+      if (shipmentSplitPattern.test(line)) {
+        // Split the line into multiple shipments
+        // Find all shipment starts
+        const shipmentStarts: number[] = []
+        let match
+        const regex = /\d{3}\s+\d{3}-\d{8}/g
+        while ((match = regex.exec(line)) !== null) {
+          shipmentStarts.push(match.index)
+        }
+        
+        if (shipmentStarts.length > 1) {
+          // Multiple shipments in one line - split them
+          for (let j = 0; j < shipmentStarts.length; j++) {
+            const start = shipmentStarts[j]
+            const end = j < shipmentStarts.length - 1 ? shipmentStarts[j + 1] : line.length
+            const shipmentLine = line.substring(start, end).trim()
+            
+            if (shipmentLine && /^\d{3}\s+\d{3}-\d{8}/.test(shipmentLine)) {
+              // Save previous line if it's a shipment
+              if (currentLine && /^\d{3}\s+\d{3}-\d{8}/.test(currentLine)) {
+                cleanedLines.push(currentLine)
+              } else if (currentLine && !/^\d{3}\s+\d{3}-\d{8}/.test(currentLine)) {
+                cleanedLines.push(currentLine)
+              }
+              currentLine = shipmentLine
+            }
+          }
+          continue
+        }
+      }
       
       // Check if this line should be joined with previous line
       // Rules for joining:
@@ -861,17 +1443,53 @@ async function extractTextFromRTFDirect(file: File): Promise<string> {
     }
     
     // Normalize spacing in each line - but preserve multiple spaces for table alignment
-    text = cleanedLines
-      .map(line => {
-        // For shipment lines, preserve spacing more carefully
-        if (/^\d{3}\s+\d{3}-\d{8}/.test(line)) {
-          // Shipment line - normalize but keep structure
-          return line.replace(/\s{3,}/g, "  ").trim()
-        } else {
-          // Other lines - normalize all spaces
-          return line.replace(/\s+/g, " ").trim()
+    // Also split any remaining multiple shipments in one line
+    const finalLines: string[] = []
+    for (const line of cleanedLines) {
+      // Check if line contains multiple shipments (pattern: ... N 001 ... or ... Y 002 ...)
+      const multiShipmentPattern = /(\d{3}\s+\d{3}-\d{8}[\s\S]*?)\s+([YN])\s+(?=\d{3}\s+\d{3}-\d{8})/g
+      if (multiShipmentPattern.test(line)) {
+        // Split into multiple shipments
+        const shipmentStarts: number[] = []
+        let match
+        const regex = /\d{3}\s+\d{3}-\d{8}/g
+        while ((match = regex.exec(line)) !== null) {
+          shipmentStarts.push(match.index)
         }
-      })
+        
+        if (shipmentStarts.length > 1) {
+          for (let j = 0; j < shipmentStarts.length; j++) {
+            const start = shipmentStarts[j]
+            const end = j < shipmentStarts.length - 1 ? shipmentStarts[j + 1] : line.length
+            let shipmentLine = line.substring(start, end).trim()
+            
+            // Clean up the shipment line
+            if (/^\d{3}\s+\d{3}-\d{8}/.test(shipmentLine)) {
+              // Remove any RTF artifacts that might be in the middle
+              shipmentLine = shipmentLine.replace(/\\\*[0-9a-fA-F]*/g, "")
+              shipmentLine = shipmentLine.replace(/[{}]/g, "")
+              // Normalize spacing but preserve structure
+              shipmentLine = shipmentLine.replace(/\s{3,}/g, "  ").trim()
+              finalLines.push(shipmentLine)
+            }
+          }
+          continue
+        }
+      }
+      
+      // Single shipment or non-shipment line
+      let processedLine = line
+      if (/^\d{3}\s+\d{3}-\d{8}/.test(processedLine)) {
+        // Shipment line - normalize but keep structure
+        processedLine = processedLine.replace(/\s{3,}/g, "  ").trim()
+      } else {
+        // Other lines - normalize all spaces
+        processedLine = processedLine.replace(/\s+/g, " ").trim()
+      }
+      finalLines.push(processedLine)
+    }
+    
+    text = finalLines
       .filter(line => line.length > 0 || line === "") // Keep empty lines for structure
       .join("\n")
       .replace(/\n{3,}/g, "\n\n")
@@ -942,7 +1560,6 @@ async function extractTextWithStreamParser(file: File): Promise<string> {
     const RTFStreamParserModule = await import('rtf-stream-parser')
     
     // rtf-stream-parser might export differently - check the actual structure
-    // It might be a named export or have a different structure
     let ParserClass: any = null
     
     // Try different ways to access the parser class
@@ -971,58 +1588,111 @@ async function extractTextWithStreamParser(file: File): Promise<string> {
     return new Promise<string>((resolve, reject) => {
       let textContent = ''
       let parser: any
+      let hasResolved = false
+      
+      // Add timeout to prevent hanging (10 seconds - faster fallback)
+      const timeout = setTimeout(() => {
+        if (!hasResolved) {
+          hasResolved = true
+          console.warn('[RTFParser] ⚠️ rtf-stream-parser timeout after 10 seconds, rejecting...')
+          reject(new Error('rtf-stream-parser timeout - taking too long'))
+        }
+      }, 10000)
       
       try {
         parser = new ParserClass()
+        console.log('[RTFParser] Parser created, setting up event listeners...')
         
         // Set up event listeners
-      parser.on('text', (text: string) => {
-        textContent += text
-      })
-      
-      parser.on('paragraph', () => {
-        textContent += '\n'
-      })
-      
-      parser.on('error', (err: Error) => {
-        console.error('[RTFParser] rtf-stream-parser error:', err)
-        reject(err)
-      })
-      
-      parser.on('end', () => {
-        const extractedText = textContent.trim()
-        console.log('[RTFParser] ✅ rtf-stream-parser extracted text length:', extractedText.length)
+        parser.on('text', (text: string) => {
+          if (!hasResolved) {
+            textContent += text
+            console.log('[RTFParser] Received text chunk, total length:', textContent.length)
+          }
+        })
         
-        if (extractedText && extractedText.length > 100) {
-          // Check for table header
-          if (extractedText.includes("SER") && extractedText.includes("AWB")) {
-            console.log('[RTFParser] ✅ Table header found in extracted text')
+        parser.on('paragraph', () => {
+          if (!hasResolved) {
+            textContent += '\n'
           }
-          
-          // Check for shipment-like lines
-          const shipmentLines = extractedText.split("\n").filter(l => /^\d{3}\s+\d{3}-\d{8}/.test(l.trim())).slice(0, 5)
-          if (shipmentLines.length > 0) {
-            console.log('[RTFParser] ✅ Found shipment-like lines:', shipmentLines.length)
+        })
+        
+        parser.on('error', (err: Error) => {
+          if (!hasResolved) {
+            hasResolved = true
+            clearTimeout(timeout)
+            console.error('[RTFParser] rtf-stream-parser error:', err)
+            reject(err)
           }
-          
-          resolve(extractedText)
+        })
+        
+        parser.on('end', () => {
+          if (!hasResolved) {
+            hasResolved = true
+            clearTimeout(timeout)
+            const extractedText = textContent.trim()
+            console.log('[RTFParser] ✅ rtf-stream-parser extracted text length:', extractedText.length)
+            
+            if (extractedText && extractedText.length > 100) {
+              // Check for table header
+              if (extractedText.includes("SER") && extractedText.includes("AWB")) {
+                console.log('[RTFParser] ✅ Table header found in extracted text')
+              }
+              
+              // Check for shipment-like lines
+              const shipmentLines = extractedText.split("\n").filter(l => /^\d{3}\s+\d{3}-\d{8}/.test(l.trim())).slice(0, 5)
+              if (shipmentLines.length > 0) {
+                console.log('[RTFParser] ✅ Found shipment-like lines:', shipmentLines.length)
+              }
+              
+              resolve(extractedText)
+            } else {
+              reject(new Error('rtf-stream-parser extracted too little text'))
+            }
+          }
+        })
+        
+        // Also listen for 'finish' event as alternative
+        parser.on('finish', () => {
+          if (!hasResolved) {
+            hasResolved = true
+            clearTimeout(timeout)
+            const extractedText = textContent.trim()
+            console.log('[RTFParser] ✅ rtf-stream-parser finished, extracted text length:', extractedText.length)
+            
+            if (extractedText && extractedText.length > 100) {
+              resolve(extractedText)
+            } else {
+              reject(new Error('rtf-stream-parser extracted too little text'))
+            }
+          }
+        })
+        
+        console.log('[RTFParser] Event listeners set up, starting to parse RTF content...')
+        
+        // Parse the RTF content
+        if (parser.write) {
+          console.log('[RTFParser] Using parser.write() method')
+          parser.write(rtfText)
+          if (parser.end) {
+            parser.end()
+          }
+        } else if (parser.parse) {
+          console.log('[RTFParser] Using parser.parse() method')
+          parser.parse(rtfText)
         } else {
-          reject(new Error('rtf-stream-parser extracted too little text'))
+          clearTimeout(timeout)
+          throw new Error('rtf-stream-parser API not recognized - no write or parse method')
         }
-      })
-      
-      // Parse the RTF content
-      if (parser.write) {
-        parser.write(rtfText)
-        parser.end()
-      } else if (parser.parse) {
-        parser.parse(rtfText)
-      } else {
-        throw new Error('rtf-stream-parser API not recognized - no write or parse method')
-      }
+        
+        console.log('[RTFParser] RTF content written to parser, waiting for events...')
       } catch (error) {
-        console.error('[RTFParser] Error initializing rtf-stream-parser:', error)
-        reject(error)
+        if (!hasResolved) {
+          hasResolved = true
+          clearTimeout(timeout)
+          console.error('[RTFParser] Error initializing rtf-stream-parser:', error)
+          reject(error)
+        }
       }
     })
   } catch (importError) {
@@ -1030,6 +1700,7 @@ async function extractTextWithStreamParser(file: File): Promise<string> {
     throw importError
   }
 }
+
 
 /**
  * Main function to parse RTF file using rtf-stream-parser
@@ -1042,20 +1713,27 @@ export async function parseRTFFileWithStreamParser(file: File): Promise<{ header
   let content: string
   
   try {
-    // Extract text using rtf-stream-parser
-    content = await extractTextWithStreamParser(file)
-    console.log('[RTFParser] ✅ Extracted content length:', content.length)
+    // Try rtf-stream-parser first (preferred method)
+    try {
+      content = await extractTextWithStreamParser(file)
+      console.log('[RTFParser] ✅ Extracted content using rtf-stream-parser, length:', content.length)
+    } catch (streamParserError) {
+      console.warn('[RTFParser] ⚠️ rtf-stream-parser failed, falling back to direct extraction:', streamParserError)
+      // Fallback to direct extraction
+      content = await extractTextFromRTFDirect(file)
+      console.log('[RTFParser] Fallback extraction length:', content.length)
+    }
     
     // Log sample for debugging
     if (content.length > 0) {
       const sample = content.substring(0, 500)
       console.log('[RTFParser] First 500 chars of content:', sample)
     }
-  } catch (streamParserError) {
-    console.warn('[RTFParser] ⚠️ rtf-stream-parser failed, falling back to direct extraction:', streamParserError)
-    // Fallback to direct extraction
+  } catch (error) {
+    console.error('[RTFParser] All parsing methods failed:', error)
+    // Last resort: try direct extraction
     content = await extractTextFromRTFDirect(file)
-    console.log('[RTFParser] Fallback extraction length:', content.length)
+    console.log('[RTFParser] Using direct extraction as last resort, length:', content.length)
   }
   
   // Log last 500 chars to see if content is complete
