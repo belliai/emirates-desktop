@@ -121,79 +121,67 @@ export async function POST(request: NextRequest) {
     let extractedText = ''
     try {
       // Method 1: Try rtf-stream-parser (preferred method)
-        try {
-          console.log('[API] Attempting to use rtf-stream-parser...')
-          const RTFStreamParserModule = await import('rtf-stream-parser')
-          
-          const RTFStreamParser = RTFStreamParserModule.default || RTFStreamParserModule
-          
-          let textContent = ''
-          let parser: any
-          
-          // Try different initialization methods
-          if (typeof RTFStreamParser === 'function') {
-            parser = new RTFStreamParser()
-          } else if (RTFStreamParser.default && typeof RTFStreamParser.default === 'function') {
-            parser = new RTFStreamParser.default()
-          } else {
-            throw new Error('Could not initialize rtf-stream-parser')
-          }
-          
-          // Set up event listeners
-          if (parser.on) {
-            extractedText = await new Promise<string>((resolve, reject) => {
-              parser.on('text', (text: string) => {
-                textContent += text
-              })
-              
-              parser.on('paragraph', () => {
-                textContent += '\n'
-              })
-              
-              parser.on('error', (err: Error) => {
-                console.error('[API] rtf-stream-parser error:', err)
-                reject(err)
-              })
-              
-              parser.on('end', () => {
-                const text = textContent.trim()
-                if (text && text.length > 0) {
-                  resolve(text)
-                } else {
-                  reject(new Error('rtf-stream-parser extracted empty text'))
-                }
-              })
-              
-              // Parse the RTF content
-              if (parser.write) {
-                parser.write(rtfContent)
-                parser.end()
-              } else {
-                reject(new Error('rtf-stream-parser API not recognized'))
-              }
-            })
-          } else {
-            throw new Error('rtf-stream-parser API not recognized')
-          }
-          
-          console.log('[API] ✅ rtf-stream-parser extracted text length:', extractedText.length)
-        } catch (streamParserError) {
-          console.warn('[API] ⚠️ rtf-stream-parser failed, using manual parsing:', streamParserError)
-          
-          // Method 2: Fallback to manual parsing
-          extractedText = rtfToPlainText(rtfContent)
-          console.log('[API] Manual parsing extracted text length:', extractedText.length)
-          
-          if (!extractedText || extractedText.trim().length === 0) {
-            throw new Error('No text could be extracted from RTF file using any method')
-          }
-        }
+      console.log('[API] Attempting to use rtf-stream-parser...')
+      const RTFStreamParserModule = await import('rtf-stream-parser')
+      
+      const RTFStreamParser = RTFStreamParserModule.default || RTFStreamParserModule
+      
+      let textContent = ''
+      let parser: any
+      
+      // Try different initialization methods
+      if (typeof RTFStreamParser === 'function') {
+        parser = new RTFStreamParser()
+      } else if (RTFStreamParser.default && typeof RTFStreamParser.default === 'function') {
+        parser = new RTFStreamParser.default()
+      } else {
+        throw new Error('Could not initialize rtf-stream-parser')
       }
-    } catch (error) {
-      console.error('[API] All RTF parsing methods failed:', error)
-      // Last resort: try manual parsing
+      
+      // Set up event listeners
+      if (parser.on) {
+        extractedText = await new Promise<string>((resolve, reject) => {
+          parser.on('text', (text: string) => {
+            textContent += text
+          })
+          
+          parser.on('paragraph', () => {
+            textContent += '\n'
+          })
+          
+          parser.on('error', (err: Error) => {
+            console.error('[API] rtf-stream-parser error:', err)
+            reject(err)
+          })
+          
+          parser.on('end', () => {
+            const text = textContent.trim()
+            if (text && text.length > 0) {
+              resolve(text)
+            } else {
+              reject(new Error('rtf-stream-parser extracted empty text'))
+            }
+          })
+          
+          // Parse the RTF content
+          if (parser.write) {
+            parser.write(rtfContent)
+            parser.end()
+          } else {
+            reject(new Error('rtf-stream-parser API not recognized'))
+          }
+        })
+        
+        console.log('[API] ✅ rtf-stream-parser extracted text length:', extractedText.length)
+      } else {
+        throw new Error('rtf-stream-parser API not recognized')
+      }
+    } catch (streamParserError) {
+      console.warn('[API] ⚠️ rtf-stream-parser failed, using manual parsing:', streamParserError)
+      
+      // Method 2: Fallback to manual parsing
       extractedText = rtfToPlainText(rtfContent)
-      console.log('[API] Using manual parsing as last resort, length:', extractedText.length)
+      console.log('[API] Manual parsing extracted text length:', extractedText.length)
       
       if (!extractedText || extractedText.trim().length === 0) {
         throw new Error('No text could be extracted from RTF file using any method')

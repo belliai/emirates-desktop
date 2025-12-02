@@ -35,125 +35,114 @@ function preprocessRTFContent(content: string): string {
  * Uses the same logic as regular parser but with RTF preprocessing
  */
 export function parseRTFHeader(content: string): LoadPlanHeader {
+  console.log('[RTFParser] ========== Starting Header Parsing ==========')
+  console.log('[RTFParser] Content length:', content.length)
+  console.log('[RTFParser] First 500 chars:', content.substring(0, 500))
+  
   // Preprocess RTF content first
   let processedContent = preprocessRTFContent(content)
+  console.log('[RTFParser] After preprocessing, length:', processedContent.length)
+  console.log('[RTFParser] First 500 chars after preprocessing:', processedContent.substring(0, 500))
   
-  // Try multiple patterns for flight number (RTF may have different formatting)
-  let flightNumber = ""
-  
-  // Pattern 1: EK followed by 4 digits (with optional spaces/dashes)
-  let flightMatch = processedContent.match(/EK\s*[-]?\s*(\d{4})/i)
-  if (flightMatch) {
-    flightNumber = `EK${flightMatch[1]}`
-  } else {
-    // Pattern 2: EK followed by digits (more flexible)
-    flightMatch = processedContent.match(/EK\s*(\d{3,5})/i)
-    if (flightMatch) {
-      flightNumber = `EK${flightMatch[1].padStart(4, '0')}`
-    } else {
-      // Pattern 3: Look for "FLIGHT" or "FLT" followed by EK and numbers
-      flightMatch = processedContent.match(/(?:FLIGHT|FLT)[\s:]*EK\s*(\d{4})/i)
-      if (flightMatch) {
-        flightNumber = `EK${flightMatch[1]}`
-      } else {
-        // Pattern 4: Just look for EK followed by any 4 digits anywhere
-        flightMatch = processedContent.match(/EK(\d{4})/i)
-        if (flightMatch) {
-          flightNumber = `EK${flightMatch[1]}`
-        }
+  // Helper function to try multiple patterns and log results
+  const tryPattern = (name: string, patterns: Array<{ pattern: RegExp; extract: (match: RegExpMatchArray) => string }>, contentToSearch: string = processedContent): string => {
+    for (const { pattern, extract } of patterns) {
+      const match = contentToSearch.match(pattern)
+      if (match) {
+        const result = extract(match)
+        console.log(`[RTFParser] ✅ ${name} found:`, result)
+        return result
       }
     }
+    console.warn(`[RTFParser] ⚠️ ${name} not found with any pattern`)
+    return ""
   }
   
-  // If still not found, try without preprocessing (maybe preprocessing removed important info)
+  // Try multiple patterns for flight number (RTF may have different formatting)
+  let flightNumber = tryPattern('Flight Number', [
+    { pattern: /EK\s*[-]?\s*(\d{4})/i, extract: (m) => `EK${m[1]}` },
+    { pattern: /EK\s*(\d{3,5})/i, extract: (m) => `EK${m[1].padStart(4, '0')}` },
+    { pattern: /(?:FLIGHT|FLT)[\s:]*EK\s*(\d{4})/i, extract: (m) => `EK${m[1]}` },
+    { pattern: /EK(\d{4})/i, extract: (m) => `EK${m[1]}` },
+  ])
+  
+  // If still not found, try original content
   if (!flightNumber) {
     console.warn('[RTFParser] Flight number not found after preprocessing, trying original content...')
-    // Try with original content (less processed)
     const originalContent = content.replace(/\r\n/g, "\n").replace(/\r/g, "\n")
+    flightNumber = tryPattern('Flight Number (original)', [
+      { pattern: /EK\s*[-]?\s*(\d{4})/i, extract: (m) => `EK${m[1]}` },
+      { pattern: /EK\s*(\d{3,5})/i, extract: (m) => `EK${m[1].padStart(4, '0')}` },
+      { pattern: /EK(\d{4})/i, extract: (m) => `EK${m[1]}` },
+    ], originalContent)
     
-    flightMatch = originalContent.match(/EK\s*[-]?\s*(\d{4})/i)
-    if (flightMatch) {
-      flightNumber = `EK${flightMatch[1]}`
-    } else {
-      flightMatch = originalContent.match(/EK\s*(\d{3,5})/i)
-      if (flightMatch) {
-        flightNumber = `EK${flightMatch[1].padStart(4, '0')}`
-      } else {
-        flightMatch = originalContent.match(/EK(\d{4})/i)
-        if (flightMatch) {
-          flightNumber = `EK${flightMatch[1]}`
-        }
-      }
-    }
-    
-    // If found in original, use original content for rest of parsing
     if (flightNumber) {
       processedContent = originalContent
       console.log('[RTFParser] Found flight number in original content, using original for parsing')
     }
   }
-  
-  // Debug logging if flight number still not found
-  if (!flightNumber) {
-    console.warn('[RTFParser] Could not find flight number. First 500 chars of processed content:', processedContent.substring(0, 500))
-    // Try to find any EK pattern for debugging
-    const debugMatch = processedContent.match(/EK[^\s]*/gi)
-    if (debugMatch) {
-      console.warn('[RTFParser] Found EK patterns:', debugMatch.slice(0, 5))
-    }
-    // Also check original content
-    const originalDebugMatch = content.match(/EK[^\s]*/gi)
-    if (originalDebugMatch) {
-      console.warn('[RTFParser] Found EK patterns in original:', originalDebugMatch.slice(0, 5))
-    }
-  }
 
   // Parse date - support multiple months
-  const dateMatch = processedContent.match(/(\d{1,2})\s*[-]?\s*(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)(?:\s*[-]?\s*(\d{4}))?/i)
-  const date = dateMatch ? dateMatch[0] : ""
+  const date = tryPattern('Date', [
+    { pattern: /(\d{1,2})\s*[-]?\s*(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)(?:\s*[-]?\s*(\d{4}))?/i, extract: (m) => m[0] },
+  ])
 
-  // Parse ACFT TYPE - more flexible for RTF (may have spaces or different formatting)
-  // Format: ACFT TYPE: 77WEP or ACFT TYPE: 388Y
-  // Pattern: ACFT TYPE: followed by value (can contain letters, numbers, may have spaces)
-  const acftTypeMatch = processedContent.match(/ACFT\s+TYPE:\s*([A-Z0-9]+(?:\s+[A-Z0-9]+)*)/i)
-  const aircraftType = acftTypeMatch ? acftTypeMatch[1].trim().replace(/\s+/g, "") : ""
+  // Parse ACFT TYPE - try multiple patterns
+  const aircraftType = tryPattern('ACFT TYPE', [
+    { pattern: /ACFT\s+TYPE:\s*([A-Z0-9]+(?:\s+[A-Z0-9]+)*)/i, extract: (m) => m[1].trim().replace(/\s+/g, "") },
+    { pattern: /ACFT\s+TYPE:\s*(\S+)/i, extract: (m) => m[1].trim() },
+    { pattern: /ACFT\s+TYPE[:\s]+([A-Z0-9]+)/i, extract: (m) => m[1].trim() },
+  ])
 
-  // Parse ACFT REG - more flexible for RTF
-  // Format: ACFT REG: A6-EBY or ACFT REG: A6-EVO
-  // Pattern: ACFT REG: followed by value (can contain letters, numbers, dashes)
-  const acftRegMatch = processedContent.match(/ACFT\s+REG:\s*([A-Z0-9-]+)/i)
-  const aircraftReg = acftRegMatch ? acftRegMatch[1].trim() : ""
+  // Parse ACFT REG - try multiple patterns
+  const aircraftReg = tryPattern('ACFT REG', [
+    { pattern: /ACFT\s+REG:\s*([A-Z0-9-]+)/i, extract: (m) => m[1].trim() },
+    { pattern: /ACFT\s+REG[:\s]+([A-Z0-9-]+)/i, extract: (m) => m[1].trim() },
+  ])
 
-  const stdMatch = processedContent.match(/STD:\s*(\d{2}:\d{2})/i)
-  const std = stdMatch ? stdMatch[1] : ""
+  // Parse STD
+  const std = tryPattern('STD', [
+    { pattern: /STD:\s*(\d{2}:\d{2})/i, extract: (m) => m[1] },
+    { pattern: /STD[:\s]+(\d{2}:\d{2})/i, extract: (m) => m[1] },
+  ])
 
-  const sectorMatch = processedContent.match(/SECTOR:\s*([A-Z]{6})/i)
-  const sector = sectorMatch ? sectorMatch[1] : ""
+  // Parse SECTOR
+  const sector = tryPattern('SECTOR', [
+    { pattern: /SECTOR:\s*([A-Z]{6})/i, extract: (m) => m[1] },
+    { pattern: /SECTOR[:\s]+([A-Z]{6})/i, extract: (m) => m[1] },
+  ])
 
-  const prepByMatch = processedContent.match(/PREPARED\s+BY:\s*(\S+)/i)
-  const preparedBy = prepByMatch ? prepByMatch[1] : ""
+  // Parse PREPARED BY
+  const preparedBy = tryPattern('PREPARED BY', [
+    { pattern: /PREPARED\s+BY:\s*(\S+)/i, extract: (m) => m[1] },
+    { pattern: /PREPARED\s+BY[:\s]+([A-Z0-9]+)/i, extract: (m) => m[1] },
+  ])
 
-  const prepOnMatch = processedContent.match(/PREPARED\s+ON:\s*([\d-]+\s+[\d:]+)/i)
-  const preparedOn = prepOnMatch ? prepOnMatch[1] : ""
+  // Parse PREPARED ON
+  const preparedOn = tryPattern('PREPARED ON', [
+    { pattern: /PREPARED\s+ON:\s*([\d-]+\s+[\d:]+)/i, extract: (m) => m[1] },
+    { pattern: /PREPARED\s+ON[:\s]+([\d-]+\s+[\d:]+)/i, extract: (m) => m[1] },
+  ])
 
-  // Parse PAX - format: PAX: DXB/AMM/2/35/293 or PAX: DXB/MXP
-  // Pattern: PAX: followed by route info (can contain /, letters, numbers, slashes)
-  const paxMatch = processedContent.match(/PAX:\s*([A-Z0-9\/\s]+?)(?:\s+STD|\s+PREPARED|$)/i)
-  const pax = paxMatch ? paxMatch[1].trim() : ""
+  // Parse PAX - try multiple patterns
+  const pax = tryPattern('PAX', [
+    { pattern: /PAX:\s*([A-Z0-9\/\s]+?)(?:\s+STD|\s+PREPARED|$)/i, extract: (m) => m[1].trim() },
+    { pattern: /PAX[:\s]+([A-Z0-9\/]+)/i, extract: (m) => m[1].trim() },
+  ])
 
-  // Parse TTL PLN ULD - more flexible pattern for RTF
-  // Format: TTL PLN ULD: 06PMC/07AKE or TTL PLN ULD: 6PMC/10AKE
-  // Pattern: TTL PLN ULD: followed by value (can contain /, letters, numbers, spaces)
-  // Stop at multiple spaces or next field (ULD VERSION or PREPARED ON)
-  const ttlPlnUldMatch = processedContent.match(/TTL\s+PLN\s+ULD:\s*([A-Z0-9\/\s]+?)(?:\s+ULD\s+VERSION|\s+PREPARED|$)/i)
-  const ttlPlnUld = ttlPlnUldMatch ? ttlPlnUldMatch[1].trim().replace(/\s+/g, "") : ""
+  // Parse TTL PLN ULD - try multiple patterns
+  const ttlPlnUld = tryPattern('TTL PLN ULD', [
+    { pattern: /TTL\s+PLN\s+ULD:\s*([A-Z0-9\/\s]+?)(?:\s+ULD\s+VERSION|\s+PREPARED|$)/i, extract: (m) => m[1].trim().replace(/\s+/g, "") },
+    { pattern: /TTL\s+PLN\s+ULD[:\s]+([A-Z0-9\/]+)/i, extract: (m) => m[1].trim() },
+    { pattern: /TTL\s+PLN\s+ULD:\s*([A-Z0-9\/]+)/i, extract: (m) => m[1].trim() },
+  ])
 
-  // Parse ULD VERSION - more flexible pattern for RTF
-  // Format: ULD VERSION: 06/26 or ULD VERSION: 6/26 or ULD VERSION: 05PMC/26
-  // Pattern: ULD VERSION: followed by value (can contain /, letters, numbers, spaces)
-  // Stop at multiple spaces or next field (PREPARED ON)
-  const uldVersionMatch = processedContent.match(/ULD\s+VERSION:\s*([A-Z0-9\/\s]+?)(?:\s+PREPARED|$)/i)
-  const uldVersion = uldVersionMatch ? uldVersionMatch[1].trim().replace(/\s+/g, "") : ""
+  // Parse ULD VERSION - try multiple patterns
+  const uldVersion = tryPattern('ULD VERSION', [
+    { pattern: /ULD\s+VERSION:\s*([A-Z0-9\/\s]+?)(?:\s+PREPARED|$)/i, extract: (m) => m[1].trim().replace(/\s+/g, "") },
+    { pattern: /ULD\s+VERSION[:\s]+([A-Z0-9\/]+)/i, extract: (m) => m[1].trim() },
+    { pattern: /ULD\s+VERSION:\s*([A-Z0-9\/]+)/i, extract: (m) => m[1].trim() },
+  ])
 
   // Parse header warning - same logic as regular parser
   let headerWarning = ""
@@ -233,7 +222,7 @@ export function parseRTFHeader(content: string): LoadPlanHeader {
   }
 
   // Log parsed header fields for debugging
-  console.log('[RTFParser] Parsed header fields:', {
+  const parsedHeader = {
     flightNumber,
     date,
     aircraftType,
@@ -247,7 +236,30 @@ export function parseRTFHeader(content: string): LoadPlanHeader {
     uldVersion,
     hasHeaderWarning: !!headerWarning,
     isCritical,
-  })
+  }
+  
+  console.log('[RTFParser] ========== Parsed Header Fields ==========')
+  console.log('[RTFParser] Flight Number:', parsedHeader.flightNumber || '❌ NOT FOUND')
+  console.log('[RTFParser] Date:', parsedHeader.date || '❌ NOT FOUND')
+  console.log('[RTFParser] ACFT TYPE:', parsedHeader.aircraftType || '❌ NOT FOUND')
+  console.log('[RTFParser] ACFT REG:', parsedHeader.aircraftReg || '❌ NOT FOUND')
+  console.log('[RTFParser] SECTOR:', parsedHeader.sector || '❌ NOT FOUND')
+  console.log('[RTFParser] STD:', parsedHeader.std || '❌ NOT FOUND')
+  console.log('[RTFParser] PREPARED BY:', parsedHeader.preparedBy || '❌ NOT FOUND')
+  console.log('[RTFParser] PREPARED ON:', parsedHeader.preparedOn || '❌ NOT FOUND')
+  console.log('[RTFParser] PAX:', parsedHeader.pax || '❌ NOT FOUND')
+  console.log('[RTFParser] TTL PLN ULD:', parsedHeader.ttlPlnUld || '❌ NOT FOUND')
+  console.log('[RTFParser] ULD VERSION:', parsedHeader.uldVersion || '❌ NOT FOUND')
+  console.log('[RTFParser] Header Warning:', parsedHeader.hasHeaderWarning ? '✅ Found' : '❌ Not found')
+  console.log('[RTFParser] Is Critical:', parsedHeader.isCritical ? '✅ Yes' : '❌ No')
+  console.log('[RTFParser] ==========================================')
+  
+  // If critical fields are missing, log sample content for debugging
+  if (!parsedHeader.aircraftType || !parsedHeader.ttlPlnUld || !parsedHeader.uldVersion) {
+    console.warn('[RTFParser] ⚠️ Some critical header fields are missing. Sample content around header:')
+    const headerSection = processedContent.split('\n').slice(0, 10).join('\n')
+    console.warn('[RTFParser] First 10 lines:', headerSection)
+  }
 
   return { 
     flightNumber, 
