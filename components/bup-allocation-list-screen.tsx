@@ -521,7 +521,13 @@ export default function BUPAllocationListScreen({ onNavigate }: BUPAllocationLis
           <select
             id="shift-filter"
             value={shiftFilter}
-            onChange={(e) => setShiftFilter(e.target.value as ShiftType)}
+            onChange={(e) => {
+              const newShift = e.target.value as ShiftType
+              setShiftFilter(newShift)
+              // Reset period and wave filters when shift changes
+              setPeriodFilter("all")
+              setWaveFilter("all")
+            }}
             className="px-2 py-1.5 text-xs border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-[#D71A21] focus:border-transparent"
           >
             <option value="current">Current (Latest)</option>
@@ -529,7 +535,7 @@ export default function BUPAllocationListScreen({ onNavigate }: BUPAllocationLis
             <option value="day">Day Shift</option>
           </select>
 
-          {/* Period Filter - Compact */}
+          {/* Period Filter - Compact (conditional based on shift) */}
           <select
             id="period-filter"
             value={periodFilter}
@@ -541,10 +547,27 @@ export default function BUPAllocationListScreen({ onNavigate }: BUPAllocationLis
             }}
             className="px-2 py-1.5 text-xs border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-[#D71A21] focus:border-transparent"
           >
-            <option value="all">All Periods</option>
-            <option value="early-morning">Early Morning (00:01-05:59)</option>
-            <option value="late-morning">Late Morning (06:00-12:59)</option>
-            <option value="afternoon">Afternoon (13:00-23:59)</option>
+            {shiftFilter === "current" && (
+              <>
+                <option value="all">All Periods</option>
+                <option value="early-morning">Early Morning (00:01-05:59)</option>
+                <option value="late-morning">Late Morning (06:00-12:59)</option>
+                <option value="afternoon">Afternoon (13:00-23:59)</option>
+              </>
+            )}
+            {shiftFilter === "night" && (
+              <>
+                <option value="all">All Periods</option>
+                <option value="early-morning">Early Morning (00:01-05:59)</option>
+                <option value="late-morning">Late Morning (06:00-12:59)</option>
+              </>
+            )}
+            {shiftFilter === "day" && (
+              <>
+                <option value="all">All Periods</option>
+                <option value="afternoon">Afternoon (13:00-23:59)</option>
+              </>
+            )}
           </select>
 
           {/* Wave Filter - Compact (conditional) */}
