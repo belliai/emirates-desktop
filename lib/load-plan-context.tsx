@@ -1,6 +1,8 @@
 "use client"
 
 import { createContext, useContext, useState, ReactNode } from "react"
+import { useNotifications } from "./notification-context"
+import { getSupervisors, findStaffByName } from "./buildup-staff"
 
 export type LoadPlan = {
   flight: string
@@ -132,10 +134,14 @@ export function LoadPlanProvider({ children }: { children: ReactNode }) {
   const [flightAssignments, setFlightAssignments] = useState<FlightAssignment[]>([])
   const [sentBCRs, setSentBCRs] = useState<SentBCR[]>([])
   const [bupAllocations, setBupAllocations] = useState<BUPAllocation[]>([])
+  const { addNotification } = useNotifications()
 
-  const addLoadPlan = (plan: LoadPlan) => {
+  const addLoadPlan = async (plan: LoadPlan) => {
+    let isUpdate = false
+    
     setLoadPlans((prev) => {
       const exists = prev.some((p) => p.flight === plan.flight)
+      isUpdate = exists
       if (exists) {
         return prev.map((p) => (p.flight === plan.flight ? plan : p))
       }
@@ -159,10 +165,34 @@ export function LoadPlanProvider({ children }: { children: ReactNode }) {
       }
       return prev
     })
+
+    // Notify supervisors when load plan is updated
+    if (isUpdate) {
+      try {
+        const supervisors = await getSupervisors()
+        // Create notification for all supervisors (staffNo undefined means all supervisors)
+        addNotification({
+          type: "load_plan_updated",
+          flight: plan.flight,
+          title: "Load Plan Updated",
+          message: `Load plan for flight ${plan.flight} has been updated.`,
+        })
+      } catch (error) {
+        console.error("[LoadPlan] Error notifying supervisors:", error)
+      }
+    }
   }
 
-  const updateFlightAssignment = (flight: string, name: string) => {
+  const updateFlightAssignment = async (flight: string, name: string) => {
+    let previousAssignment: FlightAssignment | undefined
+    let wasAssigned = false
+    let isNewAssignment = false
+
     setFlightAssignments((prev) => {
+      previousAssignment = prev.find((fa) => fa.flight === flight)
+      wasAssigned = previousAssignment?.name !== undefined && previousAssignment.name !== ""
+      isNewAssignment = name !== undefined && name !== "" && (!wasAssigned || previousAssignment?.name !== name)
+      
       const exists = prev.some((fa) => fa.flight === flight)
       if (exists) {
         return prev.map((fa) => (fa.flight === flight ? { ...fa, name } : fa))
@@ -193,6 +223,25 @@ export function LoadPlanProvider({ children }: { children: ReactNode }) {
         },
       ]
     })
+
+    // Notify staff member when load plan is assigned to them
+    if (isNewAssignment && name) {
+      try {
+        const staff = await findStaffByName(name)
+        if (staff && staff.staff_no) {
+          const plan = loadPlans.find((p) => p.flight === flight)
+          addNotification({
+            type: "load_plan_assigned",
+            flight: flight,
+            staffNo: staff.staff_no,
+            title: "Load Plan Assigned",
+            message: `You have been assigned to flight ${flight}${plan ? ` (STD: ${plan.std})` : ""}.`,
+          })
+        }
+      } catch (error) {
+        console.error("[LoadPlan] Error notifying staff:", error)
+      }
+    }
   }
 
   const updateFlightAssignmentSector = (flight: string, sector: string) => {

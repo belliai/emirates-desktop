@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useMemo } from "react"
+import React, { useState, useEffect, useMemo } from "react"
 import { Plane, Clock, MapPin, Users, FileText, Check, ChevronsUpDown } from "lucide-react"
 import { useLoadPlans } from "@/lib/load-plan-context"
 import { Button } from "@/components/ui/button"
@@ -10,6 +10,9 @@ import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { cn } from "@/lib/utils"
 import { getSupervisors, getOperators, parseStaffName, parseStaffDisplayName, type BuildupStaff } from "@/lib/buildup-staff"
+import { NotificationBadge } from "./notification-badge"
+import { useNotifications } from "@/lib/notification-context"
+import { useToast } from "@/hooks/use-toast"
 
 type FlightAssignment = {
   flight: string
@@ -26,18 +29,22 @@ function extractFlightNumber(flight: string): number {
 }
 
 // Get region category based on flight number ranges
+// 1-199 → EU/UK
 // 200-299 → US
-// 300-399 → FE/Australia/WAX (Far East)
+// 300-499 → FE/AUS (Far East/Australia)
 // 500-699 → ISUB (Indian Subcontinent)
 // 700-799 → Africa
-// 800-999 → M/East (Middle East)
+// 800+ → M/East (Middle East)
 function getFlightRegion(flight: string): { category: string; color: string } {
   const flightNum = extractFlightNumber(flight)
   
+  if (flightNum >= 1 && flightNum <= 199) {
+    return { category: "EU/UK", color: "bg-blue-200" }
+  }
   if (flightNum >= 200 && flightNum <= 299) {
     return { category: "US", color: "bg-pink-200" }
   }
-  if (flightNum >= 300 && flightNum <= 399) {
+  if (flightNum >= 300 && flightNum <= 499) {
     return { category: "FE/AUS", color: "bg-cyan-200" }
   }
   if (flightNum >= 500 && flightNum <= 699) {
@@ -46,12 +53,9 @@ function getFlightRegion(flight: string): { category: string; color: string } {
   if (flightNum >= 700 && flightNum <= 799) {
     return { category: "Africa", color: "bg-green-200" }
   }
-  if (flightNum >= 800 && flightNum <= 999) {
-    return { category: "M/East", color: "bg-yellow-200" }
-  }
   
-  // Default for other flight numbers (000-199, 400-499)
-  return { category: "Other", color: "bg-orange-200" }
+  // 800+ defaults to M/East
+  return { category: "M/East", color: "bg-yellow-200" }
 }
 
 // Color coding based on flight number - only for origin destination cell
@@ -68,14 +72,21 @@ const getDestinationCategory = (flight: string): { category: string; color: stri
   return getFlightRegion(flight)
 }
 
-export default function FlightAssignmentScreen() {
+interface FlightAssignmentScreenProps {
+  initialSupervisor?: string
+}
+
+export default function FlightAssignmentScreen({ initialSupervisor }: FlightAssignmentScreenProps = {}) {
   const { loadPlans, flightAssignments: contextAssignments, bupAllocations, updateFlightAssignment, updateFlightAssignmentSector } = useLoadPlans()
   const [isLoading, setIsLoading] = useState(true)
   const [supervisors, setSupervisors] = useState<BuildupStaff[]>([])
   const [operators, setOperators] = useState<BuildupStaff[]>([])
-  const [selectedSupervisorId, setSelectedSupervisorId] = useState<string>("")
+  const [selectedSupervisorId, setSelectedSupervisorId] = useState<string>(initialSupervisor || "")
   const [supervisorDropdownOpen, setSupervisorDropdownOpen] = useState(false)
   const [supervisorSearch, setSupervisorSearch] = useState("")
+  const { getNotificationsForStaff } = useNotifications()
+  const { toast } = useToast()
+  const shownNotificationIdsRef = React.useRef<Set<string>>(new Set())
 
   // Create a set of flight numbers that have actual uploaded load plans
   const loadPlanFlights = useMemo(() => {
@@ -196,9 +207,31 @@ export default function FlightAssignmentScreen() {
         setSupervisors(supervisorsData)
         setOperators(operatorsData)
         
-        // Set default supervisor if available
-        if (supervisorsData.length > 0 && !selectedSupervisorId) {
-          setSelectedSupervisorId(supervisorsData[0].staff_no.toString())
+        // Set supervisor: use initialSupervisor if provided, otherwise prefer "roosevelt", then first available
+        if (supervisorsData.length > 0) {
+          if (initialSupervisor) {
+            // Check if initialSupervisor is a valid staff_no
+            const supervisorByStaffNo = supervisorsData.find(sup => sup.staff_no.toString() === initialSupervisor)
+            if (supervisorByStaffNo) {
+              setSelectedSupervisorId(initialSupervisor)
+            } else {
+              // Fallback to default if initialSupervisor not found
+              const rooseveltSupervisor = supervisorsData.find(sup => {
+                const parsed = parseStaffName(sup.name)
+                return parsed.displayName.toLowerCase() === "roosevelt"
+              })
+              const defaultSupervisor = rooseveltSupervisor || supervisorsData[0]
+              setSelectedSupervisorId(defaultSupervisor.staff_no.toString())
+            }
+          } else {
+            // No initialSupervisor provided, use default
+            const rooseveltSupervisor = supervisorsData.find(sup => {
+              const parsed = parseStaffName(sup.name)
+              return parsed.displayName.toLowerCase() === "roosevelt"
+            })
+            const defaultSupervisor = rooseveltSupervisor || supervisorsData[0]
+            setSelectedSupervisorId(defaultSupervisor.staff_no.toString())
+          }
         }
       } catch (error) {
         console.error("[FlightAssignment] Error fetching staff data:", error)
@@ -208,7 +241,34 @@ export default function FlightAssignmentScreen() {
     }
     
     fetchStaffData()
-  }, [])
+  }, [initialSupervisor])
+  
+  // Update selectedSupervisorId if initialSupervisor prop changes
+  useEffect(() => {
+    if (initialSupervisor) {
+      setSelectedSupervisorId(initialSupervisor)
+    }
+  }, [initialSupervisor])
+
+  // Show notifications when screen opens or supervisor selection changes
+  useEffect(() => {
+    if (selectedSupervisorId) {
+      const notifications = getNotificationsForStaff(selectedSupervisorId)
+      const unreadNotifications = notifications.filter(
+        (notif) => !notif.read && !shownNotificationIdsRef.current.has(notif.id)
+      )
+
+      // Show unread notifications as toasts
+      unreadNotifications.forEach((notif) => {
+        toast({
+          title: notif.title,
+          description: notif.message,
+          duration: 5000,
+        })
+        shownNotificationIdsRef.current.add(notif.id)
+      })
+    }
+  }, [selectedSupervisorId, getNotificationsForStaff, toast])
 
   // Get operator name options for the name dropdown
   const operatorOptions = useMemo(() => {
@@ -279,7 +339,9 @@ export default function FlightAssignmentScreen() {
         {/* Header with Searchable Supervisor Dropdown */}
         <div className="flex justify-between items-center mb-4 px-2">
           <h2 className="text-lg font-semibold text-gray-900">Flight Assignment</h2>
-          <Popover 
+          <div className="flex items-center gap-3">
+            {selectedSupervisorId && <NotificationBadge staffNo={selectedSupervisorId} />}
+            <Popover 
             open={supervisorDropdownOpen} 
             onOpenChange={(open) => {
               setSupervisorDropdownOpen(open)
@@ -350,6 +412,7 @@ export default function FlightAssignmentScreen() {
               </Command>
             </PopoverContent>
           </Popover>
+          </div>
         </div>
 
         {/* Pending Summary by Location */}

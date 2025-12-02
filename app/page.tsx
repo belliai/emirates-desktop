@@ -27,9 +27,14 @@ import IncomingWorkloadScreen from "@/components/incoming-workload-screen"
 import QRTListScreen from "@/components/qrt-list-screen"
 import BCRScreen from "@/components/bcr-screen"
 import SideNavigation from "@/components/side-navigation"
+import SettingsSidebar from "@/components/settings-sidebar"
+import SettingsBuildupStaffList from "@/components/settings-buildup-staff-list"
+import SettingsScreening from "@/components/settings-screening"
 import { FlightProvider, useFlights } from "@/lib/flight-context"
 import { LoadPlanProvider } from "@/lib/load-plan-context"
+import { NotificationProvider } from "@/lib/notification-context"
 import type { ULD } from "@/lib/flight-data"
+import { findStaffByStaffNo } from "@/lib/buildup-staff"
 
 function AppContent() {
   const [isLoggedIn, setIsLoggedIn] = useState(false)
@@ -61,9 +66,13 @@ function AppContent() {
     | "incoming-workload"
     | "qrt-list"
     | "bcr"
+    | "settings-buildup-staff"
+    | "settings-screening"
   >("desktop")
+  const [isSettingsMode, setIsSettingsMode] = useState(false)
   const [selectedULD, setSelectedULD] = useState<(ULD & { flightNumber: string; uldIndex: number }) | null>(null)
   const [buildupStaffParams, setBuildupStaffParams] = useState<{ staff?: string } | null>(null)
+  const [flightAssignmentParams, setFlightAssignmentParams] = useState<{ supervisor?: string } | null>(null)
   const { updateULDStatus, addMultipleStatusUpdates } = useFlights()
 
   const handleULDSelect = (uld: ULD, flightNumber: string, uldIndex: number) => {
@@ -87,9 +96,60 @@ function AppContent() {
     setCurrentScreen(screen as any)
     if (screen === "buildup-staff" && params?.staff) {
       setBuildupStaffParams({ staff: params.staff })
+      setFlightAssignmentParams(null)
+    } else if (screen === "flight-assignment" && params?.supervisor) {
+      setFlightAssignmentParams({ supervisor: params.supervisor })
+      setBuildupStaffParams(null)
     } else {
       setBuildupStaffParams(null)
+      setFlightAssignmentParams(null)
     }
+  }
+
+  const handleSettingsClick = () => {
+    setIsSettingsMode(true)
+    setCurrentScreen("settings-buildup-staff")
+  }
+
+  const handleBackToDashboard = () => {
+    setIsSettingsMode(false)
+    setCurrentScreen("desktop")
+  }
+
+  const handleSettingsNavigate = (screen: string) => {
+    setCurrentScreen(screen as any)
+  }
+
+  const handleLogin = async (staffId?: string) => {
+    setIsLoggedIn(true)
+    
+    // If staff ID provided, look up staff and route accordingly
+    if (staffId) {
+      try {
+        const staff = await findStaffByStaffNo(staffId)
+        if (staff) {
+          if (staff.job_code === "COA") {
+            // Route to buildup-staff screen for this staff member
+            setBuildupStaffParams({ staff: staff.staff_no.toString() })
+            setFlightAssignmentParams(null)
+            setCurrentScreen("buildup-staff")
+            return
+          } else if (staff.job_code === "CHS") {
+            // Route to flight-assignment screen for this supervisor
+            setFlightAssignmentParams({ supervisor: staff.staff_no.toString() })
+            setBuildupStaffParams(null)
+            setCurrentScreen("flight-assignment")
+            return
+          }
+        }
+      } catch (error) {
+        console.error("[App] Error looking up staff:", error)
+        // Fall through to default desktop view
+      }
+    }
+    
+    // Default: go to desktop (master view)
+    setCurrentScreen("desktop")
   }
 
   const renderScreen = () => {
@@ -153,11 +213,15 @@ function AppContent() {
       case "custom-reports":
         return <CustomReportsScreen />
       case "flight-assignment":
-        return <FlightAssignmentScreen />
+        return <FlightAssignmentScreen initialSupervisor={flightAssignmentParams?.supervisor} />
       case "shift-summary-report":
         return <ShiftSummaryReportScreen />
       case "bcr":
         return <BCRScreen />
+      case "settings-buildup-staff":
+        return <SettingsBuildupStaffList />
+      case "settings-screening":
+        return <SettingsScreening />
       case "staff":
         return <PerformanceScreen />
       case "uld-management":
@@ -179,10 +243,22 @@ function AppContent() {
   return (
     <div className="min-h-screen bg-white">
       {!isLoggedIn ? (
-        <LoginScreen onLogin={() => setIsLoggedIn(true)} />
+        <LoginScreen onLogin={handleLogin} />
       ) : (
         <div className="flex h-screen overflow-hidden">
-          <SideNavigation currentScreen={currentScreen} onNavigate={handleNavigate} />
+          {isSettingsMode ? (
+            <SettingsSidebar 
+              currentScreen={currentScreen} 
+              onNavigate={handleSettingsNavigate} 
+              onBackToDashboard={handleBackToDashboard}
+            />
+          ) : (
+            <SideNavigation 
+              currentScreen={currentScreen} 
+              onNavigate={handleNavigate} 
+              onSettingsClick={handleSettingsClick}
+            />
+          )}
           <div className="flex-1 overflow-y-auto">{renderScreen()}</div>
         </div>
       )}
@@ -192,10 +268,12 @@ function AppContent() {
 
 export default function Page() {
   return (
-    <FlightProvider>
-      <LoadPlanProvider>
-        <AppContent />
-      </LoadPlanProvider>
-    </FlightProvider>
+    <NotificationProvider>
+      <FlightProvider>
+        <LoadPlanProvider>
+          <AppContent />
+        </LoadPlanProvider>
+      </FlightProvider>
+    </NotificationProvider>
   )
 }

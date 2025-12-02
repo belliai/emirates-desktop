@@ -11,6 +11,9 @@ import { Button } from "@/components/ui/button"
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { cn } from "@/lib/utils"
+import { NotificationBadge } from "./notification-badge"
+import { useNotifications } from "@/lib/notification-context"
+import { useToast } from "@/hooks/use-toast"
 
 interface BuildupStaffScreenProps {
   initialStaff?: string
@@ -25,6 +28,9 @@ export default function BuildupStaffScreen({ initialStaff, onNavigate }: Buildup
   const [isLoading, setIsLoading] = useState(true)
   const [staffDropdownOpen, setStaffDropdownOpen] = useState(false)
   const [staffSearch, setStaffSearch] = useState("")
+  const { getNotificationsForStaff } = useNotifications()
+  const { toast } = useToast()
+  const shownNotificationIdsRef = React.useRef<Set<string>>(new Set())
   
   // Fetch operators from Supabase on mount
   useEffect(() => {
@@ -33,9 +39,14 @@ export default function BuildupStaffScreen({ initialStaff, onNavigate }: Buildup
         const operatorsData = await getOperators()
         setOperators(operatorsData)
         
-        // Set default operator if available and none selected
+        // Set default operator if available and none selected - prefer "harley"
         if (operatorsData.length > 0 && !selectedStaffId) {
-          setSelectedStaffId(operatorsData[0].staff_no.toString())
+          const harleyOperator = operatorsData.find(op => {
+            const parsed = parseStaffName(op.name)
+            return parsed.displayName.toLowerCase() === "harley"
+          })
+          const defaultOperator = harleyOperator || operatorsData[0]
+          setSelectedStaffId(defaultOperator.staff_no.toString())
         }
       } catch (error) {
         console.error("[BuildupStaffScreen] Error fetching operators:", error)
@@ -53,6 +64,26 @@ export default function BuildupStaffScreen({ initialStaff, onNavigate }: Buildup
       setSelectedStaffId(initialStaff)
     }
   }, [initialStaff])
+
+  // Show notifications when screen opens or staff selection changes
+  useEffect(() => {
+    if (selectedStaffId) {
+      const notifications = getNotificationsForStaff(selectedStaffId)
+      const unreadNotifications = notifications.filter(
+        (notif) => !notif.read && !shownNotificationIdsRef.current.has(notif.id)
+      )
+
+      // Show unread notifications as toasts
+      unreadNotifications.forEach((notif) => {
+        toast({
+          title: notif.title,
+          description: notif.message,
+          duration: 5000,
+        })
+        shownNotificationIdsRef.current.add(notif.id)
+      })
+    }
+  }, [selectedStaffId, getNotificationsForStaff, toast])
 
   // Parse all operators into options with display names
   const operatorOptions = useMemo(() => {
@@ -148,6 +179,7 @@ export default function BuildupStaffScreen({ initialStaff, onNavigate }: Buildup
         <div className="flex justify-between items-center mb-4 px-2">
           <h2 className="text-lg font-semibold text-gray-900">Build-up Staff</h2>
           <div className="flex items-center gap-3">
+            {selectedStaffId && <NotificationBadge staffNo={selectedStaffId} />}
             <Popover 
               open={staffDropdownOpen} 
               onOpenChange={(open) => {

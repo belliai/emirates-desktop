@@ -9,6 +9,7 @@ import Image from "next/image"
 interface SideNavigationProps {
   currentScreen: string
   onNavigate: (screen: string) => void
+  onSettingsClick?: () => void
 }
 
 interface NavItem {
@@ -25,7 +26,7 @@ interface NavSection {
   defaultOpen?: boolean
 }
 
-export default function SideNavigation({ currentScreen, onNavigate }: SideNavigationProps) {
+export default function SideNavigation({ currentScreen, onNavigate, onSettingsClick }: SideNavigationProps) {
   const [isCollapsed, setIsCollapsed] = useState(false)
   const [expandedSections, setExpandedSections] = useState<Set<string>>(
     new Set(["data-tables", "operations", "reports"]), // All sections open by default
@@ -169,6 +170,7 @@ export default function SideNavigation({ currentScreen, onNavigate }: SideNaviga
 
       <div className="border-t border-gray-200 py-2">
         <button
+          onClick={onSettingsClick}
           className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 hover:text-[#D71A21] transition-colors"
           title={isCollapsed ? "Settings" : undefined}
         >

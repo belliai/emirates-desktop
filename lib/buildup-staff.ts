@@ -32,7 +32,7 @@ export type ParsedStaffName = {
 
 /**
  * Parse the name from "FIRSTNAME, LASTNAME" format (as it appears in the cell)
- * Example: "JOHN KIMANI, MUCHIRI" -> firstName="John Kimani", lastName="Muchiri"
+ * Example: "JOHN KIMANI, MUCHIRI" -> firstName="John", lastName="Kimani Muchiri"
  * Example: "ROOSEVELT, DSOUZA" -> firstName="Roosevelt", lastName="Dsouza"
  */
 export function parseStaffName(rawName: string | null): ParsedStaffName {
@@ -41,13 +41,21 @@ export function parseStaffName(rawName: string | null): ParsedStaffName {
   }
   
   // Split by comma - format is "FIRSTNAME, LASTNAME"
-  // firstName = everything before comma (first to appear in cell)
-  // lastName = everything after comma
+  // firstName = first word before comma
+  // lastName = everything after comma + remaining words before comma
   const parts = rawName.split(",").map(p => p.trim())
   
   if (parts.length >= 2) {
-    const firstNameRaw = parts[0] // Everything before comma (first to appear)
-    const lastNameRaw = parts[1] // Everything after comma
+    const beforeComma = parts[0] // Everything before comma
+    const afterComma = parts[1] // Everything after comma
+    
+    // Split before comma into words - first word is firstName, rest goes to lastName
+    const beforeCommaWords = beforeComma.split(/\s+/).filter(w => w.length > 0)
+    const firstNameRaw = beforeCommaWords[0] || ""
+    const remainingBeforeComma = beforeCommaWords.slice(1).join(" ")
+    
+    // Combine remaining words before comma with after comma for lastName
+    const lastNameRaw = [remainingBeforeComma, afterComma].filter(s => s.length > 0).join(" ")
     
     // Capitalize properly (first letter uppercase, rest lowercase for each word)
     const capitalize = (str: string) => 
@@ -62,13 +70,36 @@ export function parseStaffName(rawName: string | null): ParsedStaffName {
     return {
       firstName,
       lastName,
-      displayName: firstName, // Short display is just firstName (the part before comma)
+      displayName: firstName, // Short display is just the first word
       fullName,
       searchName: fullName.toLowerCase()
     }
   }
   
-  // If no comma, treat whole thing as first name
+  // If no comma, treat first word as first name, rest as last name
+  const words = rawName.split(/\s+/).filter(w => w.length > 0)
+  if (words.length > 0) {
+    const firstNameRaw = words[0]
+    const lastNameRaw = words.slice(1).join(" ")
+    const capitalize = (str: string) => 
+      str.split(" ").map(word => 
+        word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
+      ).join(" ")
+    
+    const firstName = capitalize(firstNameRaw)
+    const lastName = capitalize(lastNameRaw)
+    const fullName = `${firstName} ${lastName}`.trim()
+    
+    return {
+      firstName,
+      lastName,
+      displayName: firstName,
+      fullName,
+      searchName: fullName.toLowerCase()
+    }
+  }
+  
+  // Fallback: treat whole thing as first name
   const name = rawName.charAt(0).toUpperCase() + rawName.slice(1).toLowerCase()
   return {
     firstName: name,
@@ -304,6 +335,40 @@ export async function findStaffByName(searchName: string): Promise<BuildupStaff 
     return staff[0] as BuildupStaff
   } catch (error) {
     console.error("[BuildupStaff] Error finding staff by name:", error)
+    return null
+  }
+}
+
+/**
+ * Find staff by staff_no
+ * Used for authentication/login
+ */
+export async function findStaffByStaffNo(staffNo: number | string): Promise<BuildupStaff | null> {
+  try {
+    if (!isSupabaseConfigured()) {
+      return null
+    }
+
+    const supabase = createClient()
+    const staffNoNum = typeof staffNo === "string" ? parseInt(staffNo, 10) : staffNo
+
+    if (isNaN(staffNoNum)) {
+      return null
+    }
+
+    const { data: staff, error } = await supabase
+      .from("buildup_staff_list")
+      .select("*")
+      .eq("staff_no", staffNoNum)
+      .limit(1)
+
+    if (error || !staff || staff.length === 0) {
+      return null
+    }
+
+    return staff[0] as BuildupStaff
+  } catch (error) {
+    console.error("[BuildupStaff] Error finding staff by staff_no:", error)
     return null
   }
 }

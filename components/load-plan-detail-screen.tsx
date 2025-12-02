@@ -824,11 +824,7 @@ function CombinedTable({
                 <th className="px-2 py-2 text-left font-semibold">BS</th>
                 <th className="px-2 py-2 text-left font-semibold">PI</th>
                 {isQRTList && (
-                  <>
-                    <th className="px-2 py-2 text-left font-semibold">Bay Number</th>
-                    <th className="px-2 py-2 text-left font-semibold">Conn. Time</th>
-                    <th className="px-2 py-2 text-left font-semibold">ULD Number</th>
-                  </>
+                  <th className="px-2 py-2 text-left font-semibold bg-yellow-50">ULD Number</th>
                 )}
                 <th className="px-2 py-2 text-left font-semibold">FLTIN</th>
                 <th className="px-2 py-2 text-left font-semibold">ARRDT.TIME</th>
@@ -842,7 +838,7 @@ function CombinedTable({
               {/* Special Instructions - Note: Remarks update needs setEditedPlan, keeping simple for now */}
               {editedPlan.remarks && editedPlan.remarks.length > 0 && (
                 <tr>
-                  <td colSpan={enableBulkCheckboxes ? (isQRTList ? 24 : 21) : (isQRTList ? 23 : 20)} className="px-2 py-2 bg-gray-100 border-b border-gray-200">
+                  <td colSpan={enableBulkCheckboxes ? (isQRTList ? 22 : 21) : (isQRTList ? 21 : 20)} className="px-2 py-2 bg-gray-100 border-b border-gray-200">
                     <div className="space-y-1">
                       {editedPlan.remarks.map((remark, index) => (
                         <EditableField
@@ -873,7 +869,7 @@ function CombinedTable({
                     {/* Sector Header - show if sector name exists (even if only one sector) */}
                     {hasSectorName && (
                       <tr className="bg-blue-50 border-t-2 border-blue-200">
-                        <td colSpan={enableBulkCheckboxes ? (isQRTList ? 24 : 21) : (isQRTList ? 23 : 20)} className="px-2 py-2 font-bold text-blue-900 text-center">
+                        <td colSpan={enableBulkCheckboxes ? (isQRTList ? 22 : 21) : (isQRTList ? 21 : 20)} className="px-2 py-2 font-bold text-blue-900 text-center">
                           SECTOR: {sectorName}
                         </td>
                       </tr>
@@ -958,7 +954,7 @@ function CombinedTable({
                     {group.rampTransfer.length > 0 && (
                       <>
                         <tr className="bg-gray-50">
-                          <td colSpan={enableBulkCheckboxes ? (isQRTList ? 24 : 21) : (isQRTList ? 23 : 20)} className="px-2 py-1 font-semibold text-gray-900 text-center">
+                          <td colSpan={enableBulkCheckboxes ? (isQRTList ? 22 : 21) : (isQRTList ? 21 : 20)} className="px-2 py-1 font-semibold text-gray-900 text-center">
                             ***** RAMP TRANSFER *****
                           </td>
                         </tr>
@@ -1177,7 +1173,7 @@ function AWBRow({
   
   const remainingPieces = getRemainingPieces()
 
-  const awbFields: Array<{ key: keyof AWBRow; className?: string }> = [
+  const awbFields: Array<{ key: keyof AWBRow; className?: string; isEditable?: boolean }> = [
     { key: "ser" },
     { key: "awbNo", className: "font-medium" },
     { key: "orgDes" },
@@ -1193,9 +1189,7 @@ function AWBRow({
     { key: "bs" },
     { key: "pi" },
     ...(isQRTList ? [
-      { key: "bayNumber" as keyof AWBRow },
-      { key: "connTime" as keyof AWBRow },
-      { key: "uldNumber" as keyof AWBRow },
+      { key: "uldNumber" as keyof AWBRow, isEditable: true },
     ] : []),
     { key: "fltin" },
     { key: "arrdtTime" },
@@ -1282,35 +1276,54 @@ function AWBRow({
         })}
         
         {/* Right section - AWB Assignment (after SHC) */}
-        {rightFields.map(({ key, className }) => {
+        {rightFields.map(({ key, className, isEditable }) => {
           // Remove whitespace from AWB number (though it shouldn't be in right section)
           const displayValue = key === "awbNo" 
             ? (awb[key] || "").replace(/\s+/g, "")
             : (awb[key] || "")
           
+          // ULD Number field in QRT mode is always editable and visually distinct
+          const isUldNumberField = key === "uldNumber" && isEditable
+          
           return (
             <td
               key={key}
-              className={`px-2 py-1 ${isReadOnly && enableBulkCheckboxes ? "cursor-pointer" : ""} ${hoveredSection === "right" && isReadOnly && enableBulkCheckboxes ? "bg-gray-50" : ""}`}
-              onMouseEnter={() => isReadOnly && enableBulkCheckboxes && setHoveredSection("right")}
+              className={`px-2 py-1 ${isUldNumberField ? "bg-yellow-50" : ""} ${isReadOnly && enableBulkCheckboxes && !isUldNumberField ? "cursor-pointer" : ""} ${hoveredSection === "right" && isReadOnly && enableBulkCheckboxes && !isUldNumberField ? "bg-gray-50" : ""}`}
+              onMouseEnter={() => isReadOnly && enableBulkCheckboxes && !isUldNumberField && setHoveredSection("right")}
               onMouseLeave={() => setHoveredSection(null)}
               onClick={(e) => {
+                // Don't trigger row click for ULD Number field
+                if (isUldNumberField) {
+                  e.stopPropagation()
+                  return
+                }
                 if (isReadOnly && enableBulkCheckboxes && onRowClick) {
                   e.stopPropagation()
                   onRowClick()
                 }
               }}
             >
-              <EditableField
-                value={displayValue}
-                onChange={(value) => {
-                  // Remove whitespace when updating AWB number
-                  const cleanedValue = key === "awbNo" ? value.replace(/\s+/g, "") : value
-                  onUpdateField(key, cleanedValue)
-                }}
-                className={`text-xs ${className || ""}`}
-                readOnly={isReadOnly}
-              />
+              {isUldNumberField ? (
+                <input
+                  type="text"
+                  value={displayValue}
+                  onChange={(e) => onUpdateField(key, e.target.value)}
+                  placeholder="Enter ULD#"
+                  className="w-full px-1.5 py-0.5 text-xs border border-yellow-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-yellow-500 focus:border-yellow-500"
+                  onClick={(e) => e.stopPropagation()}
+                />
+              ) : (
+                <EditableField
+                  value={displayValue}
+                  onChange={(value) => {
+                    // Remove whitespace when updating AWB number
+                    const cleanedValue = key === "awbNo" ? value.replace(/\s+/g, "") : value
+                    onUpdateField(key, cleanedValue)
+                  }}
+                  className={`text-xs ${className || ""}`}
+                  readOnly={isReadOnly}
+                />
+              )}
             </td>
           )
         })}
@@ -1345,7 +1358,7 @@ function AWBRow({
       </tr>
       {awb.remarks && (
         <tr>
-          <td colSpan={isQRTList ? 23 : 20} className="px-2 py-1 text-xs text-gray-700 italic">
+          <td colSpan={isQRTList ? 21 : 20} className="px-2 py-1 text-xs text-gray-700 italic">
             <EditableField
               value={awb.remarks}
               onChange={(value) => onUpdateField("remarks", value)}
@@ -1376,7 +1389,7 @@ function AWBRow({
             <td className="px-2 py-1 text-xs text-gray-700 font-semibold">{group.pieces || "-"}</td>
             <td className="px-2 py-1 text-xs text-gray-500">{groupUld || "-"}</td>
             <td className="px-2 py-1 text-xs text-gray-600 font-mono">{group.no || "-"}</td>
-            <td colSpan={isQRTList ? 17 : 14} className="px-2 py-1"></td>
+            <td colSpan={isQRTList ? 15 : 14} className="px-2 py-1"></td>
           </tr>
         )
       })}
@@ -1447,7 +1460,7 @@ function ULDRow({ uld, uldEntries, isReadOnly, enableBulkCheckboxes, sectionKeys
           />
         </td>
       )}
-      <td colSpan={enableBulkCheckboxes ? (isQRTList ? 22 : 19) : (isQRTList ? 21 : 20)} className="px-2 py-1 font-semibold text-gray-900 text-center relative">
+      <td colSpan={enableBulkCheckboxes ? (isQRTList ? 20 : 19) : (isQRTList ? 21 : 20)} className="px-2 py-1 font-semibold text-gray-900 text-center relative">
         <div className="flex items-center justify-center gap-4">
           {displayNumbers && (
             <div className="group relative flex-shrink-0">
