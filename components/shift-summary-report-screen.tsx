@@ -1,12 +1,31 @@
 "use client"
 
-import React, { useState, useMemo } from "react"
+import React, { useState, useMemo, useRef } from "react"
 import { EditableField } from "./editable-field"
 import { ExcelCell } from "./excel-cell"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
-import { Copy, FileText } from "lucide-react"
+import { Copy, FileText, Plus, Search, Clock, X, Settings2, ArrowUpDown, SlidersHorizontal } from "lucide-react"
 import UWSDelayReportModal from "./uws-delay-report-modal"
+
+// Filter types
+type WorkArea = "GCR" | "PIL and PER"
+type Shift = "All" | "9am to 9pm" | "9pm to 9am"
+type Module = "All" | "PAX & PF build-up EUR (1st floor, E)" | "PAX & PF build-up AFR (1st floor, F)" | "PAX & PF build-up ME, SubCon, Asia (1st floor, G)" | "Build-up AUS (1st floor, H)" | "US Screening Flights (1st floor, I)" | "Freighter & PAX Breakdown & build-up (Ground floor, F)" | "IND/PAK Build-up (Ground floor, G)" | "PER (Ground floor, H)" | "PIL (Ground floor, I)"
+
+const SHIFTS: Shift[] = ["All", "9am to 9pm", "9pm to 9am"]
+const MODULES: Module[] = [
+  "All",
+  "PAX & PF build-up EUR (1st floor, E)",
+  "PAX & PF build-up AFR (1st floor, F)",
+  "PAX & PF build-up ME, SubCon, Asia (1st floor, G)",
+  "Build-up AUS (1st floor, H)",
+  "US Screening Flights (1st floor, I)",
+  "Freighter & PAX Breakdown & build-up (Ground floor, F)",
+  "IND/PAK Build-up (Ground floor, G)",
+  "PER (Ground floor, H)",
+  "PIL (Ground floor, I)",
+]
 
 // Types
 type ULDBreakdown = {
@@ -122,6 +141,96 @@ type SanityData = {
   varAdnlPercent: number
 }
 
+// PIL/PER Types
+type PerStaffPerformance = {
+  staffNo: string
+  staffName: string
+  ekOutsource: string
+  totalHrs: number
+  akeDpe: number
+  alfDqf: number
+  ldPmcAmf: number
+  mdQ6Q7: number
+  actualThruUnit: string // Text field like "CTO SCREENING"
+  actualTopUpUnit: string // Text field like "CTO SCREENING"
+  bulkKg: number
+  totalActualBuiltUnits: number
+  efficiency: string // Can be "#DIV/0!" or number
+}
+
+type PerStaffBreakdown = {
+  staffNo: string
+  staffName: string
+  ekOutsource: string
+  totalHrs: number
+  akeDpe: number
+  alfDqf: number
+  ldPmcAmf: number
+  mdQ6Q7: number
+  bulkTrolleys: number
+  totalUnitsBuilt: number
+}
+
+type PerBuildUpData = {
+  akeDpe: number | string
+  alfDqf: number
+  ldPmcAmf: number
+  mdQ6Q7: number
+}
+
+type PerBuiltBreakdownComparison = {
+  builtUnits: PerBuildUpData
+  thruUnits: PerBuildUpData
+  advanceUnitsBuiltNextShift: PerBuildUpData
+  advanceThruUnitsNextShift: PerBuildUpData
+  totalBuiltUnits: PerBuildUpData
+}
+
+type PerBulkDetails = {
+  numberTrollies: number
+  weightKg: number
+}
+
+type PerDeliveryArea = {
+  area: string
+  dsCount: number
+  totalWeight: number
+}
+
+type PerAcceptanceArea = {
+  area: string
+  count: number
+  weight: number
+}
+
+type PerTransitScreening = {
+  totalShipments: number
+  pcs: number
+  weight: number
+}
+
+type PerSpecialCargo = {
+  type: string
+  count: number
+  weight: number
+}
+
+type PerResourcesData = {
+  staffCount: number
+  hrs: number
+}
+
+type PerOtherInformation = {
+  shiftChallenges: string
+  capa: string
+  incidentAccident: string
+  systemIssues: string
+  trcCases: string
+  pendingToAction: string
+  otherRemarks: string
+  attachments: string
+}
+
 export default function ShiftSummaryReportScreen() {
   const [shiftType, setShiftType] = useState<"Night" | "Day">("Night")
   const [date, setDate] = useState("25 NOV 2025")
@@ -135,6 +244,20 @@ export default function ShiftSummaryReportScreen() {
   
   // UWS Delay Report state
   const [showUWSDelayReport, setShowUWSDelayReport] = useState(false)
+
+  // Filter state
+  const [selectedWorkArea, setSelectedWorkArea] = useState<WorkArea>("GCR")
+  const [selectedShift, setSelectedShift] = useState<Shift>("All" as Shift)
+  const [selectedModule, setSelectedModule] = useState<Module>("All")
+  const [customTimeRange, setCustomTimeRange] = useState<{ start: string; end: string } | null>(null)
+  const [showTimeRangePicker, setShowTimeRangePicker] = useState(false)
+  const [showAddFilterDropdown, setShowAddFilterDropdown] = useState(false)
+  const [showViewOptions, setShowViewOptions] = useState(false)
+  
+  // Refs for closing dropdowns on outside click
+  const timeRangePickerRef = useRef<HTMLDivElement>(null)
+  const addFilterRef = useRef<HTMLDivElement>(null)
+  const viewOptionsRef = useRef<HTMLDivElement>(null)
 
   // Shift & Staff Details state
   const [positionals, setPositionals] = useState<StaffDetail[]>([
@@ -331,6 +454,130 @@ export default function ShiftSummaryReportScreen() {
     reportTotal: 992,
     varAdnl: 222,
     varAdnlPercent: 29,
+  })
+
+  // PIL/PER State
+  const [perStaffPerformance, setPerStaffPerformance] = useState<PerStaffPerformance[]>([
+    { staffNo: "", staffName: "RYAN", ekOutsource: "EK", totalHrs: 12, akeDpe: 29, alfDqf: 3, ldPmcAmf: 0, mdQ6Q7: 0, actualThruUnit: "0", actualTopUpUnit: "CTO SCREENING", bulkKg: 0, totalActualBuiltUnits: 32, efficiency: "2.7" },
+    { staffNo: "385926", staffName: "ROCHELLE", ekOutsource: "EK", totalHrs: 12, akeDpe: 0, alfDqf: 0, ldPmcAmf: 0, mdQ6Q7: 0, actualThruUnit: "0", actualTopUpUnit: "EKP IMPORT COORDINATOR", bulkKg: 0, totalActualBuiltUnits: 0, efficiency: "0.0" },
+    { staffNo: "", staffName: "ERWIN", ekOutsource: "EK", totalHrs: 12, akeDpe: 0, alfDqf: 0, ldPmcAmf: 0, mdQ6Q7: 0, actualThruUnit: "0", actualTopUpUnit: "EKP EXP COORDINATOR", bulkKg: 0, totalActualBuiltUnits: 0, efficiency: "0.0" },
+    { staffNo: "", staffName: "ANEESH", ekOutsource: "EK", totalHrs: 0, akeDpe: 0, alfDqf: 0, ldPmcAmf: 0, mdQ6Q7: 0, actualThruUnit: "0", actualTopUpUnit: "EKP EXP SUPPORT", bulkKg: 0, totalActualBuiltUnits: 0, efficiency: "#DIV/0!" },
+    { staffNo: "487019", staffName: "TOMMY", ekOutsource: "EK", totalHrs: 12, akeDpe: 0, alfDqf: 0, ldPmcAmf: 0, mdQ6Q7: 0, actualThruUnit: "0", actualTopUpUnit: "GDP EXP/IMP COORDINATOR", bulkKg: 0, totalActualBuiltUnits: 0, efficiency: "0.0" },
+    { staffNo: "399920", staffName: "GEORGE", ekOutsource: "EK", totalHrs: 12, akeDpe: 0, alfDqf: 0, ldPmcAmf: 0, mdQ6Q7: 0, actualThruUnit: "0", actualTopUpUnit: "AVI / HUM/4-Eye", bulkKg: 0, totalActualBuiltUnits: 0, efficiency: "0.0" },
+    { staffNo: "242605", staffName: "JASON", ekOutsource: "EK", totalHrs: 12, akeDpe: 0, alfDqf: 0, ldPmcAmf: 1, mdQ6Q7: 3, actualThruUnit: "0", actualTopUpUnit: "US SCREENING/4-EYE", bulkKg: 0, totalActualBuiltUnits: 1, efficiency: "0.1" },
+    { staffNo: "", staffName: "ANGELITO", ekOutsource: "EK", totalHrs: 12, akeDpe: 0, alfDqf: 0, ldPmcAmf: 0, mdQ6Q7: 0, actualThruUnit: "0", actualTopUpUnit: "GDP FRIEGHTER - 4eye", bulkKg: 0, totalActualBuiltUnits: 0, efficiency: "0.0" },
+    { staffNo: "SC03800", staffName: "BILAL", ekOutsource: "TG", totalHrs: 12, akeDpe: 0, alfDqf: 0, ldPmcAmf: 0, mdQ6Q7: 0, actualThruUnit: "0", actualTopUpUnit: "TOP UP", bulkKg: 0, totalActualBuiltUnits: 0, efficiency: "0.0" },
+    { staffNo: "963286", staffName: "SAMED", ekOutsource: "TG", totalHrs: 12, akeDpe: 0, alfDqf: 0, ldPmcAmf: 0, mdQ6Q7: 0, actualThruUnit: "0", actualTopUpUnit: "EKP BUILD UP", bulkKg: 0, totalActualBuiltUnits: 0, efficiency: "0.0" },
+    { staffNo: "SC03401", staffName: "ASWIN", ekOutsource: "TG", totalHrs: 12, akeDpe: 0, alfDqf: 0, ldPmcAmf: 0, mdQ6Q7: 0, actualThruUnit: "0", actualTopUpUnit: "EKP BUILD UP", bulkKg: 0, totalActualBuiltUnits: 0, efficiency: "0.0" },
+    { staffNo: "", staffName: "MUHAMADI", ekOutsource: "WO", totalHrs: 12, akeDpe: 0, alfDqf: 0, ldPmcAmf: 0, mdQ6Q7: 0, actualThruUnit: "0", actualTopUpUnit: "EKP BUILD UP", bulkKg: 0, totalActualBuiltUnits: 0, efficiency: "0.0" },
+    { staffNo: "", staffName: "ROMEO", ekOutsource: "TG", totalHrs: 11, akeDpe: 0, alfDqf: 0, ldPmcAmf: 0, mdQ6Q7: 0, actualThruUnit: "0", actualTopUpUnit: "EKP BUILD UP", bulkKg: 0, totalActualBuiltUnits: 0, efficiency: "" },
+    { staffNo: "959073", staffName: "ASANATE", ekOutsource: "DO", totalHrs: 12, akeDpe: 0, alfDqf: 0, ldPmcAmf: 0, mdQ6Q7: 0, actualThruUnit: "0", actualTopUpUnit: "CTO DLVY", bulkKg: 0, totalActualBuiltUnits: 0, efficiency: "" },
+    { staffNo: "SC0923", staffName: "SAI", ekOutsource: "WO", totalHrs: 12, akeDpe: 0, alfDqf: 0, ldPmcAmf: 0, mdQ6Q7: 0, actualThruUnit: "0", actualTopUpUnit: "CTO DLVY", bulkKg: 0, totalActualBuiltUnits: 0, efficiency: "" },
+    { staffNo: "SC53154", staffName: "ASAF", ekOutsource: "DO", totalHrs: 12, akeDpe: 0, alfDqf: 0, ldPmcAmf: 0, mdQ6Q7: 0, actualThruUnit: "0", actualTopUpUnit: "CTO DLVY", bulkKg: 0, totalActualBuiltUnits: 0, efficiency: "" },
+    { staffNo: "969586", staffName: "FAROUK", ekOutsource: "TG", totalHrs: 12, akeDpe: 1, alfDqf: 4, ldPmcAmf: 8, mdQ6Q7: 3, actualThruUnit: "0", actualTopUpUnit: "GDP BUILD UP", bulkKg: 0, totalActualBuiltUnits: 13, efficiency: "1.1" },
+    { staffNo: "974542", staffName: "PRASANATH", ekOutsource: "TG", totalHrs: 12, akeDpe: 5, alfDqf: 2, ldPmcAmf: 1, mdQ6Q7: 0, actualThruUnit: "0", actualTopUpUnit: "GDP BUILD UP", bulkKg: 20, totalActualBuiltUnits: 8, efficiency: "0.7" },
+    { staffNo: "979472", staffName: "INAMM", ekOutsource: "TG", totalHrs: 12, akeDpe: 7, alfDqf: 0, ldPmcAmf: 2, mdQ6Q7: 0, actualThruUnit: "0", actualTopUpUnit: "GDP BULK LOADING", bulkKg: 12, totalActualBuiltUnits: 2, efficiency: "0.2" },
+    { staffNo: "955441", staffName: "ARTHUR", ekOutsource: "TG", totalHrs: 12, akeDpe: 6, alfDqf: 2, ldPmcAmf: 4, mdQ6Q7: 0, actualThruUnit: "0", actualTopUpUnit: "GDP BUILD UP", bulkKg: 0, totalActualBuiltUnits: 12, efficiency: "1.0" },
+    { staffNo: "SC14876", staffName: "NAJIR", ekOutsource: "WO", totalHrs: 12, akeDpe: 3, alfDqf: 2, ldPmcAmf: 1, mdQ6Q7: 3, actualThruUnit: "0", actualTopUpUnit: "", bulkKg: 0, totalActualBuiltUnits: 6, efficiency: "0.5" },
+  ])
+
+  const [perStaffBreakdown, setPerStaffBreakdown] = useState<PerStaffBreakdown[]>([
+    { staffNo: "SC00437", staffName: "MANISH", ekOutsource: "DO", totalHrs: 12, akeDpe: 0, alfDqf: 0, ldPmcAmf: 0, mdQ6Q7: 0, bulkTrolleys: 0, totalUnitsBuilt: 0 },
+    { staffNo: "980790", staffName: "HASIM", ekOutsource: "TG", totalHrs: 12, akeDpe: 3, alfDqf: 3, ldPmcAmf: 10, mdQ6Q7: 0, bulkTrolleys: 0, totalUnitsBuilt: 16 },
+  ])
+
+  const [perBuildUpData, setPerBuildUpData] = useState<PerBuiltBreakdownComparison>({
+    builtUnits: { akeDpe: 8, alfDqf: 2, ldPmcAmf: 10, mdQ6Q7: 0 },
+    thruUnits: { akeDpe: 1, alfDqf: 0, ldPmcAmf: 0, mdQ6Q7: 0 },
+    advanceUnitsBuiltNextShift: { akeDpe: 10, alfDqf: 11, ldPmcAmf: 20, mdQ6Q7: 0 },
+    advanceThruUnitsNextShift: { akeDpe: 8, alfDqf: 2, ldPmcAmf: 3, mdQ6Q7: 0 },
+    totalBuiltUnits: { akeDpe: 27, alfDqf: 15, ldPmcAmf: 33, mdQ6Q7: 0 },
+  })
+
+  // Helper to calculate numeric value from akeDpe (handles "7 + 12 BULK" format)
+  const getAkeDpeNumeric = (value: number | string): number => {
+    if (typeof value === 'number') return value
+    const match = value.toString().match(/^(\d+)/)
+    return match ? parseInt(match[1], 10) : 0
+  }
+
+  const [perBreakdownData, setPerBreakdownData] = useState<PerBuiltBreakdownComparison>({
+    builtUnits: { akeDpe: 7, alfDqf: 9, ldPmcAmf: 38, mdQ6Q7: 0 },
+    thruUnits: { akeDpe: 42, alfDqf: 8, ldPmcAmf: 32, mdQ6Q7: 0 },
+    advanceUnitsBuiltNextShift: { akeDpe: 0, alfDqf: 0, ldPmcAmf: 0, mdQ6Q7: 0 },
+    advanceThruUnitsNextShift: { akeDpe: 0, alfDqf: 0, ldPmcAmf: 0, mdQ6Q7: 0 },
+    totalBuiltUnits: { akeDpe: 49, alfDqf: 17, ldPmcAmf: 70, mdQ6Q7: 0 },
+  })
+
+  const [perBulkUpDetails, setPerBulkUpDetails] = useState<PerBulkDetails>({ numberTrollies: 2, weightKg: 17 })
+  const [perBulkDownDetails, setPerBulkDownDetails] = useState<PerBulkDetails>({ numberTrollies: 17, weightKg: 785 })
+
+  const [perDeliveryAreas, setPerDeliveryAreas] = useState<PerDeliveryArea[]>([
+    { area: "CMT", dsCount: 68, totalWeight: 100712 },
+    { area: "CTO", dsCount: 0, totalWeight: 0 },
+    { area: "I Module", dsCount: 52, totalWeight: 9508 },
+  ])
+
+  const [perAcceptanceAreas, setPerAcceptanceAreas] = useState<PerAcceptanceArea[]>([
+    { area: "CMT", count: 23, weight: 14832 },
+    { area: "I Module", count: 6, weight: 2135 },
+  ])
+
+  const [perTransitScreening, setPerTransitScreening] = useState<PerTransitScreening[]>([
+    { totalShipments: 7, pcs: 1676, weight: 1676 },
+    { totalShipments: 1, pcs: 10, weight: 10 },
+    { totalShipments: 14, pcs: 143, weight: 143 },
+  ])
+
+  const [perSpecialCargo, setPerSpecialCargo] = useState<PerSpecialCargo[]>([
+    { type: "AXD", count: 0, weight: 0 },
+    { type: "AXC", count: 2, weight: 740 },
+    { type: "AVI", count: 10, weight: 32 },
+    { type: "HUM", count: 1, weight: 150 },
+  ])
+
+  const [perResourcesCMT, setPerResourcesCMT] = useState({
+    shiftStrength: { staffCount: 6, hrs: 12 },
+    mobileShift: { staffCount: 1, hrs: 12 },
+    dulsco: { staffCount: 2, hrs: 12 },
+    transguard: { staffCount: 7, hrs: 12 },
+    overtime: { staffCount: 1, hrs: 11 },
+    operators: { staffCount: 10, hrs: 12 },
+    drivers: { staffCount: 37, hrs: 12 },
+    loaders: { staffCount: 33, hrs: 12 },
+  })
+
+  const [perResourcesCTO, setPerResourcesCTO] = useState({
+    shiftStrength: { staffCount: 0, hrs: 0 },
+    mobileShift: { staffCount: 0, hrs: 0 },
+    dulsco: { staffCount: 0, hrs: 0 },
+    transguard: { staffCount: 0, hrs: 0 },
+    overtime: { staffCount: 0, hrs: 0 },
+    operators: { staffCount: 0, hrs: 0 },
+    drivers: { staffCount: 0, hrs: 0 },
+    loaders: { staffCount: 0, hrs: 0 },
+  })
+
+  const [perResourcesIModule, setPerResourcesIModule] = useState({
+    shiftStrength: { staffCount: 2, hrs: 12 },
+    mobileShift: { staffCount: 0, hrs: 0 },
+    dulsco: { staffCount: 0, hrs: 0 },
+    transguard: { staffCount: 6, hrs: 12 },
+    overtime: { staffCount: 2, hrs: 10 },
+    operators: { staffCount: 7, hrs: 12 },
+    drivers: { staffCount: 3, hrs: 12 },
+    loaders: { staffCount: 14, hrs: 12 },
+  })
+
+  const [perOtherInfo, setPerOtherInfo] = useState<PerOtherInformation>({
+    shiftChallenges: "NIL",
+    capa: "NIL",
+    incidentAccident: "NIL",
+    systemIssues: "NIL",
+    trcCases: "NIL",
+    pendingToAction: "NIL",
+    otherRemarks: "HOUSE KEEPING WELL MAINTAINED",
+    attachments: "",
   })
 
   // Planned ULDs - Editable inputs (from Plan vs Advance)
@@ -631,6 +878,37 @@ TOTAL\t${totalPending.pmcAmf}\t${totalPending.alfPla}\t${totalPending.akeRke}\t$
     setShowUWSDelayReport(true)
   }
 
+  // Generate hourly time options (00:00 to 23:00)
+  const timeOptions = useMemo(() => {
+    const options: string[] = []
+    for (let hour = 0; hour < 24; hour++) {
+      options.push(`${hour.toString().padStart(2, '0')}:00`)
+    }
+    return options
+  }, [])
+
+  // Close dropdowns when clicking outside
+  React.useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (timeRangePickerRef.current && !timeRangePickerRef.current.contains(event.target as Node)) {
+        setShowTimeRangePicker(false)
+      }
+      if (addFilterRef.current && !addFilterRef.current.contains(event.target as Node)) {
+        setShowAddFilterDropdown(false)
+      }
+      if (viewOptionsRef.current && !viewOptionsRef.current.contains(event.target as Node)) {
+        setShowViewOptions(false)
+      }
+    }
+
+    if (showTimeRangePicker || showAddFilterDropdown || showViewOptions) {
+      document.addEventListener('mousedown', handleClickOutside)
+      return () => {
+        document.removeEventListener('mousedown', handleClickOutside)
+      }
+    }
+  }, [showTimeRangePicker, showAddFilterDropdown, showViewOptions])
+
   return (
     <>
       {/* UWS Delay Report Modal */}
@@ -687,7 +965,232 @@ TOTAL\t${totalPending.pmcAmf}\t${totalPending.alfPla}\t${totalPending.akeRke}\t$
           </div>
         </div>
 
-        {/* Tab-based Content Area */}
+        {/* Filters */}
+        <div className="flex items-center gap-2 mb-4 px-2 flex-wrap">
+          {/* Default View Dropdown */}
+          <div className="flex items-center">
+            <select
+              className="px-2 py-1.5 text-xs border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-[#D71A21] focus:border-transparent"
+            >
+              <option value="default">≡ Default</option>
+              <option value="custom">Custom View</option>
+            </select>
+          </div>
+
+          {/* Add Filter Dropdown */}
+          <div className="relative" ref={addFilterRef}>
+            <button
+              type="button"
+              onClick={() => setShowAddFilterDropdown(!showAddFilterDropdown)}
+              className="flex items-center gap-1 px-2 py-1.5 text-xs border border-gray-300 rounded-md bg-white hover:border-gray-400 transition-colors"
+            >
+              <Plus className="w-3 h-3" />
+              <span>Add Filter</span>
+            </button>
+            
+            {showAddFilterDropdown && (
+              <div className="absolute top-full left-0 mt-1 z-50 bg-white border border-gray-200 rounded-lg shadow-lg w-48">
+                <div className="p-2">
+                  <div className="relative mb-2">
+                    <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 w-3 h-3 text-gray-400" />
+                    <input
+                      type="text"
+                      placeholder="Search column..."
+                      className="w-full pl-7 pr-2 py-1.5 text-xs border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-[#D71A21]"
+                    />
+                  </div>
+                  <div className="space-y-0.5">
+                    {["Departure Date", "Destination", "Flight Number", "Origin", "Tail Number"].map((col) => (
+                      <button
+                        key={col}
+                        className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-gray-700 hover:bg-gray-50 rounded transition-colors text-left"
+                        onClick={() => setShowAddFilterDropdown(false)}
+                      >
+                        <span className="text-gray-400">≡</span>
+                        {col}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Search */}
+          <div className="relative">
+            <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 w-3 h-3 text-gray-400" />
+            <input
+              type="text"
+              placeholder="Search..."
+              className="pl-7 pr-2 py-1.5 text-xs border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-[#D71A21] focus:border-transparent w-32"
+            />
+          </div>
+
+          <div className="w-px h-6 bg-gray-200" />
+
+          {/* Work Area Filter - Functional */}
+          <select
+            id="work-area-filter"
+            value={selectedWorkArea}
+            onChange={(e) => setSelectedWorkArea(e.target.value as WorkArea)}
+            className="px-2 py-1.5 text-xs border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-[#D71A21] focus:border-transparent"
+          >
+            <option value="GCR">Work Area: GCR</option>
+            <option value="PIL and PER">Work Area: PIL/PER</option>
+          </select>
+
+          {/* Shift Filter - Dummy */}
+          <select
+            id="shift-filter"
+            value={selectedShift}
+            onChange={(e) => {
+              setSelectedShift(e.target.value as Shift)
+              if (e.target.value !== "All") setCustomTimeRange(null)
+            }}
+            className="px-2 py-1.5 text-xs border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-[#D71A21] focus:border-transparent"
+          >
+            {SHIFTS.map(shiftOption => (
+              <option key={shiftOption} value={shiftOption}>
+                Shift: {shiftOption}
+              </option>
+            ))}
+          </select>
+
+          {/* Time Range - Dummy */}
+          <div className="relative" ref={timeRangePickerRef}>
+            <button
+              type="button"
+              onClick={() => setShowTimeRangePicker(!showTimeRangePicker)}
+              className={`flex items-center gap-1 px-2 py-1.5 text-xs border rounded-md bg-white transition-colors ${
+                customTimeRange ? "border-[#D71A21] text-[#D71A21]" : "border-gray-300 text-gray-700 hover:border-gray-400"
+              }`}
+            >
+              <Clock className="w-3 h-3" />
+              <span>{customTimeRange ? `${customTimeRange.start}-${customTimeRange.end}` : "Time"}</span>
+              {customTimeRange && (
+                <X className="w-3 h-3" onClick={(e) => { e.stopPropagation(); setCustomTimeRange(null) }} />
+              )}
+            </button>
+            
+            {showTimeRangePicker && (
+              <div className="absolute top-full left-0 mt-1 z-50 bg-white border border-gray-200 rounded-lg shadow-lg p-3 w-56">
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-xs font-semibold text-gray-900">Time Range</h3>
+                  <button onClick={() => setShowTimeRangePicker(false)} className="text-gray-400 hover:text-gray-600">
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+                <div className="flex items-center gap-2 mb-2">
+                  <select
+                    value={customTimeRange?.start || "00:00"}
+                    onChange={(e) => setCustomTimeRange(prev => ({ start: e.target.value, end: prev?.end || e.target.value }))}
+                    className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded"
+                  >
+                    {timeOptions.map(time => <option key={time} value={time}>{time}</option>)}
+                  </select>
+                  <span className="text-xs text-gray-400">to</span>
+                  <select
+                    value={customTimeRange?.end || "23:00"}
+                    onChange={(e) => setCustomTimeRange(prev => ({ start: prev?.start || "00:00", end: e.target.value }))}
+                    className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded"
+                  >
+                    {timeOptions.map(time => <option key={time} value={time}>{time}</option>)}
+                  </select>
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={() => { setCustomTimeRange(null); setShowTimeRangePicker(false) }} className="flex-1 px-2 py-1 text-xs border rounded">Clear</button>
+                  <button onClick={() => setShowTimeRangePicker(false)} className="flex-1 px-2 py-1 text-xs bg-[#D71A21] text-white rounded">Apply</button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Module Filter - Dummy */}
+          <select
+            id="module-filter"
+            value={selectedModule}
+            onChange={(e) => setSelectedModule(e.target.value as Module)}
+            className="px-2 py-1.5 text-xs border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-[#D71A21] focus:border-transparent max-w-40 truncate"
+          >
+            {MODULES.map(module => (
+              <option key={module} value={module}>
+                {module === "All" ? "Module: All" : module.length > 30 ? module.slice(0, 30) + "..." : module}
+              </option>
+            ))}
+          </select>
+
+          <div className="flex-1" />
+
+          {/* View Options Panel - Dummy */}
+          <div className="relative" ref={viewOptionsRef}>
+            <button
+              type="button"
+              onClick={() => setShowViewOptions(!showViewOptions)}
+              className="flex items-center gap-1 px-2 py-1.5 text-xs border border-gray-300 rounded-md bg-white hover:border-gray-400 transition-colors"
+            >
+              <SlidersHorizontal className="w-3 h-3" />
+            </button>
+            
+            {showViewOptions && (
+              <div className="absolute top-full right-0 mt-1 z-50 bg-white border border-gray-200 rounded-lg shadow-lg w-64">
+                <div className="p-3">
+                  <h3 className="text-sm font-semibold text-gray-900 mb-3">View Options</h3>
+                  
+                  {/* Show Items */}
+                  <div className="mb-3">
+                    <div className="flex items-center gap-1.5 text-xs text-gray-600 mb-1.5">
+                      <span>Show Items</span>
+                    </div>
+                    <select className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded">
+                      <option>Show All Items</option>
+                      <option>Show Active Only</option>
+                      <option>Show Inactive Only</option>
+                    </select>
+                  </div>
+                  
+                  {/* Ordering */}
+                  <div className="mb-3">
+                    <div className="flex items-center gap-1.5 text-xs text-gray-600 mb-1.5">
+                      <ArrowUpDown className="w-3 h-3" />
+                      <span>Ordering</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <select className="flex-1 px-2 py-1.5 text-xs border border-gray-200 rounded">
+                        <option>Date</option>
+                        <option>Name</option>
+                        <option>Status</option>
+                      </select>
+                      <button className="p-1.5 border border-gray-200 rounded hover:bg-gray-50">
+                        <ArrowUpDown className="w-3 h-3 text-gray-500" />
+                      </button>
+                    </div>
+                  </div>
+                  
+                  {/* Display Fields */}
+                  <div>
+                    <div className="flex items-center gap-1.5 text-xs text-gray-600 mb-1.5">
+                      <Settings2 className="w-3 h-3" />
+                      <span>Display Fields</span>
+                    </div>
+                    <div className="flex flex-wrap gap-1">
+                      {["Date", "Shift", "Supervisor", "Status", "ULD Count"].map((field) => (
+                        <span
+                          key={field}
+                          className="px-1.5 py-0.5 text-[10px] bg-[#D71A21]/10 text-[#D71A21] border border-[#D71A21]/20 rounded cursor-pointer hover:bg-[#D71A21]/20 transition-colors"
+                        >
+                          {field}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* GCR View - Tab-based Content Area */}
+        {selectedWorkArea === "GCR" && (
         <div>
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
             {/* Tabs positioned at top */}
@@ -2354,6 +2857,1265 @@ TOTAL\t${totalPending.pmcAmf}\t${totalPending.alfPla}\t${totalPending.akeRke}\t$
             </TabsContent>
           </Tabs>
         </div>
+        )}
+
+        {/* PIL/PER View */}
+        {selectedWorkArea === "PIL and PER" && (
+        <div className="space-y-6">
+          {/* Header Info */}
+          <div className="bg-white border border-gray-200 rounded-lg p-4">
+            <div className="text-sm text-gray-600 mb-3">
+              Supervisor Shift Report-Perishable // {date} // SHIFT : {shift} // {dutyHours}HRS
+            </div>
+            <div className="flex gap-4 mb-4">
+              <div>
+                <label className="text-xs font-medium text-gray-700">Checked by Supervisor</label>
+                <EditableField
+                  value={supervisor}
+                  onChange={setSupervisor}
+                  className="text-sm font-medium"
+                  placeholder="Name"
+                />
+                <EditableField
+                  value={supervisorID}
+                  onChange={setSupervisorID}
+                  className="text-sm text-gray-500"
+                  placeholder="Staff ID"
+                />
+              </div>
+            </div>
+
+            {/* Staff Performance Section */}
+            <div className="mb-4">
+              <div className="text-sm font-medium text-gray-700 mb-2 bg-orange-100 px-2 py-1">Staff Performance</div>
+              <div className="overflow-x-auto max-h-96 overflow-y-auto">
+                <table className="w-full text-xs border border-gray-300">
+                  <thead className="sticky top-0 bg-gray-50">
+                    <tr>
+                      <th className="px-2 py-1.5 text-left border border-gray-300">Staff no:-</th>
+                      <th className="px-2 py-1.5 text-left border border-gray-300">Staff Name</th>
+                      <th className="px-2 py-1.5 text-left border border-gray-300">EK/Outsource</th>
+                      <th className="px-2 py-1.5 text-center border border-gray-300">Total(HRS)</th>
+                      <th className="px-2 py-1.5 text-center border border-gray-300">AKE / DPE<br/>(B/UP)</th>
+                      <th className="px-2 py-1.5 text-center border border-gray-300">ALF / DQF<br/>(B/UP)</th>
+                      <th className="px-2 py-1.5 text-center border border-gray-300">LD-PMC/AMF<br/>(B/UP)</th>
+                      <th className="px-2 py-1.5 text-center border border-gray-300">MD-Q6/Q7<br/>(B/UP)</th>
+                      <th className="px-2 py-1.5 text-center border border-gray-300">Actual THRU Unit</th>
+                      <th className="px-2 py-1.5 text-center border border-gray-300">BULK<br/>(B/UP)</th>
+                      <th className="px-2 py-1.5 text-center border border-gray-300">Actual Top up<br/>unit(KER)</th>
+                      <th className="px-2 py-1.5 text-center border border-gray-300">Total Actual<br/>B/up Units</th>
+                      <th className="px-2 py-1.5 text-center border border-gray-300">Efficiency<br/>Actual Build up<br/>units /HR</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {perStaffPerformance.map((staff, idx) => {
+                      // Calculate total from numeric values only
+                      const akeDpeNum = typeof staff.akeDpe === 'number' ? staff.akeDpe : 0
+                      const totalBuilt = akeDpeNum + staff.alfDqf + staff.ldPmcAmf + staff.mdQ6Q7
+                      return (
+                        <tr key={idx} className={idx % 2 === 0 ? "bg-white" : "bg-gray-50"}>
+                          <td className="px-2 py-1 border border-gray-300">
+                            <EditableField
+                              value={staff.staffNo}
+                              onChange={(v) => {
+                                const updated = [...perStaffPerformance]
+                                updated[idx].staffNo = v
+                                setPerStaffPerformance(updated)
+                              }}
+                              className="text-xs"
+                            />
+                          </td>
+                          <td className="px-2 py-1 border border-gray-300">
+                            <EditableField
+                              value={staff.staffName}
+                              onChange={(v) => {
+                                const updated = [...perStaffPerformance]
+                                updated[idx].staffName = v
+                                setPerStaffPerformance(updated)
+                              }}
+                              className="text-xs"
+                            />
+                          </td>
+                          <td className="px-2 py-1 border border-gray-300">
+                            <EditableField
+                              value={staff.ekOutsource}
+                              onChange={(v) => {
+                                const updated = [...perStaffPerformance]
+                                updated[idx].ekOutsource = v
+                                setPerStaffPerformance(updated)
+                              }}
+                              className="text-xs"
+                            />
+                          </td>
+                          <td className="px-1 py-1 border border-gray-300 text-center">
+                            <ExcelCell
+                              value={staff.totalHrs}
+                              onChange={(v) => {
+                                const updated = [...perStaffPerformance]
+                                updated[idx].totalHrs = v
+                                setPerStaffPerformance(updated)
+                              }}
+                            />
+                          </td>
+                          <td className="px-1 py-1 border border-gray-300 text-center">
+                            <ExcelCell
+                              value={staff.akeDpe}
+                              onChange={(v) => {
+                                const updated = [...perStaffPerformance]
+                                updated[idx].akeDpe = v
+                                setPerStaffPerformance(updated)
+                              }}
+                            />
+                          </td>
+                          <td className="px-1 py-1 border border-gray-300 text-center">
+                            <ExcelCell
+                              value={staff.alfDqf}
+                              onChange={(v) => {
+                                const updated = [...perStaffPerformance]
+                                updated[idx].alfDqf = v
+                                setPerStaffPerformance(updated)
+                              }}
+                            />
+                          </td>
+                          <td className="px-1 py-1 border border-gray-300 text-center">
+                            <ExcelCell
+                              value={staff.ldPmcAmf}
+                              onChange={(v) => {
+                                const updated = [...perStaffPerformance]
+                                updated[idx].ldPmcAmf = v
+                                setPerStaffPerformance(updated)
+                              }}
+                            />
+                          </td>
+                          <td className="px-1 py-1 border border-gray-300 text-center">
+                            <ExcelCell
+                              value={staff.mdQ6Q7}
+                              onChange={(v) => {
+                                const updated = [...perStaffPerformance]
+                                updated[idx].mdQ6Q7 = v
+                                setPerStaffPerformance(updated)
+                              }}
+                            />
+                          </td>
+                          <td className="px-1 py-1 border border-gray-300 text-center">
+                            <EditableField
+                              value={staff.actualThruUnit}
+                              onChange={(v) => {
+                                const updated = [...perStaffPerformance]
+                                updated[idx].actualThruUnit = v
+                                setPerStaffPerformance(updated)
+                              }}
+                              className="text-xs text-center"
+                            />
+                          </td>
+                          <td className="px-1 py-1 border border-gray-300 text-center">
+                            <ExcelCell
+                              value={staff.bulkKg}
+                              onChange={(v) => {
+                                const updated = [...perStaffPerformance]
+                                updated[idx].bulkKg = v
+                                setPerStaffPerformance(updated)
+                              }}
+                            />
+                          </td>
+                          <td className="px-2 py-1 border border-gray-300">
+                            <EditableField
+                              value={staff.actualTopUpUnit}
+                              onChange={(v) => {
+                                const updated = [...perStaffPerformance]
+                                updated[idx].actualTopUpUnit = v
+                                setPerStaffPerformance(updated)
+                              }}
+                              className="text-xs"
+                            />
+                          </td>
+                          <td className="px-2 py-1 border border-gray-300 text-center font-semibold">
+                            {staff.totalActualBuiltUnits || totalBuilt}
+                          </td>
+                          <td className="px-2 py-1 border border-gray-300 text-center">
+                            {staff.efficiency}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Build-UP Section */}
+            <div className="mb-4">
+              <div className="text-sm font-medium text-gray-700 mb-2 bg-orange-100 px-2 py-1">Build-UP</div>
+              <table className="w-full text-xs border border-gray-300">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-2 py-1.5 text-left border border-gray-300">EKP</th>
+                    <th className="px-2 py-1.5 text-center border border-gray-300">AKE / DPE<br/>(B/UP)</th>
+                    <th className="px-2 py-1.5 text-center border border-gray-300">ALF / DQF<br/>(B/UP)</th>
+                    <th className="px-2 py-1.5 text-center border border-gray-300">LD-PMC/AMF<br/>(B/UP)</th>
+                    <th className="px-2 py-1.5 text-center border border-gray-300">MD-Q6/Q7<br/>(B/UP)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td className="px-2 py-1 border border-gray-300 font-medium">Units Built in shift</td>
+                    <td className="px-1 py-1 border border-gray-300 text-center">
+                      <EditableField
+                        value={perBuildUpData.builtUnits.akeDpe.toString()}
+                        onChange={(v) => setPerBuildUpData(prev => ({
+                          ...prev,
+                          builtUnits: { ...prev.builtUnits, akeDpe: v }
+                        }))}
+                        className="text-xs text-center w-full"
+                      />
+                    </td>
+                    <td className="px-1 py-1 border border-gray-300 text-center">
+                      <ExcelCell
+                        value={perBuildUpData.builtUnits.alfDqf}
+                        onChange={(v) => setPerBuildUpData(prev => ({
+                          ...prev,
+                          builtUnits: { ...prev.builtUnits, alfDqf: v }
+                        }))}
+                      />
+                    </td>
+                    <td className="px-1 py-1 border border-gray-300 text-center">
+                      <ExcelCell
+                        value={perBuildUpData.builtUnits.ldPmcAmf}
+                        onChange={(v) => setPerBuildUpData(prev => ({
+                          ...prev,
+                          builtUnits: { ...prev.builtUnits, ldPmcAmf: v }
+                        }))}
+                      />
+                    </td>
+                    <td className="px-1 py-1 border border-gray-300 text-center">
+                      <ExcelCell
+                        value={perBuildUpData.builtUnits.mdQ6Q7}
+                        onChange={(v) => setPerBuildUpData(prev => ({
+                          ...prev,
+                          builtUnits: { ...prev.builtUnits, mdQ6Q7: v }
+                        }))}
+                      />
+                    </td>
+                  </tr>
+                  <tr>
+                    <td className="px-2 py-1 border border-gray-300 font-medium">THRU units in shift</td>
+                    <td className="px-1 py-1 border border-gray-300 text-center">
+                      <EditableField
+                        value={perBuildUpData.thruUnits.akeDpe.toString()}
+                        onChange={(v) => setPerBuildUpData(prev => ({
+                          ...prev,
+                          thruUnits: { ...prev.thruUnits, akeDpe: v }
+                        }))}
+                        className="text-xs text-center w-full"
+                      />
+                    </td>
+                    <td className="px-1 py-1 border border-gray-300 text-center">
+                      <ExcelCell
+                        value={perBuildUpData.thruUnits.alfDqf}
+                        onChange={(v) => setPerBuildUpData(prev => ({
+                          ...prev,
+                          thruUnits: { ...prev.thruUnits, alfDqf: v }
+                        }))}
+                      />
+                    </td>
+                    <td className="px-1 py-1 border border-gray-300 text-center">
+                      <ExcelCell
+                        value={perBuildUpData.thruUnits.ldPmcAmf}
+                        onChange={(v) => setPerBuildUpData(prev => ({
+                          ...prev,
+                          thruUnits: { ...prev.thruUnits, ldPmcAmf: v }
+                        }))}
+                      />
+                    </td>
+                    <td className="px-1 py-1 border border-gray-300 text-center">
+                      <ExcelCell
+                        value={perBuildUpData.thruUnits.mdQ6Q7}
+                        onChange={(v) => setPerBuildUpData(prev => ({
+                          ...prev,
+                          thruUnits: { ...prev.thruUnits, mdQ6Q7: v }
+                        }))}
+                      />
+                    </td>
+                  </tr>
+                  <tr>
+                    <td className="px-2 py-1 border border-gray-300 font-medium">Advance units built for next shift</td>
+                    <td className="px-1 py-1 border border-gray-300 text-center">
+                      <EditableField
+                        value={perBuildUpData.advanceUnitsBuiltNextShift.akeDpe.toString()}
+                        onChange={(v) => setPerBuildUpData(prev => ({
+                          ...prev,
+                          advanceUnitsBuiltNextShift: { ...prev.advanceUnitsBuiltNextShift, akeDpe: v }
+                        }))}
+                        className="text-xs text-center w-full"
+                      />
+                    </td>
+                    <td className="px-1 py-1 border border-gray-300 text-center">
+                      <ExcelCell
+                        value={perBuildUpData.advanceUnitsBuiltNextShift.alfDqf}
+                        onChange={(v) => setPerBuildUpData(prev => ({
+                          ...prev,
+                          advanceUnitsBuiltNextShift: { ...prev.advanceUnitsBuiltNextShift, alfDqf: v }
+                        }))}
+                      />
+                    </td>
+                    <td className="px-1 py-1 border border-gray-300 text-center">
+                      <ExcelCell
+                        value={perBuildUpData.advanceUnitsBuiltNextShift.ldPmcAmf}
+                        onChange={(v) => setPerBuildUpData(prev => ({
+                          ...prev,
+                          advanceUnitsBuiltNextShift: { ...prev.advanceUnitsBuiltNextShift, ldPmcAmf: v }
+                        }))}
+                      />
+                    </td>
+                    <td className="px-1 py-1 border border-gray-300 text-center">
+                      <ExcelCell
+                        value={perBuildUpData.advanceUnitsBuiltNextShift.mdQ6Q7}
+                        onChange={(v) => setPerBuildUpData(prev => ({
+                          ...prev,
+                          advanceUnitsBuiltNextShift: { ...prev.advanceUnitsBuiltNextShift, mdQ6Q7: v }
+                        }))}
+                      />
+                    </td>
+                  </tr>
+                  <tr>
+                    <td className="px-2 py-1 border border-gray-300 font-medium">Advance THRU units for the next shift</td>
+                    <td className="px-1 py-1 border border-gray-300 text-center">
+                      <EditableField
+                        value={perBuildUpData.advanceThruUnitsNextShift.akeDpe.toString()}
+                        onChange={(v) => setPerBuildUpData(prev => ({
+                          ...prev,
+                          advanceThruUnitsNextShift: { ...prev.advanceThruUnitsNextShift, akeDpe: v }
+                        }))}
+                        className="text-xs text-center w-full"
+                      />
+                    </td>
+                    <td className="px-1 py-1 border border-gray-300 text-center">
+                      <ExcelCell
+                        value={perBuildUpData.advanceThruUnitsNextShift.alfDqf}
+                        onChange={(v) => setPerBuildUpData(prev => ({
+                          ...prev,
+                          advanceThruUnitsNextShift: { ...prev.advanceThruUnitsNextShift, alfDqf: v }
+                        }))}
+                      />
+                    </td>
+                    <td className="px-1 py-1 border border-gray-300 text-center">
+                      <ExcelCell
+                        value={perBuildUpData.advanceThruUnitsNextShift.ldPmcAmf}
+                        onChange={(v) => setPerBuildUpData(prev => ({
+                          ...prev,
+                          advanceThruUnitsNextShift: { ...prev.advanceThruUnitsNextShift, ldPmcAmf: v }
+                        }))}
+                      />
+                    </td>
+                    <td className="px-1 py-1 border border-gray-300 text-center">
+                      <ExcelCell
+                        value={perBuildUpData.advanceThruUnitsNextShift.mdQ6Q7}
+                        onChange={(v) => setPerBuildUpData(prev => ({
+                          ...prev,
+                          advanceThruUnitsNextShift: { ...prev.advanceThruUnitsNextShift, mdQ6Q7: v }
+                        }))}
+                      />
+                    </td>
+                  </tr>
+                  <tr className="bg-green-50 font-semibold">
+                    <td className="px-2 py-1 border border-gray-300">Total Built units</td>
+                    <td className="px-2 py-1 border border-gray-300 text-center">
+                      {getAkeDpeNumeric(perBuildUpData.builtUnits.akeDpe) + getAkeDpeNumeric(perBuildUpData.thruUnits.akeDpe) + getAkeDpeNumeric(perBuildUpData.advanceUnitsBuiltNextShift.akeDpe) + getAkeDpeNumeric(perBuildUpData.advanceThruUnitsNextShift.akeDpe)}
+                    </td>
+                    <td className="px-2 py-1 border border-gray-300 text-center">
+                      {perBuildUpData.builtUnits.alfDqf + perBuildUpData.thruUnits.alfDqf + perBuildUpData.advanceUnitsBuiltNextShift.alfDqf + perBuildUpData.advanceThruUnitsNextShift.alfDqf}
+                    </td>
+                    <td className="px-2 py-1 border border-gray-300 text-center">
+                      {perBuildUpData.builtUnits.ldPmcAmf + perBuildUpData.thruUnits.ldPmcAmf + perBuildUpData.advanceUnitsBuiltNextShift.ldPmcAmf + perBuildUpData.advanceThruUnitsNextShift.ldPmcAmf}
+                    </td>
+                    <td className="px-2 py-1 border border-gray-300 text-center">
+                      {perBuildUpData.builtUnits.mdQ6Q7 + perBuildUpData.thruUnits.mdQ6Q7 + perBuildUpData.advanceUnitsBuiltNextShift.mdQ6Q7 + perBuildUpData.advanceThruUnitsNextShift.mdQ6Q7}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            {/* Bulk Details Section - Build-Up Only */}
+            <div className="mb-4">
+              <div className="text-sm font-medium text-gray-700 mb-2 bg-orange-100 px-2 py-1">Bulk Details (B/up)</div>
+              <table className="w-full text-xs border border-gray-300 max-w-md">
+                <tbody>
+                  <tr>
+                    <td className="px-2 py-1 border border-gray-300">Number of Trollies</td>
+                    <td className="px-2 py-1 border border-gray-300 text-right">
+                      <ExcelCell
+                        value={perBulkUpDetails.numberTrollies}
+                        onChange={(v) => setPerBulkUpDetails(prev => ({ ...prev, numberTrollies: v }))}
+                      />
+                    </td>
+                  </tr>
+                  <tr>
+                    <td className="px-2 py-1 border border-gray-300">Weight(KG)</td>
+                    <td className="px-2 py-1 border border-gray-300 text-right">
+                      <ExcelCell
+                        value={perBulkUpDetails.weightKg}
+                        onChange={(v) => setPerBulkUpDetails(prev => ({ ...prev, weightKg: v }))}
+                      />
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            {/* Delivery, Acceptance, and Transit Screening Sections */}
+            <div className="grid grid-cols-3 gap-4 mb-4">
+              {/* Delivery */}
+              <div>
+                <div className="text-sm font-medium text-gray-700 mb-2 bg-orange-100 px-2 py-1">Delivery</div>
+                <table className="w-full text-xs border border-gray-300">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-2 py-1.5 text-left border border-gray-300">Area</th>
+                      <th className="px-2 py-1.5 text-center border border-gray-300">DS(Count)</th>
+                      <th className="px-2 py-1.5 text-center border border-gray-300">Total Weight</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {perDeliveryAreas.map((area, idx) => (
+                      <tr key={idx}>
+                        <td className="px-2 py-1 border border-gray-300 text-xs">{area.area}</td>
+                        <td className="px-1 py-1 border border-gray-300 text-center">
+                          <ExcelCell
+                            value={area.dsCount}
+                            onChange={(v) => {
+                              const updated = [...perDeliveryAreas]
+                              updated[idx].dsCount = v
+                              setPerDeliveryAreas(updated)
+                            }}
+                          />
+                        </td>
+                        <td className="px-1 py-1 border border-gray-300 text-center">
+                          <ExcelCell
+                            value={area.totalWeight}
+                            onChange={(v) => {
+                              const updated = [...perDeliveryAreas]
+                              updated[idx].totalWeight = v
+                              setPerDeliveryAreas(updated)
+                            }}
+                          />
+                        </td>
+                      </tr>
+                    ))}
+                    <tr className="bg-gray-50 font-semibold">
+                      <td className="px-2 py-1 border border-gray-300">Total</td>
+                      <td className="px-2 py-1 border border-gray-300 text-center">
+                        {perDeliveryAreas.reduce((sum, a) => sum + a.dsCount, 0)}
+                      </td>
+                      <td className="px-2 py-1 border border-gray-300 text-center">
+                        {perDeliveryAreas.reduce((sum, a) => sum + a.totalWeight, 0)}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Acceptance */}
+              <div>
+                <div className="text-sm font-medium text-gray-700 mb-2 bg-orange-100 px-2 py-1">Acceptance</div>
+                <table className="w-full text-xs border border-gray-300">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-2 py-1.5 text-left border border-gray-300">Area</th>
+                      <th className="px-2 py-1.5 text-center border border-gray-300">Count</th>
+                      <th className="px-2 py-1.5 text-center border border-gray-300">Weight</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {perAcceptanceAreas.map((area, idx) => (
+                      <tr key={idx}>
+                        <td className="px-2 py-1 border border-gray-300 text-xs">{area.area}</td>
+                        <td className="px-1 py-1 border border-gray-300 text-center">
+                          <ExcelCell
+                            value={area.count}
+                            onChange={(v) => {
+                              const updated = [...perAcceptanceAreas]
+                              updated[idx].count = v
+                              setPerAcceptanceAreas(updated)
+                            }}
+                          />
+                        </td>
+                        <td className="px-1 py-1 border border-gray-300 text-center">
+                          <ExcelCell
+                            value={area.weight}
+                            onChange={(v) => {
+                              const updated = [...perAcceptanceAreas]
+                              updated[idx].weight = v
+                              setPerAcceptanceAreas(updated)
+                            }}
+                          />
+                        </td>
+                      </tr>
+                    ))}
+                    <tr className="bg-gray-50 font-semibold">
+                      <td className="px-2 py-1 border border-gray-300">Total</td>
+                      <td className="px-2 py-1 border border-gray-300 text-center">
+                        {perAcceptanceAreas.reduce((sum, a) => sum + a.count, 0)}
+                      </td>
+                      <td className="px-2 py-1 border border-gray-300 text-center">
+                        {perAcceptanceAreas.reduce((sum, a) => sum + a.weight, 0)}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Transit Screening */}
+              <div>
+                <div className="text-sm font-medium text-gray-700 mb-2 bg-orange-100 px-2 py-1">Transit Screening Details</div>
+                <table className="w-full text-xs border border-gray-300">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-2 py-1.5 text-center border border-gray-300">Total shipments</th>
+                      <th className="px-2 py-1.5 text-center border border-gray-300">Pcs</th>
+                      <th className="px-2 py-1.5 text-center border border-gray-300">Weight</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {perTransitScreening.map((item, idx) => (
+                      <tr key={idx}>
+                        <td className="px-1 py-1 border border-gray-300 text-center">
+                          <ExcelCell
+                            value={item.totalShipments}
+                            onChange={(v) => {
+                              const updated = [...perTransitScreening]
+                              updated[idx].totalShipments = v
+                              setPerTransitScreening(updated)
+                            }}
+                          />
+                        </td>
+                        <td className="px-1 py-1 border border-gray-300 text-center">
+                          <ExcelCell
+                            value={item.pcs}
+                            onChange={(v) => {
+                              const updated = [...perTransitScreening]
+                              updated[idx].pcs = v
+                              setPerTransitScreening(updated)
+                            }}
+                          />
+                        </td>
+                        <td className="px-1 py-1 border border-gray-300 text-center">
+                          <ExcelCell
+                            value={item.weight}
+                            onChange={(v) => {
+                              const updated = [...perTransitScreening]
+                              updated[idx].weight = v
+                              setPerTransitScreening(updated)
+                            }}
+                          />
+                        </td>
+                      </tr>
+                    ))}
+                    <tr className="bg-gray-50 font-semibold">
+                      <td className="px-2 py-1 border border-gray-300 text-center">
+                        {perTransitScreening.reduce((sum, t) => sum + t.totalShipments, 0)}
+                      </td>
+                      <td className="px-2 py-1 border border-gray-300 text-center">
+                        {perTransitScreening.reduce((sum, t) => sum + t.pcs, 0)}
+                      </td>
+                      <td className="px-2 py-1 border border-gray-300 text-center">
+                        {perTransitScreening.reduce((sum, t) => sum + t.weight, 0)}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Special Cargo Details */}
+            <div className="mb-4">
+              <div className="text-sm font-medium text-gray-700 mb-2 bg-orange-100 px-2 py-1">Special Cargo Details</div>
+              <table className="w-full text-xs border border-gray-300 max-w-md">
+                <tbody>
+                  {perSpecialCargo.map((item, idx) => (
+                    <tr key={idx}>
+                      <td className="px-2 py-1 border border-gray-300">{item.type}</td>
+                      <td className="px-1 py-1 border border-gray-300 text-center">
+                        <ExcelCell
+                          value={item.count}
+                          onChange={(v) => {
+                            const updated = [...perSpecialCargo]
+                            updated[idx].count = v
+                            setPerSpecialCargo(updated)
+                          }}
+                        />
+                      </td>
+                      <td className="px-1 py-1 border border-gray-300 text-center">
+                        <ExcelCell
+                          value={item.weight}
+                          onChange={(v) => {
+                            const updated = [...perSpecialCargo]
+                            updated[idx].weight = v
+                            setPerSpecialCargo(updated)
+                          }}
+                        />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Resources Information */}
+            <div className="mb-4">
+              <div className="text-sm font-medium text-gray-700 mb-2 bg-orange-100 px-2 py-1">Resources Information</div>
+              <div className="grid grid-cols-3 gap-4">
+                {/* CMT */}
+                <table className="w-full text-xs border border-gray-300">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-2 py-1.5 text-left border border-gray-300">CMT</th>
+                      <th className="px-2 py-1.5 text-center border border-gray-300">Staff(Count)</th>
+                      <th className="px-2 py-1.5 text-center border border-gray-300">Hrs</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td className="px-2 py-1 border border-gray-300 text-xs">Shift Strength</td>
+                      <td className="px-1 py-1 border border-gray-300 text-center">
+                        <ExcelCell
+                          value={perResourcesCMT.shiftStrength.staffCount}
+                          onChange={(v) => setPerResourcesCMT(prev => ({
+                            ...prev,
+                            shiftStrength: { ...prev.shiftStrength, staffCount: v }
+                          }))}
+                        />
+                      </td>
+                      <td className="px-1 py-1 border border-gray-300 text-center">
+                        <ExcelCell
+                          value={perResourcesCMT.shiftStrength.hrs}
+                          onChange={(v) => setPerResourcesCMT(prev => ({
+                            ...prev,
+                            shiftStrength: { ...prev.shiftStrength, hrs: v }
+                          }))}
+                        />
+                      </td>
+                    </tr>
+                    <tr>
+                      <td className="px-2 py-1 border border-gray-300 text-xs">Mobile Shift</td>
+                      <td className="px-1 py-1 border border-gray-300 text-center">
+                        <ExcelCell
+                          value={perResourcesCMT.mobileShift.staffCount}
+                          onChange={(v) => setPerResourcesCMT(prev => ({
+                            ...prev,
+                            mobileShift: { ...prev.mobileShift, staffCount: v }
+                          }))}
+                        />
+                      </td>
+                      <td className="px-1 py-1 border border-gray-300 text-center">
+                        <ExcelCell
+                          value={perResourcesCMT.mobileShift.hrs}
+                          onChange={(v) => setPerResourcesCMT(prev => ({
+                            ...prev,
+                            mobileShift: { ...prev.mobileShift, hrs: v }
+                          }))}
+                        />
+                      </td>
+                    </tr>
+                    <tr>
+                      <td className="px-2 py-1 border border-gray-300 text-xs">Dulsco</td>
+                      <td className="px-1 py-1 border border-gray-300 text-center">
+                        <ExcelCell
+                          value={perResourcesCMT.dulsco.staffCount}
+                          onChange={(v) => setPerResourcesCMT(prev => ({
+                            ...prev,
+                            dulsco: { ...prev.dulsco, staffCount: v }
+                          }))}
+                        />
+                      </td>
+                      <td className="px-1 py-1 border border-gray-300 text-center">
+                        <ExcelCell
+                          value={perResourcesCMT.dulsco.hrs}
+                          onChange={(v) => setPerResourcesCMT(prev => ({
+                            ...prev,
+                            dulsco: { ...prev.dulsco, hrs: v }
+                          }))}
+                        />
+                      </td>
+                    </tr>
+                    <tr>
+                      <td className="px-2 py-1 border border-gray-300 text-xs">Transguard</td>
+                      <td className="px-1 py-1 border border-gray-300 text-center">
+                        <ExcelCell
+                          value={perResourcesCMT.transguard.staffCount}
+                          onChange={(v) => setPerResourcesCMT(prev => ({
+                            ...prev,
+                            transguard: { ...prev.transguard, staffCount: v }
+                          }))}
+                        />
+                      </td>
+                      <td className="px-1 py-1 border border-gray-300 text-center">
+                        <ExcelCell
+                          value={perResourcesCMT.transguard.hrs}
+                          onChange={(v) => setPerResourcesCMT(prev => ({
+                            ...prev,
+                            transguard: { ...prev.transguard, hrs: v }
+                          }))}
+                        />
+                      </td>
+                    </tr>
+                    <tr>
+                      <td className="px-2 py-1 border border-gray-300 text-xs">Overtime</td>
+                      <td className="px-1 py-1 border border-gray-300 text-center">
+                        <ExcelCell
+                          value={perResourcesCMT.overtime.staffCount}
+                          onChange={(v) => setPerResourcesCMT(prev => ({
+                            ...prev,
+                            overtime: { ...prev.overtime, staffCount: v }
+                          }))}
+                        />
+                      </td>
+                      <td className="px-1 py-1 border border-gray-300 text-center">
+                        <ExcelCell
+                          value={perResourcesCMT.overtime.hrs}
+                          onChange={(v) => setPerResourcesCMT(prev => ({
+                            ...prev,
+                            overtime: { ...prev.overtime, hrs: v }
+                          }))}
+                        />
+                      </td>
+                    </tr>
+                    <tr>
+                      <td className="px-2 py-1 border border-gray-300 text-xs">Operators</td>
+                      <td className="px-1 py-1 border border-gray-300 text-center">
+                        <ExcelCell
+                          value={perResourcesCMT.operators.staffCount}
+                          onChange={(v) => setPerResourcesCMT(prev => ({
+                            ...prev,
+                            operators: { ...prev.operators, staffCount: v }
+                          }))}
+                        />
+                      </td>
+                      <td className="px-1 py-1 border border-gray-300 text-center">
+                        <ExcelCell
+                          value={perResourcesCMT.operators.hrs}
+                          onChange={(v) => setPerResourcesCMT(prev => ({
+                            ...prev,
+                            operators: { ...prev.operators, hrs: v }
+                          }))}
+                        />
+                      </td>
+                    </tr>
+                    <tr>
+                      <td className="px-2 py-1 border border-gray-300 text-xs">Drivers</td>
+                      <td className="px-1 py-1 border border-gray-300 text-center">
+                        <ExcelCell
+                          value={perResourcesCMT.drivers.staffCount}
+                          onChange={(v) => setPerResourcesCMT(prev => ({
+                            ...prev,
+                            drivers: { ...prev.drivers, staffCount: v }
+                          }))}
+                        />
+                      </td>
+                      <td className="px-1 py-1 border border-gray-300 text-center">
+                        <ExcelCell
+                          value={perResourcesCMT.drivers.hrs}
+                          onChange={(v) => setPerResourcesCMT(prev => ({
+                            ...prev,
+                            drivers: { ...prev.drivers, hrs: v }
+                          }))}
+                        />
+                      </td>
+                    </tr>
+                    <tr>
+                      <td className="px-2 py-1 border border-gray-300 text-xs">Loaders</td>
+                      <td className="px-1 py-1 border border-gray-300 text-center">
+                        <ExcelCell
+                          value={perResourcesCMT.loaders.staffCount}
+                          onChange={(v) => setPerResourcesCMT(prev => ({
+                            ...prev,
+                            loaders: { ...prev.loaders, staffCount: v }
+                          }))}
+                        />
+                      </td>
+                      <td className="px-1 py-1 border border-gray-300 text-center">
+                        <ExcelCell
+                          value={perResourcesCMT.loaders.hrs}
+                          onChange={(v) => setPerResourcesCMT(prev => ({
+                            ...prev,
+                            loaders: { ...prev.loaders, hrs: v }
+                          }))}
+                        />
+                      </td>
+                    </tr>
+                    <tr className="bg-gray-50 font-semibold">
+                      <td className="px-2 py-1 border border-gray-300">Total</td>
+                      <td className="px-2 py-1 border border-gray-300 text-center">
+                        {perResourcesCMT.shiftStrength.staffCount + perResourcesCMT.mobileShift.staffCount + perResourcesCMT.dulsco.staffCount + perResourcesCMT.transguard.staffCount + perResourcesCMT.overtime.staffCount + perResourcesCMT.operators.staffCount + perResourcesCMT.drivers.staffCount + perResourcesCMT.loaders.staffCount}
+                      </td>
+                      <td className="px-2 py-1 border border-gray-300 text-center">
+                        {perResourcesCMT.shiftStrength.hrs + perResourcesCMT.mobileShift.hrs + perResourcesCMT.dulsco.hrs + perResourcesCMT.transguard.hrs + perResourcesCMT.overtime.hrs + perResourcesCMT.operators.hrs + perResourcesCMT.drivers.hrs + perResourcesCMT.loaders.hrs}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+
+                {/* CTO */}
+                <table className="w-full text-xs border border-gray-300">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-2 py-1.5 text-left border border-gray-300">CTO</th>
+                      <th className="px-2 py-1.5 text-center border border-gray-300">Staff(Count)</th>
+                      <th className="px-2 py-1.5 text-center border border-gray-300">Hrs</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td className="px-2 py-1 border border-gray-300 text-xs">Shift Strength</td>
+                      <td className="px-1 py-1 border border-gray-300 text-center">
+                        <ExcelCell
+                          value={perResourcesCTO.shiftStrength.staffCount}
+                          onChange={(v) => setPerResourcesCTO(prev => ({
+                            ...prev,
+                            shiftStrength: { ...prev.shiftStrength, staffCount: v }
+                          }))}
+                        />
+                      </td>
+                      <td className="px-1 py-1 border border-gray-300 text-center">
+                        <ExcelCell
+                          value={perResourcesCTO.shiftStrength.hrs}
+                          onChange={(v) => setPerResourcesCTO(prev => ({
+                            ...prev,
+                            shiftStrength: { ...prev.shiftStrength, hrs: v }
+                          }))}
+                        />
+                      </td>
+                    </tr>
+                    <tr>
+                      <td className="px-2 py-1 border border-gray-300 text-xs">Mobile Shift</td>
+                      <td className="px-1 py-1 border border-gray-300 text-center">
+                        <ExcelCell
+                          value={perResourcesCTO.mobileShift.staffCount}
+                          onChange={(v) => setPerResourcesCTO(prev => ({
+                            ...prev,
+                            mobileShift: { ...prev.mobileShift, staffCount: v }
+                          }))}
+                        />
+                      </td>
+                      <td className="px-1 py-1 border border-gray-300 text-center">
+                        <ExcelCell
+                          value={perResourcesCTO.mobileShift.hrs}
+                          onChange={(v) => setPerResourcesCTO(prev => ({
+                            ...prev,
+                            mobileShift: { ...prev.mobileShift, hrs: v }
+                          }))}
+                        />
+                      </td>
+                    </tr>
+                    <tr>
+                      <td className="px-2 py-1 border border-gray-300 text-xs">Dulsco</td>
+                      <td className="px-1 py-1 border border-gray-300 text-center">
+                        <ExcelCell
+                          value={perResourcesCTO.dulsco.staffCount}
+                          onChange={(v) => setPerResourcesCTO(prev => ({
+                            ...prev,
+                            dulsco: { ...prev.dulsco, staffCount: v }
+                          }))}
+                        />
+                      </td>
+                      <td className="px-1 py-1 border border-gray-300 text-center">
+                        <ExcelCell
+                          value={perResourcesCTO.dulsco.hrs}
+                          onChange={(v) => setPerResourcesCTO(prev => ({
+                            ...prev,
+                            dulsco: { ...prev.dulsco, hrs: v }
+                          }))}
+                        />
+                      </td>
+                    </tr>
+                    <tr>
+                      <td className="px-2 py-1 border border-gray-300 text-xs">Transguard</td>
+                      <td className="px-1 py-1 border border-gray-300 text-center">
+                        <ExcelCell
+                          value={perResourcesCTO.transguard.staffCount}
+                          onChange={(v) => setPerResourcesCTO(prev => ({
+                            ...prev,
+                            transguard: { ...prev.transguard, staffCount: v }
+                          }))}
+                        />
+                      </td>
+                      <td className="px-1 py-1 border border-gray-300 text-center">
+                        <ExcelCell
+                          value={perResourcesCTO.transguard.hrs}
+                          onChange={(v) => setPerResourcesCTO(prev => ({
+                            ...prev,
+                            transguard: { ...prev.transguard, hrs: v }
+                          }))}
+                        />
+                      </td>
+                    </tr>
+                    <tr>
+                      <td className="px-2 py-1 border border-gray-300 text-xs">Overtime</td>
+                      <td className="px-1 py-1 border border-gray-300 text-center">
+                        <ExcelCell
+                          value={perResourcesCTO.overtime.staffCount}
+                          onChange={(v) => setPerResourcesCTO(prev => ({
+                            ...prev,
+                            overtime: { ...prev.overtime, staffCount: v }
+                          }))}
+                        />
+                      </td>
+                      <td className="px-1 py-1 border border-gray-300 text-center">
+                        <ExcelCell
+                          value={perResourcesCTO.overtime.hrs}
+                          onChange={(v) => setPerResourcesCTO(prev => ({
+                            ...prev,
+                            overtime: { ...prev.overtime, hrs: v }
+                          }))}
+                        />
+                      </td>
+                    </tr>
+                    <tr>
+                      <td className="px-2 py-1 border border-gray-300 text-xs">Operators</td>
+                      <td className="px-1 py-1 border border-gray-300 text-center">
+                        <ExcelCell
+                          value={perResourcesCTO.operators.staffCount}
+                          onChange={(v) => setPerResourcesCTO(prev => ({
+                            ...prev,
+                            operators: { ...prev.operators, staffCount: v }
+                          }))}
+                        />
+                      </td>
+                      <td className="px-1 py-1 border border-gray-300 text-center">
+                        <ExcelCell
+                          value={perResourcesCTO.operators.hrs}
+                          onChange={(v) => setPerResourcesCTO(prev => ({
+                            ...prev,
+                            operators: { ...prev.operators, hrs: v }
+                          }))}
+                        />
+                      </td>
+                    </tr>
+                    <tr>
+                      <td className="px-2 py-1 border border-gray-300 text-xs">Drivers</td>
+                      <td className="px-1 py-1 border border-gray-300 text-center">
+                        <ExcelCell
+                          value={perResourcesCTO.drivers.staffCount}
+                          onChange={(v) => setPerResourcesCTO(prev => ({
+                            ...prev,
+                            drivers: { ...prev.drivers, staffCount: v }
+                          }))}
+                        />
+                      </td>
+                      <td className="px-1 py-1 border border-gray-300 text-center">
+                        <ExcelCell
+                          value={perResourcesCTO.drivers.hrs}
+                          onChange={(v) => setPerResourcesCTO(prev => ({
+                            ...prev,
+                            drivers: { ...prev.drivers, hrs: v }
+                          }))}
+                        />
+                      </td>
+                    </tr>
+                    <tr>
+                      <td className="px-2 py-1 border border-gray-300 text-xs">Loaders</td>
+                      <td className="px-1 py-1 border border-gray-300 text-center">
+                        <ExcelCell
+                          value={perResourcesCTO.loaders.staffCount}
+                          onChange={(v) => setPerResourcesCTO(prev => ({
+                            ...prev,
+                            loaders: { ...prev.loaders, staffCount: v }
+                          }))}
+                        />
+                      </td>
+                      <td className="px-1 py-1 border border-gray-300 text-center">
+                        <ExcelCell
+                          value={perResourcesCTO.loaders.hrs}
+                          onChange={(v) => setPerResourcesCTO(prev => ({
+                            ...prev,
+                            loaders: { ...prev.loaders, hrs: v }
+                          }))}
+                        />
+                      </td>
+                    </tr>
+                    <tr className="bg-gray-50 font-semibold">
+                      <td className="px-2 py-1 border border-gray-300">Total</td>
+                      <td className="px-2 py-1 border border-gray-300 text-center">
+                        {perResourcesCTO.shiftStrength.staffCount + perResourcesCTO.mobileShift.staffCount + perResourcesCTO.dulsco.staffCount + perResourcesCTO.transguard.staffCount + perResourcesCTO.overtime.staffCount + perResourcesCTO.operators.staffCount + perResourcesCTO.drivers.staffCount + perResourcesCTO.loaders.staffCount}
+                      </td>
+                      <td className="px-2 py-1 border border-gray-300 text-center">
+                        {perResourcesCTO.shiftStrength.hrs + perResourcesCTO.mobileShift.hrs + perResourcesCTO.dulsco.hrs + perResourcesCTO.transguard.hrs + perResourcesCTO.overtime.hrs + perResourcesCTO.operators.hrs + perResourcesCTO.drivers.hrs + perResourcesCTO.loaders.hrs}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+
+                {/* I Module */}
+                <table className="w-full text-xs border border-gray-300">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-2 py-1.5 text-left border border-gray-300">I module</th>
+                      <th className="px-2 py-1.5 text-center border border-gray-300">Staff(Count)</th>
+                      <th className="px-2 py-1.5 text-center border border-gray-300">Hrs</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td className="px-2 py-1 border border-gray-300 text-xs">Shift Strength</td>
+                      <td className="px-1 py-1 border border-gray-300 text-center">
+                        <ExcelCell
+                          value={perResourcesIModule.shiftStrength.staffCount}
+                          onChange={(v) => setPerResourcesIModule(prev => ({
+                            ...prev,
+                            shiftStrength: { ...prev.shiftStrength, staffCount: v }
+                          }))}
+                        />
+                      </td>
+                      <td className="px-1 py-1 border border-gray-300 text-center">
+                        <ExcelCell
+                          value={perResourcesIModule.shiftStrength.hrs}
+                          onChange={(v) => setPerResourcesIModule(prev => ({
+                            ...prev,
+                            shiftStrength: { ...prev.shiftStrength, hrs: v }
+                          }))}
+                        />
+                      </td>
+                    </tr>
+                    <tr>
+                      <td className="px-2 py-1 border border-gray-300 text-xs">Mobile Shift</td>
+                      <td className="px-1 py-1 border border-gray-300 text-center">
+                        <ExcelCell
+                          value={perResourcesIModule.mobileShift.staffCount}
+                          onChange={(v) => setPerResourcesIModule(prev => ({
+                            ...prev,
+                            mobileShift: { ...prev.mobileShift, staffCount: v }
+                          }))}
+                        />
+                      </td>
+                      <td className="px-1 py-1 border border-gray-300 text-center">
+                        <ExcelCell
+                          value={perResourcesIModule.mobileShift.hrs}
+                          onChange={(v) => setPerResourcesIModule(prev => ({
+                            ...prev,
+                            mobileShift: { ...prev.mobileShift, hrs: v }
+                          }))}
+                        />
+                      </td>
+                    </tr>
+                    <tr>
+                      <td className="px-2 py-1 border border-gray-300 text-xs">Dulsco</td>
+                      <td className="px-1 py-1 border border-gray-300 text-center">
+                        <ExcelCell
+                          value={perResourcesIModule.dulsco.staffCount}
+                          onChange={(v) => setPerResourcesIModule(prev => ({
+                            ...prev,
+                            dulsco: { ...prev.dulsco, staffCount: v }
+                          }))}
+                        />
+                      </td>
+                      <td className="px-1 py-1 border border-gray-300 text-center">
+                        <ExcelCell
+                          value={perResourcesIModule.dulsco.hrs}
+                          onChange={(v) => setPerResourcesIModule(prev => ({
+                            ...prev,
+                            dulsco: { ...prev.dulsco, hrs: v }
+                          }))}
+                        />
+                      </td>
+                    </tr>
+                    <tr>
+                      <td className="px-2 py-1 border border-gray-300 text-xs">Transguard</td>
+                      <td className="px-1 py-1 border border-gray-300 text-center">
+                        <ExcelCell
+                          value={perResourcesIModule.transguard.staffCount}
+                          onChange={(v) => setPerResourcesIModule(prev => ({
+                            ...prev,
+                            transguard: { ...prev.transguard, staffCount: v }
+                          }))}
+                        />
+                      </td>
+                      <td className="px-1 py-1 border border-gray-300 text-center">
+                        <ExcelCell
+                          value={perResourcesIModule.transguard.hrs}
+                          onChange={(v) => setPerResourcesIModule(prev => ({
+                            ...prev,
+                            transguard: { ...prev.transguard, hrs: v }
+                          }))}
+                        />
+                      </td>
+                    </tr>
+                    <tr>
+                      <td className="px-2 py-1 border border-gray-300 text-xs">Overtime</td>
+                      <td className="px-1 py-1 border border-gray-300 text-center">
+                        <ExcelCell
+                          value={perResourcesIModule.overtime.staffCount}
+                          onChange={(v) => setPerResourcesIModule(prev => ({
+                            ...prev,
+                            overtime: { ...prev.overtime, staffCount: v }
+                          }))}
+                        />
+                      </td>
+                      <td className="px-1 py-1 border border-gray-300 text-center">
+                        <ExcelCell
+                          value={perResourcesIModule.overtime.hrs}
+                          onChange={(v) => setPerResourcesIModule(prev => ({
+                            ...prev,
+                            overtime: { ...prev.overtime, hrs: v }
+                          }))}
+                        />
+                      </td>
+                    </tr>
+                    <tr>
+                      <td className="px-2 py-1 border border-gray-300 text-xs">Operators</td>
+                      <td className="px-1 py-1 border border-gray-300 text-center">
+                        <ExcelCell
+                          value={perResourcesIModule.operators.staffCount}
+                          onChange={(v) => setPerResourcesIModule(prev => ({
+                            ...prev,
+                            operators: { ...prev.operators, staffCount: v }
+                          }))}
+                        />
+                      </td>
+                      <td className="px-1 py-1 border border-gray-300 text-center">
+                        <ExcelCell
+                          value={perResourcesIModule.operators.hrs}
+                          onChange={(v) => setPerResourcesIModule(prev => ({
+                            ...prev,
+                            operators: { ...prev.operators, hrs: v }
+                          }))}
+                        />
+                      </td>
+                    </tr>
+                    <tr>
+                      <td className="px-2 py-1 border border-gray-300 text-xs">Drivers</td>
+                      <td className="px-1 py-1 border border-gray-300 text-center">
+                        <ExcelCell
+                          value={perResourcesIModule.drivers.staffCount}
+                          onChange={(v) => setPerResourcesIModule(prev => ({
+                            ...prev,
+                            drivers: { ...prev.drivers, staffCount: v }
+                          }))}
+                        />
+                      </td>
+                      <td className="px-1 py-1 border border-gray-300 text-center">
+                        <ExcelCell
+                          value={perResourcesIModule.drivers.hrs}
+                          onChange={(v) => setPerResourcesIModule(prev => ({
+                            ...prev,
+                            drivers: { ...prev.drivers, hrs: v }
+                          }))}
+                        />
+                      </td>
+                    </tr>
+                    <tr>
+                      <td className="px-2 py-1 border border-gray-300 text-xs">Loaders</td>
+                      <td className="px-1 py-1 border border-gray-300 text-center">
+                        <ExcelCell
+                          value={perResourcesIModule.loaders.staffCount}
+                          onChange={(v) => setPerResourcesIModule(prev => ({
+                            ...prev,
+                            loaders: { ...prev.loaders, staffCount: v }
+                          }))}
+                        />
+                      </td>
+                      <td className="px-1 py-1 border border-gray-300 text-center">
+                        <ExcelCell
+                          value={perResourcesIModule.loaders.hrs}
+                          onChange={(v) => setPerResourcesIModule(prev => ({
+                            ...prev,
+                            loaders: { ...prev.loaders, hrs: v }
+                          }))}
+                        />
+                      </td>
+                    </tr>
+                    <tr className="bg-gray-50 font-semibold">
+                      <td className="px-2 py-1 border border-gray-300">Total</td>
+                      <td className="px-2 py-1 border border-gray-300 text-center">
+                        {perResourcesIModule.shiftStrength.staffCount + perResourcesIModule.mobileShift.staffCount + perResourcesIModule.dulsco.staffCount + perResourcesIModule.transguard.staffCount + perResourcesIModule.overtime.staffCount + perResourcesIModule.operators.staffCount + perResourcesIModule.drivers.staffCount + perResourcesIModule.loaders.staffCount}
+                      </td>
+                      <td className="px-2 py-1 border border-gray-300 text-center">
+                        {perResourcesIModule.shiftStrength.hrs + perResourcesIModule.mobileShift.hrs + perResourcesIModule.dulsco.hrs + perResourcesIModule.transguard.hrs + perResourcesIModule.overtime.hrs + perResourcesIModule.operators.hrs + perResourcesIModule.drivers.hrs + perResourcesIModule.loaders.hrs}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Other Informations */}
+            <div>
+              <div className="text-sm font-medium text-gray-700 mb-2 bg-orange-100 px-2 py-1">Other Informations</div>
+              <div className="space-y-3">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-xs font-medium text-gray-600">SHIFT CHALLENGES (If Any)</label>
+                    <EditableField
+                      value={perOtherInfo.shiftChallenges}
+                      onChange={(v) => setPerOtherInfo(prev => ({ ...prev, shiftChallenges: v }))}
+                      className="text-xs w-full"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-gray-600">CAPA (Corrective and Preventive Actions) Reported</label>
+                    <EditableField
+                      value={perOtherInfo.capa}
+                      onChange={(v) => setPerOtherInfo(prev => ({ ...prev, capa: v }))}
+                      className="text-xs w-full"
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-xs font-medium text-gray-600">INCIDENT/ACCIDENT (If Any)</label>
+                    <EditableField
+                      value={perOtherInfo.incidentAccident}
+                      onChange={(v) => setPerOtherInfo(prev => ({ ...prev, incidentAccident: v }))}
+                      className="text-xs w-full"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-gray-600">SYSTEM ISSUES (If Any)</label>
+                    <EditableField
+                      value={perOtherInfo.systemIssues}
+                      onChange={(v) => setPerOtherInfo(prev => ({ ...prev, systemIssues: v }))}
+                      className="text-xs w-full"
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-xs font-medium text-gray-600">TRC Cases (If Any)</label>
+                    <EditableField
+                      value={perOtherInfo.trcCases}
+                      onChange={(v) => setPerOtherInfo(prev => ({ ...prev, trcCases: v }))}
+                      className="text-xs w-full"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-gray-600">Pending to action (If Any)</label>
+                    <EditableField
+                      value={perOtherInfo.pendingToAction}
+                      onChange={(v) => setPerOtherInfo(prev => ({ ...prev, pendingToAction: v }))}
+                      className="text-xs w-full"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-gray-600">OTHER REMARKS (House Keeping/Addl Info/etc.)</label>
+                  <EditableField
+                    value={perOtherInfo.otherRemarks}
+                    onChange={(v) => setPerOtherInfo(prev => ({ ...prev, otherRemarks: v }))}
+                    className="text-xs w-full"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-gray-600">Attachments</label>
+                  <EditableField
+                    value={perOtherInfo.attachments}
+                    onChange={(v) => setPerOtherInfo(prev => ({ ...prev, attachments: v }))}
+                    className="text-xs w-full"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        )}
       </div>
     </div>
     </>

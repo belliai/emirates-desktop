@@ -1,79 +1,230 @@
 "use client"
 
-import { useState } from "react"
-import { Download } from "lucide-react"
+import { useState, useEffect, useMemo, useRef } from "react"
+import { Download, Plus, Search, Clock, X, Settings2, ArrowUpDown, SlidersHorizontal } from "lucide-react"
 import { Button } from "@/components/ui/button"
 
-const HARDCODED_STAFF = [
+// Filter types
+type WorkArea = "All" | "GCR" | "PIL and PER"
+type Shift = "All" | "9am to 9pm" | "9pm to 9am"
+type Module = "All" | "PAX & PF build-up EUR (1st floor, E)" | "PAX & PF build-up AFR (1st floor, F)" | "PAX & PF build-up ME, SubCon, Asia (1st floor, G)" | "Build-up AUS (1st floor, H)" | "US Screening Flights (1st floor, I)" | "Freighter & PAX Breakdown & build-up (Ground floor, F)" | "IND/PAK Build-up (Ground floor, G)" | "PER (Ground floor, H)" | "PIL (Ground floor, I)"
+
+const SHIFTS: Shift[] = ["All", "9am to 9pm", "9pm to 9am"]
+const MODULES: Module[] = [
+  "All",
+  "PAX & PF build-up EUR (1st floor, E)",
+  "PAX & PF build-up AFR (1st floor, F)",
+  "PAX & PF build-up ME, SubCon, Asia (1st floor, G)",
+  "Build-up AUS (1st floor, H)",
+  "US Screening Flights (1st floor, I)",
+  "Freighter & PAX Breakdown & build-up (Ground floor, F)",
+  "IND/PAK Build-up (Ground floor, G)",
+  "PER (Ground floor, H)",
+  "PIL (Ground floor, I)",
+]
+
+// Unified Staff Performance Type
+type StaffPerformance = {
+  id: number
+  staffName: string
+  avatar: string
+  staffNo: string
+  ekOutsource: string
+  totalHrs: number
+  totalUnits: number
+  efficiency: number | string // Can be number or "#DIV/0!" for division by zero
+  // GCR-specific fields
+  flightCount?: number
+  deployment?: string
+  contact?: string
+  // PIL/PER-specific fields
+  akeDpe?: number
+  alfDqf?: number
+  ldPmcAmf?: number
+  mdQ6Q7?: number
+  bulkKg?: number
+  actualThruUnit?: number
+  actualTopUpUnit?: string
+}
+
+// Helper function to calculate efficiency
+function calculateEfficiency(totalUnits: number, totalHrs: number): number | string {
+  if (totalHrs === 0) return "#DIV/0!"
+  return Number((totalUnits / totalHrs).toFixed(1))
+}
+
+const HARDCODED_STAFF: StaffPerformance[] = [
+  // GCR staff samples
   {
     id: 1,
-    name: "Hassan Ibrahim",
-    employeeId: "EK001",
+    staffName: "Hassan Ibrahim",
     avatar: "HI",
-    uldsHandled: 59,
-    breakdowns: 7,
-    percentOfTotal: 15.6,
-    avgTimePerULD: "2h 34m",
-    onlineTime: "8h 15m",
+    staffNo: "EK001",
+    ekOutsource: "EK",
+    totalHrs: 12,
+    totalUnits: 59,
+    efficiency: calculateEfficiency(59, 12),
+    flightCount: 8,
+    deployment: "Module E",
+    contact: "+971 50 123 4567",
   },
   {
     id: 2,
-    name: "Sophie Anderson",
-    employeeId: "EK002",
+    staffName: "Sophie Anderson",
     avatar: "SA",
-    uldsHandled: 33,
-    breakdowns: 7,
-    percentOfTotal: 15.6,
-    avgTimePerULD: "3h 13m",
-    onlineTime: "7h 45m",
+    staffNo: "EK002",
+    ekOutsource: "EK",
+    totalHrs: 12,
+    totalUnits: 33,
+    efficiency: calculateEfficiency(33, 12),
+    flightCount: 5,
+    deployment: "Module F",
+    contact: "+971 50 234 5678",
   },
   {
     id: 3,
-    name: "Emily Chen",
-    employeeId: "EK003",
+    staffName: "Emily Chen",
     avatar: "EC",
-    uldsHandled: 30,
-    breakdowns: 4,
-    percentOfTotal: 8.9,
-    avgTimePerULD: "3h 34m",
-    onlineTime: "8h 00m",
+    staffNo: "EK003",
+    ekOutsource: "EK",
+    totalHrs: 12,
+    totalUnits: 30,
+    efficiency: calculateEfficiency(30, 12),
+    flightCount: 4,
+    deployment: "Module G",
+    contact: "+971 50 345 6789",
   },
+  // PIL/PER staff samples
   {
     id: 4,
-    name: "Ahmed Hassan",
-    employeeId: "EK004",
+    staffName: "Ahmed Hassan",
     avatar: "AH",
-    uldsHandled: 45,
-    breakdowns: 5,
-    percentOfTotal: 12.3,
-    avgTimePerULD: "2h 56m",
-    onlineTime: "8h 30m",
+    staffNo: "EK004",
+    ekOutsource: "EK",
+    totalHrs: 12,
+    totalUnits: 45,
+    efficiency: calculateEfficiency(45, 12),
+    akeDpe: 20,
+    alfDqf: 10,
+    ldPmcAmf: 8,
+    mdQ6Q7: 7,
+    bulkKg: 0,
+    actualThruUnit: 0,
+    actualTopUpUnit: "EKP BUILD UP",
   },
   {
     id: 5,
-    name: "Mohammed Ali",
-    employeeId: "EK005",
+    staffName: "Mohammed Ali",
     avatar: "MA",
-    uldsHandled: 38,
-    breakdowns: 6,
-    percentOfTotal: 14.2,
-    avgTimePerULD: "3h 05m",
-    onlineTime: "7h 50m",
+    staffNo: "EK005",
+    ekOutsource: "EK",
+    totalHrs: 12,
+    totalUnits: 38,
+    efficiency: calculateEfficiency(38, 12),
+    akeDpe: 15,
+    alfDqf: 12,
+    ldPmcAmf: 6,
+    mdQ6Q7: 5,
+    bulkKg: 0,
+    actualThruUnit: 0,
+    actualTopUpUnit: "EKP BUILD UP",
+  },
+  {
+    id: 6,
+    staffName: "RYAN",
+    avatar: "RY",
+    staffNo: "",
+    ekOutsource: "EK",
+    totalHrs: 12,
+    totalUnits: 32,
+    efficiency: calculateEfficiency(32, 12),
+    akeDpe: 29,
+    alfDqf: 3,
+    ldPmcAmf: 0,
+    mdQ6Q7: 0,
+    bulkKg: 0,
+    actualThruUnit: 0,
+    actualTopUpUnit: "CTO SCREENING",
   },
 ]
 
 export default function PerformanceScreen() {
-  const [selectedDestination, setSelectedDestination] = useState("all")
-  const [selectedBoardingPoint, setSelectedBoardingPoint] = useState("all")
+  const [selectedWorkArea, setSelectedWorkArea] = useState<WorkArea>("All")
+  const [selectedShift, setSelectedShift] = useState<Shift>("All" as Shift)
+  const [selectedModule, setSelectedModule] = useState<Module>("All")
+  const [customTimeRange, setCustomTimeRange] = useState<{ start: string; end: string } | null>(null)
+  const [showTimeRangePicker, setShowTimeRangePicker] = useState(false)
+  const timeRangePickerRef = useRef<HTMLDivElement>(null)
+  const [showAddFilterDropdown, setShowAddFilterDropdown] = useState(false)
+  const [showViewOptions, setShowViewOptions] = useState(false)
+  const addFilterRef = useRef<HTMLDivElement>(null)
+  const viewOptionsRef = useRef<HTMLDivElement>(null)
+
+  // Generate hourly time options (00:00 to 23:00)
+  const timeOptions = useMemo(() => {
+    const options: string[] = []
+    for (let hour = 0; hour < 24; hour++) {
+      options.push(`${hour.toString().padStart(2, '0')}:00`)
+    }
+    return options
+  }, [])
+
+  // Close dropdowns when clicking outside
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (timeRangePickerRef.current && !timeRangePickerRef.current.contains(event.target as Node)) {
+        setShowTimeRangePicker(false)
+      }
+      if (addFilterRef.current && !addFilterRef.current.contains(event.target as Node)) {
+        setShowAddFilterDropdown(false)
+      }
+      if (viewOptionsRef.current && !viewOptionsRef.current.contains(event.target as Node)) {
+        setShowViewOptions(false)
+      }
+    }
+
+    if (showTimeRangePicker || showAddFilterDropdown || showViewOptions) {
+      document.addEventListener('mousedown', handleClickOutside)
+      return () => {
+        document.removeEventListener('mousedown', handleClickOutside)
+      }
+    }
+  }, [showTimeRangePicker, showAddFilterDropdown, showViewOptions])
+
+  // Filter staff based on work area
+  const filteredStaff = useMemo(() => {
+    if (selectedWorkArea === "All") return HARDCODED_STAFF
+    if (selectedWorkArea === "GCR") {
+      return HARDCODED_STAFF.filter(s => s.flightCount !== undefined)
+    }
+    if (selectedWorkArea === "PIL and PER") {
+      return HARDCODED_STAFF.filter(s => s.akeDpe !== undefined)
+    }
+    return HARDCODED_STAFF
+  }, [selectedWorkArea])
 
   // Calculate averages
-  const avgUldsHandled = Math.round(HARDCODED_STAFF.reduce((sum, s) => sum + s.uldsHandled, 0) / HARDCODED_STAFF.length)
-  const avgBreakdowns = Math.round(HARDCODED_STAFF.reduce((sum, s) => sum + s.breakdowns, 0) / HARDCODED_STAFF.length)
-  const avgPercentOfTotal = (
-    HARDCODED_STAFF.reduce((sum, s) => sum + s.percentOfTotal, 0) / HARDCODED_STAFF.length
+  const avgTotalUnits = Math.round(
+    filteredStaff.reduce((sum, s) => sum + s.totalUnits, 0) / (filteredStaff.length || 1)
+  )
+  const avgTotalHrs = (
+    filteredStaff.reduce((sum, s) => sum + s.totalHrs, 0) / (filteredStaff.length || 1)
   ).toFixed(1)
+  
+  // Calculate average efficiency (weighted by hours)
+  const totalHours = filteredStaff.reduce((sum, s) => sum + s.totalHrs, 0)
+  const totalUnits = filteredStaff.reduce((sum, s) => sum + s.totalUnits, 0)
+  const avgEfficiency = totalHours > 0 ? (totalUnits / totalHours).toFixed(1) : "#DIV/0!"
 
-  const topPerformers = HARDCODED_STAFF.slice(0, 3)
+  // Top performers
+  const topPerformers = useMemo(() => {
+    const sorted = [...filteredStaff].sort((a, b) => {
+      const aEff = typeof a.efficiency === "number" ? a.efficiency : 0
+      const bEff = typeof b.efficiency === "number" ? b.efficiency : 0
+      return bEff - aEff
+    })
+    return sorted.slice(0, 3)
+  }, [filteredStaff])
 
   return (
     <div className="min-h-screen bg-white p-6">
@@ -87,36 +238,223 @@ export default function PerformanceScreen() {
           </Button>
         </div>
 
-        {/* Filter Bar */}
-        <div className="px-4 py-3 border rounded-lg bg-gray-50 flex items-center gap-4 mb-6">
-          <div className="flex items-center gap-2">
-            <label className="text-sm font-medium text-gray-700">Destination:</label>
+        {/* Filters */}
+        <div className="flex items-center gap-2 mb-6 px-2 flex-wrap">
+          {/* Default View Dropdown */}
+          <div className="flex items-center">
             <select
-              value={selectedDestination}
-              onChange={(e) => setSelectedDestination(e.target.value)}
-              className="text-sm border rounded px-3 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-[#D71A21]"
+              className="px-2 py-1.5 text-xs border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-[#D71A21] focus:border-transparent"
             >
-              <option value="all">All Destinations</option>
-              <option value="BKK">BKK</option>
-              <option value="SIN">SIN</option>
-              <option value="LHR">LHR</option>
+              <option value="default">≡ Default</option>
+              <option value="custom">Custom View</option>
             </select>
           </div>
 
-          <div className="flex items-center gap-2">
-            <label className="text-sm font-medium text-gray-700">Boarding Point:</label>
-            <select
-              value={selectedBoardingPoint}
-              onChange={(e) => setSelectedBoardingPoint(e.target.value)}
-              className="text-sm border rounded px-3 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-[#D71A21]"
+          {/* Add Filter Dropdown */}
+          <div className="relative" ref={addFilterRef}>
+            <button
+              type="button"
+              onClick={() => setShowAddFilterDropdown(!showAddFilterDropdown)}
+              className="flex items-center gap-1 px-2 py-1.5 text-xs border border-gray-300 rounded-md bg-white hover:border-gray-400 transition-colors"
             >
-              <option value="all">All Boarding Points</option>
-              <option value="T3">Terminal 3</option>
-              <option value="Cargo">Cargo Village</option>
-            </select>
+              <Plus className="w-3 h-3" />
+              <span>Add Filter</span>
+            </button>
+            
+            {showAddFilterDropdown && (
+              <div className="absolute top-full left-0 mt-1 z-50 bg-white border border-gray-200 rounded-lg shadow-lg w-48">
+                <div className="p-2">
+                  <div className="relative mb-2">
+                    <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 w-3 h-3 text-gray-400" />
+                    <input
+                      type="text"
+                      placeholder="Search column..."
+                      className="w-full pl-7 pr-2 py-1.5 text-xs border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-[#D71A21]"
+                    />
+                  </div>
+                  <div className="space-y-0.5">
+                    {["Staff Name", "Staff Number", "EK/Outsource", "Total Hours", "Efficiency"].map((col) => (
+                      <button
+                        key={col}
+                        className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-gray-700 hover:bg-gray-50 rounded transition-colors text-left"
+                        onClick={() => setShowAddFilterDropdown(false)}
+                      >
+                        <span className="text-gray-400">≡</span>
+                        {col}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
-          <div className="ml-auto text-sm text-gray-600">Showing 232 of 232 ULDs</div>
+          {/* Search Staff */}
+          <div className="relative">
+            <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 w-3 h-3 text-gray-400" />
+            <input
+              type="text"
+              placeholder="Search staff..."
+              className="pl-7 pr-2 py-1.5 text-xs border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-[#D71A21] focus:border-transparent w-32"
+            />
+          </div>
+
+          <div className="w-px h-6 bg-gray-200" />
+
+          {/* Work Area Filter - Compact */}
+          <select
+            id="work-area-filter"
+            value={selectedWorkArea}
+            onChange={(e) => setSelectedWorkArea(e.target.value as WorkArea)}
+            className="px-2 py-1.5 text-xs border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-[#D71A21] focus:border-transparent"
+          >
+            <option value="All">Work Area: All</option>
+            <option value="GCR">Work Area: GCR</option>
+            <option value="PIL and PER">Work Area: PIL/PER</option>
+          </select>
+
+          {/* Shift Filter - Compact */}
+          <select
+            id="shift-filter"
+            value={selectedShift}
+            onChange={(e) => {
+              setSelectedShift(e.target.value as Shift)
+              if (e.target.value !== "All") setCustomTimeRange(null)
+            }}
+            className="px-2 py-1.5 text-xs border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-[#D71A21] focus:border-transparent"
+          >
+            {SHIFTS.map(shift => (
+              <option key={shift} value={shift}>
+                Shift: {shift}
+              </option>
+            ))}
+          </select>
+
+          {/* Time Range - Compact */}
+          <div className="relative" ref={timeRangePickerRef}>
+            <button
+              type="button"
+              onClick={() => setShowTimeRangePicker(!showTimeRangePicker)}
+              className={`flex items-center gap-1 px-2 py-1.5 text-xs border rounded-md bg-white transition-colors ${
+                customTimeRange ? "border-[#D71A21] text-[#D71A21]" : "border-gray-300 text-gray-700 hover:border-gray-400"
+              }`}
+            >
+              <Clock className="w-3 h-3" />
+              <span>{customTimeRange ? `${customTimeRange.start}-${customTimeRange.end}` : "Time"}</span>
+              {customTimeRange && (
+                <X className="w-3 h-3" onClick={(e) => { e.stopPropagation(); setCustomTimeRange(null) }} />
+              )}
+            </button>
+            
+            {showTimeRangePicker && (
+              <div className="absolute top-full left-0 mt-1 z-50 bg-white border border-gray-200 rounded-lg shadow-lg p-3 w-56">
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-xs font-semibold text-gray-900">Time Range</h3>
+                  <button onClick={() => setShowTimeRangePicker(false)} className="text-gray-400 hover:text-gray-600">
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+                <div className="flex items-center gap-2 mb-2">
+                  <select
+                    value={customTimeRange?.start || "00:00"}
+                    onChange={(e) => setCustomTimeRange(prev => ({ start: e.target.value, end: prev?.end || e.target.value }))}
+                    className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded"
+                  >
+                    {timeOptions.map(time => <option key={time} value={time}>{time}</option>)}
+                  </select>
+                  <span className="text-xs text-gray-400">to</span>
+                  <select
+                    value={customTimeRange?.end || "23:00"}
+                    onChange={(e) => setCustomTimeRange(prev => ({ start: prev?.start || "00:00", end: e.target.value }))}
+                    className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded"
+                  >
+                    {timeOptions.map(time => <option key={time} value={time}>{time}</option>)}
+                  </select>
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={() => { setCustomTimeRange(null); setShowTimeRangePicker(false) }} className="flex-1 px-2 py-1 text-xs border rounded">Clear</button>
+                  <button onClick={() => setShowTimeRangePicker(false)} className="flex-1 px-2 py-1 text-xs bg-[#D71A21] text-white rounded">Apply</button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Module Filter - Compact */}
+          <select
+            id="module-filter"
+            value={selectedModule}
+            onChange={(e) => setSelectedModule(e.target.value as Module)}
+            className="px-2 py-1.5 text-xs border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-[#D71A21] focus:border-transparent max-w-40 truncate"
+          >
+            {MODULES.map(module => (
+              <option key={module} value={module}>
+                {module === "All" ? "Module: All" : module.length > 30 ? module.slice(0, 30) + "..." : module}
+              </option>
+            ))}
+          </select>
+
+          <div className="flex-1" />
+
+          {/* View Options Panel */}
+          <div className="relative" ref={viewOptionsRef}>
+            <button
+              type="button"
+              onClick={() => setShowViewOptions(!showViewOptions)}
+              className="flex items-center gap-1 px-2 py-1.5 text-xs border border-gray-300 rounded-md bg-white hover:border-gray-400 transition-colors"
+            >
+              <SlidersHorizontal className="w-3 h-3" />
+            </button>
+            
+            {showViewOptions && (
+              <div className="absolute top-full right-0 mt-1 z-50 bg-white border border-gray-200 rounded-lg shadow-lg w-64">
+                <div className="p-3">
+                  <h3 className="text-sm font-semibold text-gray-900 mb-3">View Options</h3>
+                  
+                  {/* Ordering */}
+                  <div className="mb-3">
+                    <div className="flex items-center gap-1.5 text-xs text-gray-600 mb-1.5">
+                      <ArrowUpDown className="w-3 h-3" />
+                      <span>Ordering</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <select className="flex-1 px-2 py-1.5 text-xs border border-gray-200 rounded">
+                        <option>Staff Name</option>
+                        <option>Total Hours</option>
+                        <option>Efficiency</option>
+                        <option>Total Units</option>
+                      </select>
+                      <button className="p-1.5 border border-gray-200 rounded hover:bg-gray-50">
+                        <ArrowUpDown className="w-3 h-3 text-gray-500" />
+                      </button>
+                    </div>
+                  </div>
+                  
+                  {/* Display Fields */}
+                  <div>
+                    <div className="flex items-center gap-1.5 text-xs text-gray-600 mb-1.5">
+                      <Settings2 className="w-3 h-3" />
+                      <span>Display Fields</span>
+                    </div>
+                    <div className="flex flex-wrap gap-1">
+                      {["Staff Name", "Total Hours", "Total Units", "Efficiency"].map((field) => (
+                        <span
+                          key={field}
+                          className="px-1.5 py-0.5 text-[10px] bg-[#D71A21]/10 text-[#D71A21] border border-[#D71A21]/20 rounded cursor-pointer hover:bg-[#D71A21]/20 transition-colors"
+                        >
+                          {field}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Staff count */}
+          <div className="text-xs text-gray-500 whitespace-nowrap">
+            Showing {filteredStaff.length} of {HARDCODED_STAFF.length} staff
+          </div>
         </div>
 
         {/* Top Performers */}
@@ -129,11 +467,11 @@ export default function PerformanceScreen() {
                   {staff.avatar}
                 </div>
                 <div className="flex-1">
-                  <div className="font-semibold text-sm">{staff.name}</div>
+                  <div className="font-semibold text-sm">{staff.staffName}</div>
                   <div className="text-xs text-gray-500 mt-1">
-                    {index === 0 && `Breakdowns: ${staff.breakdowns}`}
-                    {index === 1 && `Avg time: ${staff.avgTimePerULD}`}
-                    {index === 2 && `ULDs handled: ${staff.uldsHandled}`}
+                    {index === 0 && `Efficiency: ${staff.efficiency}`}
+                    {index === 1 && `Total Units: ${staff.totalUnits}`}
+                    {index === 2 && `Total Hours: ${staff.totalHrs}h`}
                   </div>
                 </div>
               </div>
@@ -145,47 +483,43 @@ export default function PerformanceScreen() {
         <div>
           <h3 className="text-lg font-semibold mb-4">Staff Performance</h3>
           <div className="border rounded-lg overflow-hidden">
-            <table className="w-full">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Staff</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">ULDs Handled</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Breakdowns</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">% of Total</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Avg Time/ULD</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Online Time</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y">
-                {/* Average Row */}
-                <tr className="bg-gray-50 font-semibold">
-                  <td className="px-4 py-3 text-sm">Average</td>
-                  <td className="px-4 py-3 text-sm">{avgUldsHandled}</td>
-                  <td className="px-4 py-3 text-sm">{avgBreakdowns}</td>
-                  <td className="px-4 py-3 text-sm">{avgPercentOfTotal}%</td>
-                  <td className="px-4 py-3 text-sm">-</td>
-                  <td className="px-4 py-3 text-sm">-</td>
-                </tr>
-                {/* Staff Rows */}
-                {HARDCODED_STAFF.map((staff) => (
-                  <tr key={staff.id} className="hover:bg-gray-50">
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-full bg-[#D71A21] flex items-center justify-center text-white text-xs font-semibold">
-                          {staff.avatar}
-                        </div>
-                        <span className="text-sm font-medium text-[#D71A21]">{staff.name}</span>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 text-sm text-[#D71A21]">{staff.uldsHandled}</td>
-                    <td className="px-4 py-3 text-sm">{staff.breakdowns}</td>
-                    <td className="px-4 py-3 text-sm text-[#D71A21]">{staff.percentOfTotal}%</td>
-                    <td className="px-4 py-3 text-sm">{staff.avgTimePerULD}</td>
-                    <td className="px-4 py-3 text-sm">{staff.onlineTime}</td>
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Staff</th>
+                    <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase">Total Hours</th>
+                    <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase">Total Units</th>
+                    <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase">Efficiency<br/>(Units/HR)</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y">
+                  {/* Average Row */}
+                  <tr className="bg-gray-50 font-semibold">
+                    <td className="px-4 py-3 text-sm">Average</td>
+                    <td className="px-4 py-3 text-sm text-center">{avgTotalHrs}</td>
+                    <td className="px-4 py-3 text-sm text-center">{avgTotalUnits}</td>
+                    <td className="px-4 py-3 text-sm text-center">{avgEfficiency}</td>
+                  </tr>
+                  {/* Staff Rows */}
+                  {filteredStaff.map((staff) => (
+                    <tr key={staff.id} className="hover:bg-gray-50">
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-full bg-[#D71A21] flex items-center justify-center text-white text-xs font-semibold">
+                            {staff.avatar}
+                          </div>
+                          <span className="text-sm font-medium text-[#D71A21]">{staff.staffName}</span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-sm text-center">{staff.totalHrs}</td>
+                      <td className="px-4 py-3 text-sm text-center text-[#D71A21]">{staff.totalUnits}</td>
+                      <td className="px-4 py-3 text-sm text-center text-[#D71A21]">{staff.efficiency}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       </div>
