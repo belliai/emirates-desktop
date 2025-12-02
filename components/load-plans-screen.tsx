@@ -432,10 +432,17 @@ export default function LoadPlansScreen({ onLoadPlanSelect }: { onLoadPlanSelect
           console.log('[LoadPlansScreen] Parsed shipments from', f.name, processingNote, ':', shipments.length)
           
           // Validate that we have shipments
+          // For RTF files, skip silently if no shipments (RTF parsing is still experimental)
           if (!shipments || shipments.length === 0) {
-            console.error('[LoadPlansScreen] No shipments parsed from file:', f.name)
-            failedFiles.push(f.name)
-            continue
+            if (isRTF) {
+              console.warn('[LoadPlansScreen] ⚠️ No shipments parsed from RTF file (skipping):', f.name)
+              skippedFlights.push(f.name)
+              continue
+            } else {
+              console.error('[LoadPlansScreen] No shipments parsed from file:', f.name)
+              failedFiles.push(f.name)
+              continue
+            }
           }
           
           // Log ramp transfer detection
@@ -538,7 +545,9 @@ export default function LoadPlansScreen({ onLoadPlanSelect }: { onLoadPlanSelect
         setTimeout(() => {
           alert(message)
         }, 100)
-      } else if (failedFiles.length === fileArray.length) {
+      } else if (failedFiles.length === fileArray.length && skippedFlights.length === 0) {
+        // Only throw error if all files failed AND none were skipped
+        // If files were skipped (e.g., RTF with no shipments), that's okay
         throw new Error(`Could not process any files. Please check the file format${fileArray.length > 1 ? "s" : ""}.`)
       }
 
