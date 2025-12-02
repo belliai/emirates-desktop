@@ -278,9 +278,21 @@ export function parseShipments(content: string, header: LoadPlanHeader): Shipmen
       // PC can be optional, and there can be multiple spaces between PCODE and THC
       // Use \s+ to match one or more spaces (more flexible for RTF-extracted text)
       // Normalize line first: collapse multiple spaces to single space for regex matching
+      // But preserve spacing in MAN.DESC field which can have multiple words
       const normalizedLine = line.replace(/\s+/g, " ")
+      // Updated regex to handle various date/time formats from RTF files:
+      // Examples from user's RTF:
+      // - "001 ... EK0323 29Feb0454 33:10/ N" (date with embedded time + separate time)
+      // - "002 ... EK9918 29Feb0315 25:35/34:50 N" (date with embedded time + multiple times)
+      // - "011 ... N" (no FLTIN/ARRDT/TIME)
+      // Pattern breakdown:
+      // - FLTIN: EK0323 or empty
+      // - ARRDT: 29Feb0454 (date + HHMM time embedded) or 29Feb2024 or 29Feb24
+      // - TIME: 33:10/ or 25:35/34:50 (time with optional multiple values separated by /)
+      // Note: MAN.DESC uses (.+?) which is non-greedy to stop at PCODE
+      // THC can be empty (just spaces), so use * instead of + for optional matching
       let shipmentMatch = normalizedLine.match(
-        /^(\d{3})\s+(\d{3}-\d{8})\s+([A-Z]{3})([A-Z]{3})\s+(\d+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([A-Z-]+)\s+(.+?)\s+([A-Z]{3})\s+([A-Z]\d)?\s+([A-Z0-9\s]+?)\s+(SS)\s+([YN])\s+([A-Z]+\d+)?\s*(\d{2}[A-Za-z]{3}\d{4})?\s*([\d:\/]+)?\s*([YN])?/i,
+        /^(\d{3})\s+(\d{3}-\d{8})\s+([A-Z]{3})([A-Z]{3})\s+(\d+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([A-Z-]+)\s+(.+?)\s+([A-Z]{3})\s+([A-Z]\d)?\s*([A-Z0-9\s]*?)\s+(SS)\s+([YN])\s+([A-Z]+\d+)?\s*(\d{2}[A-Za-z]{3}\d{2,4}(?:\s+[\d:\/]+)?)?\s*([\d:\/\s]+)?\s*([YN])?$/i,
       )
       
       // If first regex doesn't match, try format without FLTIN/ARRDT.TIME (e.g., shipment 002)

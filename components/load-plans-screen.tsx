@@ -218,94 +218,75 @@ export default function LoadPlansScreen({ onLoadPlanSelect }: { onLoadPlanSelect
           let header, shipments
           
           if (isRTF) {
-            // Use RTF-specific parser
-            console.log('[LoadPlansScreen] Using RTF parser for:', f.name)
+            // For RTF files, use extractTextFromFile which handles RTF conversion properly
+            console.log('[LoadPlansScreen] Processing RTF file:', f.name)
             try {
-              const rtfResult = await parseRTFFile(f)
-              header = rtfResult.header
-              shipments = rtfResult.shipments
+              // Use existing extractTextFromFile which handles RTF -> DOCX conversion
+              const content = await extractTextFromFile(f)
+              console.log('[LoadPlansScreen] Extracted RTF content length:', content.length)
               
-              // If RTF parser returns very few shipments, try fallback to regular parser
-              if (shipments.length < 5) {
-                console.warn('[LoadPlansScreen] RTF parser returned only', shipments.length, 'shipments. Trying fallback to regular parser...')
-                try {
-                  // Use direct RTF extraction (same as RTF parser uses) to avoid DOCX conversion
-                  const rtfText = await f.text()
-                  let fallbackContent = rtfText
-                    .replace(/\\par[d]?/gi, "\n")
-                    .replace(/\\line/gi, "\n")
-                    .replace(/\\tab/gi, "\t")
-                    .replace(/\\;/g, ";")
-                    .replace(/\\\\/g, "\\")
-                    .replace(/\\'([0-9a-fA-F]{2})/g, (_m, hex) => String.fromCharCode(parseInt(hex, 16)))
-                    .replace(/\\[a-zA-Z]+-?\d*(?:\s|)/g, "")
-                    .replace(/\{[^}]*\}/g, "")
-                    .replace(/[{}]/g, "")
-                  
-                  // Find table header and extract from there
-                  const lines = fallbackContent.split("\n")
-                  let startIdx = 0
-                  for (let i = 0; i < lines.length; i++) {
-                    if (lines[i].includes("SER.") && lines[i].includes("AWB NO")) {
-                      startIdx = Math.max(0, i - 50)
-                      break
-                    }
-                  }
-                  fallbackContent = lines.slice(startIdx).join("\n")
-                  
-                  const fallbackHeader = parseHeader(fallbackContent)
-                  const fallbackShipments = parseShipments(fallbackContent, fallbackHeader)
-                  
-                  if (fallbackShipments.length > shipments.length) {
-                    console.log('[LoadPlansScreen] Fallback parser found', fallbackShipments.length, 'shipments. Using fallback result.')
-                    header = fallbackHeader
-                    shipments = fallbackShipments
-                  } else {
-                    console.log('[LoadPlansScreen] RTF parser result is better, keeping RTF result.')
-                  }
-                } catch (fallbackError) {
-                  console.error('[LoadPlansScreen] Fallback parser also failed:', fallbackError)
+              // Log sample for debugging
+              if (content.length > 0) {
+                const sample = content.substring(0, 1000)
+                console.log('[LoadPlansScreen] First 1000 chars of RTF content:', sample)
+                // Check for shipment-like lines
+                const shipmentLines = content.split("\n").filter(l => /^\d{3}\s+\d{3}-\d{8}/.test(l.trim())).slice(0, 10)
+                if (shipmentLines.length > 0) {
+                  console.log('[LoadPlansScreen] Found shipment-like lines in RTF:', shipmentLines.map(l => l.substring(0, 150)))
+                } else {
+                  console.warn('[LoadPlansScreen] No shipment-like lines found in RTF content')
                 }
               }
-            } catch (rtfError) {
-              console.error('[LoadPlansScreen] RTF parser failed, trying fallback to regular parser:', rtfError)
-              // Fallback to regular parser with direct RTF extraction
-              try {
-                const rtfText = await f.text()
-                let fallbackContent = rtfText
-                  .replace(/\\par[d]?/gi, "\n")
-                  .replace(/\\line/gi, "\n")
-                  .replace(/\\tab/gi, "\t")
-                  .replace(/\\;/g, ";")
-                  .replace(/\\\\/g, "\\")
-                  .replace(/\\'([0-9a-fA-F]{2})/g, (_m, hex) => String.fromCharCode(parseInt(hex, 16)))
-                  .replace(/\\[a-zA-Z]+-?\d*(?:\s|)/g, "")
-                  .replace(/\{[^}]*\}/g, "")
-                  .replace(/[{}]/g, "")
-                
-                // Find table header
-                const lines = fallbackContent.split("\n")
-                let startIdx = 0
-                for (let i = 0; i < lines.length; i++) {
-                  if (lines[i].includes("SER.") && lines[i].includes("AWB NO")) {
-                    startIdx = Math.max(0, i - 50)
-                    break
-                  }
-                }
-                fallbackContent = lines.slice(startIdx).join("\n")
-                
-                header = parseHeader(fallbackContent)
-                if (!header.flightNumber) {
-                  console.error('[LoadPlansScreen] Could not parse flight number from file:', f.name)
+              
+              header = parseHeader(content)
+              if (!header.flightNumber) {
+                // Try to extract from filename
+                const filenameMatch = f.name.match(/EK\s*[-]?\s*(\d{4})/i)
+                if (filenameMatch) {
+                  header.flightNumber = `EK${filenameMatch[1]}`
+                  console.log('[LoadPlansScreen] Extracted flight number from filename:', header.flightNumber)
+                } else {
+                  console.error('[LoadPlansScreen] Could not parse flight number from RTF file:', f.name)
                   failedFiles.push(f.name)
                   continue
                 }
-                shipments = parseShipments(fallbackContent, header)
-              } catch (fallbackError) {
-                console.error('[LoadPlansScreen] All parsing methods failed:', fallbackError)
-                failedFiles.push(f.name)
-                continue
               }
+              
+              shipments = parseShipments(content, header)
+              console.log('[LoadPlansScreen] Parsed', shipments.length, 'shipments from RTF file')
+              
+              // If no shipments parsed, log more details for debugging
+              if (shipments.length === 0) {
+                console.error('[LoadPlansScreen] ⚠️ No shipments parsed from RTF!')
+                console.error('[LoadPlansScreen] Content length:', content.length)
+                console.error('[LoadPlansScreen] Header parsed:', header)
+                
+                // Try to find why parsing failed
+                const lines = content.split("\n")
+                const tableHeaderLine = lines.findIndex(l => l.includes("SER") && l.includes("AWB"))
+                if (tableHeaderLine >= 0) {
+                  console.log('[LoadPlansScreen] Found table header at line:', tableHeaderLine)
+                  console.log('[LoadPlansScreen] Table header line:', lines[tableHeaderLine])
+                  // Show next 10 lines after header
+                  const nextLines = lines.slice(tableHeaderLine + 1, tableHeaderLine + 11)
+                  console.log('[LoadPlansScreen] Next 10 lines after header:', nextLines)
+                } else {
+                  console.error('[LoadPlansScreen] ❌ Table header not found in content!')
+                }
+                
+                // Check for shipment-like lines that weren't parsed
+                const shipmentLikeLines = content.split("\n").filter(l => /^\d{3}\s+\d{3}-\d{8}/.test(l.trim()))
+                if (shipmentLikeLines.length > 0) {
+                  console.error('[LoadPlansScreen] Found', shipmentLikeLines.length, 'lines that look like shipments but were not parsed:')
+                  shipmentLikeLines.slice(0, 5).forEach((line, idx) => {
+                    console.error(`[LoadPlansScreen]   ${idx + 1}:`, line.substring(0, 200))
+                  })
+                }
+              }
+            } catch (rtfError) {
+              console.error('[LoadPlansScreen] Error processing RTF file:', rtfError)
+              failedFiles.push(f.name)
+              continue
             }
           } else {
             // Use regular parser for other file types

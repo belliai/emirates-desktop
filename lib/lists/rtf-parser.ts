@@ -242,7 +242,11 @@ export function parseRTFShipments(content: string, header: LoadPlanHeader): Ship
       continue
     }
 
-    if (line.includes("SER.") && line.includes("AWB NO")) {
+    // Check for table header - be more flexible with spacing and format
+    const hasSer = (line.includes("SER") || line.includes("SER.")) && !line.match(/^[0-9]/)
+    const hasAWB = line.includes("AWB") || line.includes("AWBNO") || line.includes("AWB NO")
+    
+    if (hasSer && hasAWB) {
       // New table header - flush buffer
       if (awbBuffer.length > 0) {
         console.log("[RTFParser] ⚠️ New table header found with", awbBuffer.length, "items in buffer - flushing buffer for sector:", currentSector)
@@ -262,7 +266,8 @@ export function parseRTFShipments(content: string, header: LoadPlanHeader): Ship
       }
       
       inShipmentSection = true
-      console.log("[RTFParser] ✅ New shipment table header detected - starting new sector section:", currentSector)
+      console.log("[RTFParser] ✅ New shipment table header detected at line", i, "- starting new sector section:", currentSector)
+      console.log("[RTFParser] Header line:", line.substring(0, 200))
       continue
     }
 
@@ -305,9 +310,22 @@ export function parseRTFShipments(content: string, header: LoadPlanHeader): Ship
       continue
     }
 
+    // Only try to parse if we're in shipment section
+    if (!inShipmentSection) {
+      continue
+    }
+    
     // Parse shipment line - RTF may have inconsistent spacing, so normalize first
     // Use same pattern as regular parser but with normalization for RTF
     const normalizedLine = line.replace(/\s+/g, " ")
+    
+    // First, try to match minimal format (just SER and AWB) - RTF might have incomplete lines
+    const minimalMatch = normalizedLine.match(/^(\d{3})\s+(\d{3}-\d{8})(?:\s+(.{6}))?/i)
+    if (minimalMatch && !shipmentMatch) {
+      // This looks like a shipment but is incomplete - log it for debugging
+      console.warn(`[RTFParser] ⚠️ Found minimal shipment line at line ${i}:`, line.substring(0, 150))
+    }
+    
     let shipmentMatch = normalizedLine.match(
       /^(\d{3})\s+(\d{3}-\d{8})\s+([A-Z]{3})([A-Z]{3})\s+(\d+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([A-Z-]+)\s+(.+?)\s+([A-Z]{3})\s+([A-Z]\d)?\s+([A-Z0-9\s]+?)\s+(SS)\s+([YN])\s+([A-Z]+\d+)?\s*(\d{2}[A-Za-z]{3}\d{4})?\s*([\d:\/]+)?\s*([YN])?/i,
     )
