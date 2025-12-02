@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect, useRef } from 'react'
-import { ChevronRight, Plane, Calendar, Package, Users, Clock, FileText, Upload, ChevronDown } from 'lucide-react'
+import { ChevronRight, Plane, Calendar, Package, Users, Clock, FileText, Upload, ChevronDown, ClipboardPaste } from 'lucide-react'
 import LoadPlanDetailScreen from './load-plan-detail-screen'
 import type { LoadPlanDetail } from './load-plan-types'
 import { getLoadPlansFromSupabase, getLoadPlanDetailFromSupabase } from '@/lib/load-plans-supabase'
@@ -9,6 +9,7 @@ import { useLoadPlans, type LoadPlan } from '@/lib/load-plan-context'
 import { Button } from '@/components/ui/button'
 import { UploadModal } from './lists/upload-modal'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
+import { ClipboardPasteModal } from './clipboard-paste-modal'
 
 interface QRTListScreenProps {
   onBack?: () => void
@@ -20,7 +21,9 @@ export default function QRTListScreen({ onBack }: QRTListScreenProps) {
   const [savedDetails, setSavedDetails] = useState<Map<string, LoadPlanDetail>>(new Map())
   const [isLoading, setIsLoading] = useState(true)
   const [showUploadModal, setShowUploadModal] = useState(false)
+  const [showPasteModal, setShowPasteModal] = useState(false)
   const [isBayNumbersOpen, setIsBayNumbersOpen] = useState(false)
+  const [bayNumberData, setBayNumberData] = useState<{ headers: string[]; rows: string[][] } | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   // Fetch load plans from Supabase on mount
@@ -212,10 +215,16 @@ export default function QRTListScreen({ onBack }: QRTListScreenProps) {
         {/* Header with Upload Button */}
         <div className="flex justify-between items-center mb-4 px-2">
           <h2 className="text-lg font-semibold text-gray-900">QRT List</h2>
-          <Button onClick={() => setShowUploadModal(true)} className="bg-[#D71A21] hover:bg-[#B01419] text-white">
-            <Upload className="w-4 h-4 mr-2" />
-            Upload Files
-          </Button>
+          <div className="flex gap-2">
+            <Button onClick={() => setShowPasteModal(true)} variant="outline" className="border-[#D71A21] text-[#D71A21] hover:bg-[#D71A21] hover:text-white">
+              <ClipboardPaste className="w-4 h-4 mr-2" />
+              Paste Bay Data
+            </Button>
+            <Button onClick={() => setShowUploadModal(true)} className="bg-[#D71A21] hover:bg-[#B01419] text-white">
+              <Upload className="w-4 h-4 mr-2" />
+              Upload Files
+            </Button>
+          </div>
         </div>
 
         {/* Bay Numbers Section Toggle */}
@@ -223,7 +232,14 @@ export default function QRTListScreen({ onBack }: QRTListScreenProps) {
           <Collapsible open={isBayNumbersOpen} onOpenChange={setIsBayNumbersOpen}>
             <CollapsibleTrigger className="w-full">
               <div className="bg-white rounded-lg border border-gray-200 p-4 flex items-center justify-between hover:bg-gray-50 transition-colors">
-                <h3 className="text-lg font-semibold text-gray-900">Bay Numbers</h3>
+                <div className="flex items-center gap-3">
+                  <h3 className="text-lg font-semibold text-gray-900">Bay Numbers</h3>
+                  {bayNumberData && (
+                    <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">
+                      {bayNumberData.rows.length} flights loaded
+                    </span>
+                  )}
+                </div>
                 {isBayNumbersOpen ? (
                   <ChevronDown className="w-5 h-5 text-gray-600" />
                 ) : (
@@ -233,9 +249,47 @@ export default function QRTListScreen({ onBack }: QRTListScreenProps) {
             </CollapsibleTrigger>
             <CollapsibleContent>
               <div className="bg-white rounded-lg border border-gray-200 border-t-0 overflow-hidden">
-                <div className="p-4">
-                  <p className="text-sm text-gray-500">Bay numbers are updated every 3 hours via upload.</p>
-                </div>
+                {bayNumberData ? (
+                  <div className="max-h-[400px] overflow-auto">
+                    <table className="w-full text-sm">
+                      <thead className="bg-gray-100 sticky top-0">
+                        <tr>
+                          {bayNumberData.headers.map((header, i) => (
+                            <th
+                              key={i}
+                              className="px-3 py-2 text-left font-semibold text-gray-700 border-b whitespace-nowrap text-xs"
+                            >
+                              {header}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {bayNumberData.rows.map((row, rowIndex) => (
+                          <tr
+                            key={rowIndex}
+                            className={rowIndex % 2 === 0 ? "bg-white" : "bg-gray-50"}
+                          >
+                            {bayNumberData.headers.map((_, colIndex) => (
+                              <td
+                                key={colIndex}
+                                className="px-3 py-1.5 border-b border-gray-100 whitespace-nowrap text-xs"
+                              >
+                                {row[colIndex] || ""}
+                              </td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="p-4">
+                    <p className="text-sm text-gray-500">
+                      No bay data loaded. Click "Paste Bay Data" to import from the legacy system.
+                    </p>
+                  </div>
+                )}
               </div>
             </CollapsibleContent>
           </Collapsible>
@@ -335,6 +389,18 @@ export default function QRTListScreen({ onBack }: QRTListScreenProps) {
         onDragLeave={() => {}}
         onDrop={() => {}}
         onFileInputChange={() => {}}
+      />
+
+      {/* Clipboard Paste Modal for Bay Data */}
+      <ClipboardPasteModal
+        isOpen={showPasteModal}
+        onClose={() => setShowPasteModal(false)}
+        title="Paste Bay Data"
+        description="Copy the bay/flight table from the legacy system and paste below"
+        onConfirm={(data) => {
+          setBayNumberData(data)
+          setIsBayNumbersOpen(true)
+        }}
       />
     </div>
   )
