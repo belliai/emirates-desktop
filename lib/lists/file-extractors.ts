@@ -103,14 +103,79 @@ function rtfToPlainText(rtf: string): string {
 }
 
 /**
- * Extract text from RTF file using rtf-parser library first, fallback to manual extraction
+ * Extract text from RTF file using rtf-stream-parser first, then rtf-parser, then manual extraction
  */
 async function extractTextFromRTF(file: File): Promise<string> {
+  const rtfText = await file.text()
+  
+  // Method 1: Try using rtf-stream-parser (most reliable)
+  try {
+    console.log('[v0] Extracting RTF using rtf-stream-parser library...')
+    const RTFStreamParserModule = await import('rtf-stream-parser')
+    
+    // Try different ways to access the parser
+    const RTFStreamParser = RTFStreamParserModule.default || RTFStreamParserModule
+    
+    let textContent = ''
+    let parser: any
+    
+    // Try different initialization methods
+    if (typeof RTFStreamParser === 'function') {
+      parser = new RTFStreamParser()
+    } else if (RTFStreamParser.default && typeof RTFStreamParser.default === 'function') {
+      parser = new RTFStreamParser.default()
+    } else {
+      throw new Error('Could not initialize rtf-stream-parser')
+    }
+    
+    // Set up event listeners
+    if (parser.on) {
+      parser.on('text', (text: string) => {
+        textContent += text
+      })
+      
+      parser.on('paragraph', () => {
+        textContent += '\n'
+      })
+      
+      // Parse the RTF content
+      if (parser.write) {
+        parser.write(rtfText)
+      }
+      if (parser.end) {
+        parser.end()
+      }
+    } else {
+      throw new Error('rtf-stream-parser API not recognized')
+    }
+    
+    const extractedText = textContent.trim()
+    
+    if (extractedText && extractedText.length > 100) {
+      console.log('[v0] ✅ Successfully extracted RTF using rtf-stream-parser, length:', extractedText.length)
+      
+      // Check for table header
+      if (extractedText.includes("SER") && extractedText.includes("AWB")) {
+        console.log('[v0] ✅ Table header found in rtf-stream-parser extraction')
+      }
+      
+      // Check for shipment-like lines
+      const shipmentLines = extractedText.split("\n").filter(l => /^\d{3}\s+\d{3}-\d{8}/.test(l.trim())).slice(0, 5)
+      if (shipmentLines.length > 0) {
+        console.log('[v0] ✅ Found shipment-like lines in rtf-stream-parser:', shipmentLines.length)
+      }
+      
+      return extractedText
+    } else {
+      throw new Error('rtf-stream-parser extracted too little text')
+    }
+  } catch (streamParserError) {
+    console.warn('[v0] rtf-stream-parser failed, trying rtf-parser:', streamParserError)
+  }
+  
+  // Method 2: Try using rtf-parser library (fallback)
   try {
     console.log('[v0] Extracting RTF using rtf-parser library...')
-    
-    // Method 1: Try using rtf-parser library (more reliable)
-    const rtfText = await file.text()
     const rtfParser = await import('rtf-parser')
     const parsedRTF = await new Promise<any>((resolve, reject) => {
       rtfParser.string(rtfText, (err: Error | null, doc: any) => {
