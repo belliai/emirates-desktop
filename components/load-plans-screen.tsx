@@ -9,7 +9,7 @@ import { UploadModal } from "./lists/upload-modal"
 import { Button } from "@/components/ui/button"
 import { useLoadPlans, type LoadPlan } from "@/lib/load-plan-context"
 import { getLoadPlansFromSupabase, getLoadPlanDetailFromSupabase, deleteLoadPlanFromSupabase } from "@/lib/load-plans-supabase"
-import { parseHeader, parseShipments } from "@/lib/lists/parser"
+import { parseHeader, parseShipments, detectCriticalFromFileImages } from "@/lib/lists/parser"
 import { parseRTFHeader, parseRTFShipments, parseRTFFileWithStreamParser } from "@/lib/lists/rtf-parser"
 import { saveListsDataToSupabase } from "@/lib/lists/supabase-save"
 import type { ListsResults } from "@/lib/lists/types"
@@ -348,6 +348,28 @@ export default function LoadPlansScreen({ onLoadPlanSelect }: { onLoadPlanSelect
             try {
               const result = await parseRTFFileWithStreamParser(f)
               header = result.header
+              
+              // If CRITICAL not detected in text, try OCR on images (for RTF converted to DOCX if needed)
+              if (!header.isCritical) {
+                console.log('[LoadPlansScreen] CRITICAL not detected in RTF text, trying OCR on images...')
+                try {
+                  // Note: RTF image extraction is complex, but we can try if file was converted
+                  // For now, we'll try OCR detection which might work if images are accessible
+                  const isCriticalFromOCR = await detectCriticalFromFileImages(f)
+                  if (isCriticalFromOCR) {
+                    header.isCritical = true
+                    console.log('[LoadPlansScreen] ✅ CRITICAL detected via OCR in RTF!')
+                  } else {
+                    console.log('[LoadPlansScreen] ⚠️ CRITICAL not detected via OCR in RTF')
+                  }
+                } catch (ocrError) {
+                  console.warn('[LoadPlansScreen] OCR detection failed for RTF (expected):', ocrError)
+                  // OCR for RTF is not fully implemented, this is expected
+                }
+              } else {
+                console.log('[LoadPlansScreen] ✅ CRITICAL already detected in RTF text')
+              }
+              
               shipments = result.shipments
               
               console.log('[LoadPlansScreen] ✅ Successfully parsed RTF file with rtf-stream-parser')
@@ -376,6 +398,33 @@ export default function LoadPlansScreen({ onLoadPlanSelect }: { onLoadPlanSelect
                 continue
               }
             }
+            
+            // Always try OCR on images (stamps are usually images, not text)
+            // OCR is more reliable for detecting visual stamps even if text detection found something
+            console.log('[LoadPlansScreen] ========================================')
+            console.log('[LoadPlansScreen] Starting OCR detection for CRITICAL stamp...')
+            console.log('[LoadPlansScreen] File name:', f.name)
+            console.log('[LoadPlansScreen] File type:', f.type)
+            console.log('[LoadPlansScreen] File size:', f.size, 'bytes')
+            console.log('[LoadPlansScreen] ========================================')
+            try {
+              const isCriticalFromOCR = await detectCriticalFromFileImages(f)
+              if (isCriticalFromOCR) {
+                header.isCritical = true
+                console.log('[LoadPlansScreen] ✅ CRITICAL detected via OCR!')
+              } else {
+                console.log('[LoadPlansScreen] ⚠️ CRITICAL not detected via OCR')
+                if (!header.isCritical) {
+                  console.log('[LoadPlansScreen] ⚠️ CRITICAL not detected in text or images')
+                } else {
+                  console.log('[LoadPlansScreen] ✅ CRITICAL was detected in text (but not in images)')
+                }
+              }
+            } catch (ocrError) {
+              console.error('[LoadPlansScreen] Error during OCR detection:', ocrError)
+              // Don't fail the whole process if OCR fails
+            }
+            
             shipments = parseShipments(content, header)
           }
           
@@ -422,6 +471,11 @@ export default function LoadPlansScreen({ onLoadPlanSelect }: { onLoadPlanSelect
             flightNumber: header.flightNumber,
             shipmentsCount: shipments.length,
             fileName: f.name,
+            isCritical: header.isCritical,
+          })
+          console.log('[LoadPlansScreen] Header object before save:', {
+            ...header,
+            isCritical: header.isCritical,
           })
           
           // Save to Supabase

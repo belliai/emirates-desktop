@@ -10,6 +10,7 @@ export interface LoadPlanHeader {
   ttlPlnUld?: string
   uldVersion?: string
   headerWarning?: string
+  isCritical?: boolean // Flag to indicate if document has CRITICAL stamp
 }
 
 export interface Shipment {

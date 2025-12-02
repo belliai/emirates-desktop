@@ -190,6 +190,31 @@ export function parseRTFHeader(content: string): LoadPlanHeader {
     headerWarning = warningLines.join("\n").trim()
   }
 
+  // Detect CRITICAL stamp - check if "CRITICAL" text appears anywhere in the content
+  // The stamp can appear as:
+  // 1. Visual stamp (image) - might not be detected in text extraction
+  // 2. Text "CRITICAL" anywhere in document
+  // 3. "CRITICAL SECTOR" or similar patterns
+  // Search in entire document, not just header area
+  const contentUpper = processedContent.toUpperCase()
+  const hasCriticalText = /CRITICAL/i.test(processedContent)
+  const hasCriticalSector = /CRITICAL\s+SECTOR/i.test(contentUpper)
+  const hasCriticalStamp = /CRITICAL\s+STAMP/i.test(contentUpper)
+  const isCritical = hasCriticalText || hasCriticalSector || hasCriticalStamp || contentUpper.includes("CRITICAL")
+  
+  // Log detection for debugging
+  if (isCritical) {
+    console.log('[RTFParser] ✅ CRITICAL detected:', {
+      hasCriticalText,
+      hasCriticalSector,
+      hasCriticalStamp,
+      sample: processedContent.substring(0, 500).replace(/\n/g, ' ')
+    })
+  } else {
+    // Log first 1000 chars to help debug why CRITICAL wasn't detected
+    console.log('[RTFParser] ⚠️ CRITICAL not detected. First 1000 chars:', processedContent.substring(0, 1000))
+  }
+
   return { 
     flightNumber, 
     date, 
@@ -202,6 +227,7 @@ export function parseRTFHeader(content: string): LoadPlanHeader {
     ttlPlnUld: ttlPlnUld || undefined,
     uldVersion: uldVersion || undefined,
     headerWarning: headerWarning || undefined,
+    isCritical: isCritical === true ? true : undefined, // Explicitly set to true or undefined
   }
 }
 
