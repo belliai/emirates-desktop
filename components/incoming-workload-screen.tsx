@@ -5,38 +5,112 @@ import { Plane, Clock, MapPin, Package, Plus, Search, SlidersHorizontal, Setting
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell, TooltipProps } from "recharts"
 import { useLoadPlans, type LoadPlan, type ShiftType, type PeriodType, type WaveType } from "@/lib/load-plan-context"
 import { BUP_ALLOCATION_DATA } from "@/lib/bup-allocation-data"
+import type { WorkArea } from "./flights-view-screen"
 
-// Parse ULD count from ttlPlnUld string (e.g., "06PMC/07AKE" -> {pmc: 6, ake: 7, bulk: 0, total: 13})
-function parseULDCount(ttlPlnUld: string): { pmc: number; ake: number; bulk: number; total: number } {
-  if (!ttlPlnUld) return { pmc: 0, ake: 0, bulk: 0, total: 0 }
+// Parse ULD count from ttlPlnUld string (e.g., "06PMC/07AKE" -> {pmc: 6, ake: 7, total: 13})
+function parseULDCount(ttlPlnUld: string): { pmc: number; ake: number; total: number } {
+  if (!ttlPlnUld) return { pmc: 0, ake: 0, total: 0 }
   const pmcMatch = ttlPlnUld.match(/(\d+)PMC/i)
   const akeMatch = ttlPlnUld.match(/(\d+)AKE/i)
-  const bulkMatch = ttlPlnUld.match(/(\d+)BULK/i)
   const pmc = pmcMatch ? parseInt(pmcMatch[1]) : 0
   const ake = akeMatch ? parseInt(akeMatch[1]) : 0
-  const bulk = bulkMatch ? parseInt(bulkMatch[1]) : 0
-  return { pmc, ake, bulk, total: pmc + ake + bulk }
+  return { pmc, ake, total: pmc + ake }
 }
 
-// Custom tooltip to prevent duplicates and only show relevant data
-function CustomTooltip({ active, payload, label }: TooltipProps<number, string>) {
-  if (!active || !payload || !payload.length) return null
+// Parse GCR ULD count from ttlPlnUld string (PMC/AMF, ALF/PLA, AKE/AKL)
+function parseGCRULDCount(ttlPlnUld: string): { pmcAmf: number; alfPla: number; akeAkl: number; total: number } {
+  if (!ttlPlnUld) return { pmcAmf: 0, alfPla: 0, akeAkl: 0, total: 0 }
+  
+  // Match PMC or AMF (e.g., "06PMC", "03AMF")
+  const pmcMatch = ttlPlnUld.match(/(\d+)PMC/i)
+  const amfMatch = ttlPlnUld.match(/(\d+)AMF/i)
+  const pmcAmf = (pmcMatch ? parseInt(pmcMatch[1]) : 0) + (amfMatch ? parseInt(amfMatch[1]) : 0)
+  
+  // Match ALF or PLA (e.g., "04ALF", "02PLA")
+  const alfMatch = ttlPlnUld.match(/(\d+)ALF/i)
+  const plaMatch = ttlPlnUld.match(/(\d+)PLA/i)
+  const alfPla = (alfMatch ? parseInt(alfMatch[1]) : 0) + (plaMatch ? parseInt(plaMatch[1]) : 0)
+  
+  // Match AKE or AKL (e.g., "07AKE", "05AKL")
+  const akeMatch = ttlPlnUld.match(/(\d+)AKE/i)
+  const aklMatch = ttlPlnUld.match(/(\d+)AKL/i)
+  const akeAkl = (akeMatch ? parseInt(akeMatch[1]) : 0) + (aklMatch ? parseInt(aklMatch[1]) : 0)
+  
+  return { pmcAmf, alfPla, akeAkl, total: pmcAmf + alfPla + akeAkl }
+}
 
-  const data = payload[0]?.payload
-  if (!data) return null
+// Parse PIL/PER ULD count from ttlPlnUld string (AKE/DPE, ALF/DQF, LD-PMC/AMF)
+function parsePilPerULDCount(ttlPlnUld: string): { akeDpe: number; alfDqf: number; ldPmcAmf: number; total: number } {
+  if (!ttlPlnUld) return { akeDpe: 0, alfDqf: 0, ldPmcAmf: 0, total: 0 }
+  
+  // Match AKE or DPE (e.g., "07AKE", "05DPE")
+  const akeMatch = ttlPlnUld.match(/(\d+)AKE/i)
+  const dpeMatch = ttlPlnUld.match(/(\d+)DPE/i)
+  const akeDpe = (akeMatch ? parseInt(akeMatch[1]) : 0) + (dpeMatch ? parseInt(dpeMatch[1]) : 0)
+  
+  // Match ALF or DQF (e.g., "04ALF", "02DQF")
+  const alfMatch = ttlPlnUld.match(/(\d+)ALF/i)
+  const dqfMatch = ttlPlnUld.match(/(\d+)DQF/i)
+  const alfDqf = (alfMatch ? parseInt(alfMatch[1]) : 0) + (dqfMatch ? parseInt(dqfMatch[1]) : 0)
+  
+  // Match LD3, LD-PMC, LD-AMF, PMC, or AMF (LD-PMC/AMF includes LD3, LD-PMC, LD-AMF, PMC, AMF)
+  const ld3Match = ttlPlnUld.match(/(\d+)LD3/i)
+  const ldPmcMatch = ttlPlnUld.match(/(\d+)LD-?PMC/i)
+  const ldAmfMatch = ttlPlnUld.match(/(\d+)LD-?AMF/i)
+  const pmcMatch = ttlPlnUld.match(/(\d+)PMC/i)
+  const amfMatch = ttlPlnUld.match(/(\d+)AMF/i)
+  const ldPmcAmf = 
+    (ld3Match ? parseInt(ld3Match[1]) : 0) +
+    (ldPmcMatch ? parseInt(ldPmcMatch[1]) : 0) +
+    (ldAmfMatch ? parseInt(ldAmfMatch[1]) : 0) +
+    (pmcMatch ? parseInt(pmcMatch[1]) : 0) +
+    (amfMatch ? parseInt(amfMatch[1]) : 0)
+  
+  return { akeDpe, alfDqf, ldPmcAmf, total: akeDpe + alfDqf + ldPmcAmf }
+}
+
+// Custom tooltip factory that creates a tooltip component with access to selectedWorkArea
+function createCustomTooltip(selectedWorkArea: WorkArea) {
+  return function CustomTooltip({ active, payload, label }: TooltipProps<number, string>) {
+    if (!active || !payload || !payload.length) return null
+
+    const data = payload[0]?.payload
+    if (!data) return null
+
+    const workArea = selectedWorkArea
 
   // For Total bar, show breakdown
-  if (label === "Total" && data.pmc !== undefined) {
+  if (label === "Total") {
     const items: Array<{ name: string; value: number; color: string }> = []
     
-    if (data.pmc > 0) {
-      items.push({ name: "PMC", value: data.pmc, color: "#DC2626" })
-    }
-    if (data.ake > 0) {
-      items.push({ name: "AKE", value: data.ake, color: "#EF4444" })
-    }
-    if (data.bulk > 0) {
-      items.push({ name: "Bulk", value: data.bulk, color: "#F59E0B" })
+    if (workArea === "GCR") {
+      if (data.pmcAmf > 0) {
+        items.push({ name: "PMC/AMF", value: data.pmcAmf, color: "#DC2626" })
+      }
+      if (data.alfPla > 0) {
+        items.push({ name: "ALF/PLA", value: data.alfPla, color: "#EF4444" })
+      }
+      if (data.akeAkl > 0) {
+        items.push({ name: "AKE/AKL", value: data.akeAkl, color: "#F87171" })
+      }
+    } else if (workArea === "PIL and PER") {
+      if (data.akeDpe > 0) {
+        items.push({ name: "AKE/DPE", value: data.akeDpe, color: "#EF4444" })
+      }
+      if (data.alfDqf > 0) {
+        items.push({ name: "ALF/DQF", value: data.alfDqf, color: "#F87171" })
+      }
+      if (data.ldPmcAmf > 0) {
+        items.push({ name: "LD-PMC/AMF", value: data.ldPmcAmf, color: "#DC2626" })
+      }
+    } else {
+      // "All" - original breakdown
+      if (data.pmc > 0) {
+        items.push({ name: "PMC", value: data.pmc, color: "#DC2626" })
+      }
+      if (data.ake > 0) {
+        items.push({ name: "AKE", value: data.ake, color: "#EF4444" })
+      }
     }
     
     return (
@@ -64,11 +138,32 @@ function CustomTooltip({ active, payload, label }: TooltipProps<number, string>)
     )
   }
 
-  // For individual bars (PMC or AKE), show single value
+  // For individual bars, show single value
   const value = typeof payload[0]?.value === 'number' ? payload[0].value : 0
   if (value <= 0) return null
 
-  const color = label === "AKE" ? "#EF4444" : "#DC2626"
+  // Determine color based on label and work area
+  let color = "#DC2626"
+  if (workArea === "GCR") {
+    if (label === "PMC/AMF") {
+      color = "#DC2626"
+    } else if (label === "ALF/PLA") {
+      color = "#EF4444"
+    } else if (label === "AKE/AKL") {
+      color = "#F87171"
+    }
+  } else if (workArea === "PIL and PER") {
+    if (label === "AKE/DPE") {
+      color = "#EF4444"
+    } else if (label === "ALF/DQF") {
+      color = "#F87171"
+    } else if (label === "LD-PMC/AMF") {
+      color = "#DC2626"
+    }
+  } else {
+    // "All"
+    color = label === "AKE" ? "#EF4444" : "#DC2626"
+  }
   
   return (
     <div className="bg-white border border-gray-300 rounded px-3 py-2 shadow-lg">
@@ -87,6 +182,7 @@ function CustomTooltip({ active, payload, label }: TooltipProps<number, string>)
       </div>
     </div>
   )
+  }
 }
 
 // Parse STD time (e.g., "02:50", "09:35") to hours
@@ -134,23 +230,72 @@ function extractDestination(pax: string): string {
 }
 
 // Calculate ULD breakdown from actual flight data
-function calculateULDBreakdown(flights: Array<{ uldBreakdown: { pmc: number; ake: number; bulk: number; total: number } }>) {
+function calculateULDBreakdown(flights: Array<{ uldBreakdown: { pmc: number; ake: number; total: number } }>) {
   let pmcCount = 0
   let akeCount = 0
-  let bulkCount = 0
 
   flights.forEach((flight) => {
     pmcCount += flight.uldBreakdown.pmc
     akeCount += flight.uldBreakdown.ake
-    bulkCount += flight.uldBreakdown.bulk
   })
 
   return {
     PMC: pmcCount,
     AKE: akeCount,
-    BULK: bulkCount,
-    total: pmcCount + akeCount + bulkCount,
+    total: pmcCount + akeCount,
   }
+}
+
+// Calculate GCR ULD breakdown from flight data
+function calculateGCRULDBreakdown(flights: Array<{ ttlPlnUld: string }>) {
+  let pmcAmfCount = 0
+  let alfPlaCount = 0
+  let akeAklCount = 0
+
+  flights.forEach((flight) => {
+    const breakdown = parseGCRULDCount(flight.ttlPlnUld)
+    pmcAmfCount += breakdown.pmcAmf
+    alfPlaCount += breakdown.alfPla
+    akeAklCount += breakdown.akeAkl
+  })
+
+  return {
+    pmcAmf: pmcAmfCount,
+    alfPla: alfPlaCount,
+    akeAkl: akeAklCount,
+    total: pmcAmfCount + alfPlaCount + akeAklCount,
+  }
+}
+
+// Calculate PIL/PER ULD breakdown from flight data
+function calculatePilPerULDBreakdown(flights: Array<{ ttlPlnUld: string }>) {
+  let akeDpeCount = 0
+  let alfDqfCount = 0
+  let ldPmcAmfCount = 0
+
+  flights.forEach((flight) => {
+    const breakdown = parsePilPerULDCount(flight.ttlPlnUld)
+    akeDpeCount += breakdown.akeDpe
+    alfDqfCount += breakdown.alfDqf
+    ldPmcAmfCount += breakdown.ldPmcAmf
+  })
+
+  return {
+    akeDpe: akeDpeCount,
+    alfDqf: alfDqfCount,
+    ldPmcAmf: ldPmcAmfCount,
+    total: akeDpeCount + alfDqfCount + ldPmcAmfCount,
+  }
+}
+
+// TODO: Future enhancement - when LoadPlanDetail becomes available, use actual SHC codes
+// For now, using simplified classification based on ttlPlnUld patterns
+// This is a placeholder - in production, check actual SHC codes from load plan detail
+function flightHasPilPerShc(ttlPlnUld: string): boolean {
+  // Simplified check: if ULD string contains patterns that might indicate PIL/PER
+  // This is a placeholder - actual implementation should check SHC codes from LoadPlanDetail
+  // For now, return false to show all flights (will be filtered properly when SHC data is available)
+  return false
 }
 
 export default function IncomingWorkloadScreen() {
@@ -161,6 +306,7 @@ export default function IncomingWorkloadScreen() {
   const [shiftFilter, setShiftFilter] = useState<ShiftType>("current")
   const [periodFilter, setPeriodFilter] = useState<PeriodType>("all")
   const [waveFilter, setWaveFilter] = useState<WaveType>("all")
+  const [selectedWorkArea, setSelectedWorkArea] = useState<WorkArea>("GCR")
   const addFilterRef = useRef<HTMLDivElement>(null)
   const viewOptionsRef = useRef<HTMLDivElement>(null)
 
@@ -184,15 +330,27 @@ export default function IncomingWorkloadScreen() {
   }, [showAddFilterDropdown, showViewOptions])
 
   // Get all load plans first (show all available load plans)
+  // Calculate work-area-specific breakdowns for each flight
   const allFlights = useMemo(() => {
-    return loadPlans.map((plan) => ({
-      flight: plan.flight,
-      std: plan.std,
-      date: plan.date,
-      destination: extractDestination(plan.pax),
-      uldBreakdown: parseULDCount(plan.ttlPlnUld),
-      ttlPlnUld: plan.ttlPlnUld,
-    }))
+    return loadPlans.map((plan) => {
+      // Calculate GCR breakdown
+      const gcrBreakdown = parseGCRULDCount(plan.ttlPlnUld, null)
+      // Calculate PIL/PER breakdown
+      const pilPerBreakdown = parsePilPerULDCount(plan.ttlPlnUld, null)
+      // Original breakdown for "All" view
+      const originalBreakdown = parseULDCount(plan.ttlPlnUld)
+      
+      return {
+        flight: plan.flight,
+        std: plan.std,
+        date: plan.date,
+        destination: extractDestination(plan.pax),
+        uldBreakdown: originalBreakdown, // Keep for backward compatibility
+        gcrBreakdown,
+        pilPerBreakdown,
+        ttlPlnUld: plan.ttlPlnUld,
+      }
+    })
   }, [loadPlans])
 
   // Filter and sort flights
@@ -245,6 +403,21 @@ export default function IncomingWorkloadScreen() {
       )
     }
 
+    // Filter by work area
+    // TODO: Future enhancement - when LoadPlanDetail becomes available, use actual SHC codes
+    // For now, this is a placeholder that shows all flights
+    // In production, filter based on SHC codes: PIL/PER flights have PIL or PER SHC codes
+    if (selectedWorkArea === "PIL and PER") {
+      // Filter flights that have PIL/PER SHC codes
+      // Placeholder: currently shows all flights until SHC data is available
+      // filtered = filtered.filter((flight) => flightHasPilPerShc(flight.ttlPlnUld))
+    } else if (selectedWorkArea === "GCR") {
+      // Filter flights that do NOT have PIL/PER SHC codes
+      // Placeholder: currently shows all flights until SHC data is available
+      // filtered = filtered.filter((flight) => !flightHasPilPerShc(flight.ttlPlnUld))
+    }
+    // "All" shows all flights (no filtering)
+
     // Sort by STD descending (most recent first)
     // Combines date and STD time for proper chronological sorting
     return filtered.sort((a, b) => {
@@ -264,7 +437,7 @@ export default function IncomingWorkloadScreen() {
       const hoursB = parseStdToHours(stdB)
       return hoursB - hoursA
     })
-  }, [allFlights, shiftFilter, periodFilter, waveFilter, searchQuery])
+  }, [allFlights, shiftFilter, periodFilter, waveFilter, searchQuery, selectedWorkArea])
 
   // Determine if wave filter should be shown
   const showWaveFilter = periodFilter === "late-morning" || periodFilter === "afternoon"
@@ -290,34 +463,80 @@ export default function IncomingWorkloadScreen() {
   // Use filtered flights for display
   const displayFlights = filteredFlights
 
-  // Calculate ULD breakdown for graph based on ACTUAL flights in the table
-  const uldBreakdownData = useMemo(() => {
-    return calculateULDBreakdown(displayFlights)
-  }, [displayFlights])
-
-  // Prepare bar chart data for ULD types - based on actual load plan ttlPlnUld data
+  // Calculate ULD breakdown for graph based on ACTUAL flights in the table and selected work area
   const uldTypeChartData = useMemo(() => {
-    return [
-      {
-        type: "PMC",
-        value: uldBreakdownData.PMC,
-        total: uldBreakdownData.PMC,
-      },
-      {
-        type: "AKE",
-        value: uldBreakdownData.AKE,
-        total: uldBreakdownData.AKE,
-      },
-      {
-        type: "Total",
-        value: uldBreakdownData.PMC + uldBreakdownData.AKE + uldBreakdownData.BULK,
-        pmc: uldBreakdownData.PMC,
-        ake: uldBreakdownData.AKE,
-        bulk: uldBreakdownData.BULK,
-        total: uldBreakdownData.PMC + uldBreakdownData.AKE + uldBreakdownData.BULK,
-      },
-    ]
-  }, [uldBreakdownData])
+    if (selectedWorkArea === "GCR") {
+      const gcrData = calculateGCRULDBreakdown(displayFlights.map(f => ({ ttlPlnUld: f.ttlPlnUld })))
+      return [
+        {
+          type: "PMC/AMF",
+          value: gcrData.pmcAmf,
+        },
+        {
+          type: "ALF/PLA",
+          value: gcrData.alfPla,
+        },
+        {
+          type: "AKE/AKL",
+          value: gcrData.akeAkl,
+        },
+        {
+          type: "Total",
+          value: gcrData.total,
+          pmcAmf: gcrData.pmcAmf,
+          alfPla: gcrData.alfPla,
+          akeAkl: gcrData.akeAkl,
+          total: gcrData.total,
+        },
+      ]
+    } else if (selectedWorkArea === "PIL and PER") {
+      const pilPerData = calculatePilPerULDBreakdown(displayFlights.map(f => ({ ttlPlnUld: f.ttlPlnUld })))
+      return [
+        {
+          type: "AKE/DPE",
+          value: pilPerData.akeDpe,
+        },
+        {
+          type: "ALF/DQF",
+          value: pilPerData.alfDqf,
+        },
+        {
+          type: "LD-PMC/AMF",
+          value: pilPerData.ldPmcAmf,
+        },
+        {
+          type: "Total",
+          value: pilPerData.total,
+          akeDpe: pilPerData.akeDpe,
+          alfDqf: pilPerData.alfDqf,
+          ldPmcAmf: pilPerData.ldPmcAmf,
+          total: pilPerData.total,
+        },
+      ]
+    } else {
+      // "All" - use original breakdown
+      const uldBreakdownData = calculateULDBreakdown(displayFlights)
+      return [
+        {
+          type: "PMC",
+          value: uldBreakdownData.PMC,
+          total: uldBreakdownData.PMC,
+        },
+        {
+          type: "AKE",
+          value: uldBreakdownData.AKE,
+          total: uldBreakdownData.AKE,
+        },
+        {
+          type: "Total",
+          value: uldBreakdownData.total,
+          pmc: uldBreakdownData.PMC,
+          ake: uldBreakdownData.AKE,
+          total: uldBreakdownData.total,
+        },
+      ]
+    }
+  }, [displayFlights, selectedWorkArea])
 
   return (
     <div className="min-h-screen bg-gray-50 p-4">
@@ -390,6 +609,19 @@ export default function IncomingWorkloadScreen() {
               className="pl-7 pr-2 py-1.5 text-xs border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-[#D71A21] focus:border-transparent w-32"
             />
           </div>
+
+          <div className="w-px h-6 bg-gray-200" />
+
+          {/* Work Area Filter */}
+          <select
+            id="work-area-filter"
+            value={selectedWorkArea}
+            onChange={(e) => setSelectedWorkArea(e.target.value as WorkArea)}
+            className="px-2 py-1.5 text-xs border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-[#D71A21] focus:border-transparent"
+          >
+            <option value="GCR">Work Area: GCR</option>
+            <option value="PIL and PER">Work Area: PIL/PER</option>
+          </select>
 
           <div className="w-px h-6 bg-gray-200" />
 
@@ -539,9 +771,9 @@ export default function IncomingWorkloadScreen() {
           </div>
         </div>
 
-        {/* Graph - ULD Type Breakdown */}
+        {/* Graph - Workload by ULD */}
         <div className="bg-white rounded-lg border border-gray-200 p-6 mb-4">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">ULD Type Breakdown</h3>
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">Workload by ULD</h3>
           <div className="h-80">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={uldTypeChartData} margin={{ top: 5, right: 5, left: 0, bottom: 5 }} barCategoryGap="35%" barGap={0}>
@@ -557,61 +789,157 @@ export default function IncomingWorkloadScreen() {
                   tick={{ fontSize: 12, fill: "#6B7280" }}
                   stroke="#9CA3AF"
                 />
-                <Tooltip content={<CustomTooltip />} />
+                <Tooltip content={createCustomTooltip(selectedWorkArea)} />
                 <Legend 
                   wrapperStyle={{ fontSize: "12px", paddingTop: "20px", pointerEvents: "none" }} 
                   iconSize={12}
                   content={() => {
-                    return (
-                      <ul className="flex justify-center gap-4 text-xs">
-                        <li className="flex items-center gap-1">
-                          <span 
-                            style={{ 
-                              display: "inline-block",
-                              width: "12px",
-                              height: "12px",
-                              backgroundColor: "#DC2626",
-                              borderRadius: "2px"
-                            }}
-                          />
-                          <span>PMC</span>
-                        </li>
-                        <li className="flex items-center gap-1">
-                          <span 
-                            style={{ 
-                              display: "inline-block",
-                              width: "12px",
-                              height: "12px",
-                              backgroundColor: "#EF4444",
-                              borderRadius: "2px"
-                            }}
-                          />
-                          <span>AKE</span>
-                        </li>
-                        <li className="flex items-center gap-1">
-                          <span 
-                            style={{ 
-                              display: "inline-block",
-                              width: "12px",
-                              height: "12px",
-                              backgroundColor: "#F59E0B",
-                              borderRadius: "2px"
-                            }}
-                          />
-                          <span>Bulk</span>
-                        </li>
-                      </ul>
-                    )
+                    if (selectedWorkArea === "GCR") {
+                      return (
+                        <ul className="flex justify-center gap-4 text-xs flex-wrap">
+                          <li className="flex items-center gap-1">
+                            <span 
+                              style={{ 
+                                display: "inline-block",
+                                width: "12px",
+                                height: "12px",
+                                backgroundColor: "#DC2626",
+                                borderRadius: "2px"
+                              }}
+                            />
+                            <span>PMC/AMF</span>
+                          </li>
+                          <li className="flex items-center gap-1">
+                            <span 
+                              style={{ 
+                                display: "inline-block",
+                                width: "12px",
+                                height: "12px",
+                                backgroundColor: "#EF4444",
+                                borderRadius: "2px"
+                              }}
+                            />
+                            <span>ALF/PLA</span>
+                          </li>
+                          <li className="flex items-center gap-1">
+                            <span 
+                              style={{ 
+                                display: "inline-block",
+                                width: "12px",
+                                height: "12px",
+                                backgroundColor: "#F87171",
+                                borderRadius: "2px"
+                              }}
+                            />
+                            <span>AKE/AKL</span>
+                          </li>
+                        </ul>
+                      )
+                    } else if (selectedWorkArea === "PIL and PER") {
+                      return (
+                        <ul className="flex justify-center gap-4 text-xs flex-wrap">
+                          <li className="flex items-center gap-1">
+                            <span 
+                              style={{ 
+                                display: "inline-block",
+                                width: "12px",
+                                height: "12px",
+                                backgroundColor: "#EF4444",
+                                borderRadius: "2px"
+                              }}
+                            />
+                            <span>AKE/DPE</span>
+                          </li>
+                          <li className="flex items-center gap-1">
+                            <span 
+                              style={{ 
+                                display: "inline-block",
+                                width: "12px",
+                                height: "12px",
+                                backgroundColor: "#F87171",
+                                borderRadius: "2px"
+                              }}
+                            />
+                            <span>ALF/DQF</span>
+                          </li>
+                          <li className="flex items-center gap-1">
+                            <span 
+                              style={{ 
+                                display: "inline-block",
+                                width: "12px",
+                                height: "12px",
+                                backgroundColor: "#DC2626",
+                                borderRadius: "2px"
+                              }}
+                            />
+                            <span>LD-PMC/AMF</span>
+                          </li>
+                        </ul>
+                      )
+                    } else {
+                      // "All" - original legend
+                      return (
+                        <ul className="flex justify-center gap-4 text-xs">
+                          <li className="flex items-center gap-1">
+                            <span 
+                              style={{ 
+                                display: "inline-block",
+                                width: "12px",
+                                height: "12px",
+                                backgroundColor: "#DC2626",
+                                borderRadius: "2px"
+                              }}
+                            />
+                            <span>PMC</span>
+                          </li>
+                          <li className="flex items-center gap-1">
+                            <span 
+                              style={{ 
+                                display: "inline-block",
+                                width: "12px",
+                                height: "12px",
+                                backgroundColor: "#EF4444",
+                                borderRadius: "2px"
+                              }}
+                            />
+                            <span>AKE</span>
+                          </li>
+                        </ul>
+                      )
+                    }
                   }}
                 />
                 <Bar dataKey="value" barSize={60} radius={[4, 4, 0, 0]} name="value">
                   {uldTypeChartData.map((entry, index) => {
                     let fillColor = "#DC2626"
                     
-                    if (entry.type === "AKE") {
-                      fillColor = "#EF4444"
-                    } else if (entry.type === "Total") {
-                      fillColor = "#DC2626"
+                    if (selectedWorkArea === "GCR") {
+                      if (entry.type === "PMC/AMF") {
+                        fillColor = "#DC2626" // Red
+                      } else if (entry.type === "ALF/PLA") {
+                        fillColor = "#EF4444" // Lighter red
+                      } else if (entry.type === "AKE/AKL") {
+                        fillColor = "#F87171" // Light red
+                      } else if (entry.type === "Total") {
+                        fillColor = "#DC2626" // Red
+                      }
+                    } else if (selectedWorkArea === "PIL and PER") {
+                      if (entry.type === "AKE/DPE") {
+                        fillColor = "#EF4444" // Lighter red
+                      } else if (entry.type === "ALF/DQF") {
+                        fillColor = "#F87171" // Light red
+                      } else if (entry.type === "LD-PMC/AMF") {
+                        fillColor = "#DC2626" // Red
+                      } else if (entry.type === "Total") {
+                        fillColor = "#DC2626" // Red
+                      }
+                    } else {
+                      // "All" - original colors
+                      if (entry.type === "AKE") {
+                        fillColor = "#EF4444"
+                      } else if (entry.type === "Total") {
+                        fillColor = "#DC2626"
+                      }
                     }
                     
                     return (
@@ -675,7 +1003,11 @@ export default function IncomingWorkloadScreen() {
                       <td className="px-2 py-1 text-gray-900 text-xs whitespace-nowrap truncate">{flight.std}</td>
                       <td className="px-2 py-1 text-gray-900 text-xs whitespace-nowrap truncate">{flight.destination}</td>
                       <td className="px-2 py-1 text-gray-900 text-xs whitespace-nowrap truncate font-semibold">
-                        {flight.uldBreakdown.total}
+                        {selectedWorkArea === "GCR" 
+                          ? flight.gcrBreakdown.total 
+                          : selectedWorkArea === "PIL and PER" 
+                          ? flight.pilPerBreakdown.total 
+                          : flight.uldBreakdown.total}
                       </td>
                     </tr>
                   ))
