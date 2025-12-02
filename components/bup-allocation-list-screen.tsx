@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useMemo, useRef, useEffect } from "react"
-import { Upload, Calendar, User, Phone } from "lucide-react"
+import { Upload, Calendar, User, Phone, Plus, Search, SlidersHorizontal, Settings2, ArrowUpDown, Plane } from "lucide-react"
 import { UploadModal } from "./lists/upload-modal"
 import { useLoadPlans, type BUPAllocation, type ShiftType, type PeriodType, type WaveType } from "@/lib/load-plan-context"
 import { getOperators, cacheStaffMobiles, getMobileForStaff, type BuildupStaff } from "@/lib/buildup-staff"
@@ -24,12 +24,12 @@ function determinePeriodAndWave(etd: string): { period: PeriodType; wave: WaveTy
   if (timeInMinutes > 540 && timeInMinutes < 780) {
     return { period: "late-morning", wave: "second-wave", shiftType: "night" }
   }
-  // Day Shift Afternoon First Wave: 13:00-16:00
-  if (timeInMinutes >= 780 && timeInMinutes <= 960) {
+  // Day Shift Afternoon First Wave: 13:00-15:59
+  if (timeInMinutes >= 780 && timeInMinutes < 960) {
     return { period: "afternoon", wave: "first-wave", shiftType: "day" }
   }
   // Day Shift Afternoon Second Wave: 16:00-23:59
-  if (timeInMinutes > 960 && timeInMinutes <= 1439) {
+  if (timeInMinutes >= 960 && timeInMinutes <= 1439) {
     return { period: "afternoon", wave: "second-wave", shiftType: "day" }
   }
   // Default to early morning for edge cases
@@ -54,6 +54,11 @@ export default function BUPAllocationListScreen({ onNavigate }: BUPAllocationLis
   const [error, setError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [operators, setOperators] = useState<BuildupStaff[]>([])
+  const [showAddFilterDropdown, setShowAddFilterDropdown] = useState(false)
+  const [showViewOptions, setShowViewOptions] = useState(false)
+  const [searchQuery, setSearchQuery] = useState("")
+  const addFilterRef = useRef<HTMLDivElement>(null)
+  const viewOptionsRef = useRef<HTMLDivElement>(null)
 
   // Load operators on mount to cache mobile numbers
   useEffect(() => {
@@ -65,6 +70,25 @@ export default function BUPAllocationListScreen({ onNavigate }: BUPAllocationLis
     }
     loadOperators()
   }, [])
+
+  // Close dropdowns when clicking outside
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (addFilterRef.current && !addFilterRef.current.contains(event.target as Node)) {
+        setShowAddFilterDropdown(false)
+      }
+      if (viewOptionsRef.current && !viewOptionsRef.current.contains(event.target as Node)) {
+        setShowViewOptions(false)
+      }
+    }
+
+    if (showAddFilterDropdown || showViewOptions) {
+      document.addEventListener('mousedown', handleClickOutside)
+      return () => {
+        document.removeEventListener('mousedown', handleClickOutside)
+      }
+    }
+  }, [showAddFilterDropdown, showViewOptions])
 
   // Get current date's allocations (latest date in the data)
   const currentDate = useMemo(() => {
@@ -132,6 +156,19 @@ export default function BUPAllocationListScreen({ onNavigate }: BUPAllocationLis
       }
     })
 
+    // Filter by search query
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase()
+      filtered = filtered.filter((a) => 
+        a.flightNo.toLowerCase().includes(query) ||
+        a.carrier.toLowerCase().includes(query) ||
+        a.routing.toLowerCase().includes(query) ||
+        a.staff?.toLowerCase().includes(query) ||
+        a.acType?.toLowerCase().includes(query) ||
+        a.regnNo?.toLowerCase().includes(query)
+      )
+    }
+
     // Sort by ETD
     return filtered.sort((a, b) => {
       const [aHours, aMinutes] = a.etd.split(":").map(Number)
@@ -140,7 +177,7 @@ export default function BUPAllocationListScreen({ onNavigate }: BUPAllocationLis
       const bTime = bHours * 60 + (bMinutes || 0)
       return aTime - bTime
     })
-  }, [bupAllocations, shiftFilter, periodFilter, waveFilter, currentDate, flightAssignmentMap])
+  }, [bupAllocations, shiftFilter, periodFilter, waveFilter, currentDate, flightAssignmentMap, searchQuery])
 
   // Determine if wave filter should be shown
   const showWaveFilter = periodFilter === "late-morning" || periodFilter === "afternoon"
@@ -416,73 +453,225 @@ export default function BUPAllocationListScreen({ onNavigate }: BUPAllocationLis
         </div>
 
         {/* Filters */}
-        <div className="flex items-center gap-4 mb-4 px-2">
-          <div className="flex items-center gap-2">
-            <label htmlFor="shift-filter" className="text-sm font-medium text-gray-700">
-              Shift Type:
-            </label>
+        <div className="flex items-center gap-2 mb-4 px-2 flex-wrap">
+          {/* Default View Dropdown */}
+          <div className="flex items-center">
             <select
-              id="shift-filter"
-              value={shiftFilter}
-              onChange={(e) => setShiftFilter(e.target.value as ShiftType)}
-              className="px-3 py-1.5 text-sm border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-[#D71A21] focus:border-transparent"
+              className="px-2 py-1.5 text-xs border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-[#D71A21] focus:border-transparent"
             >
-              <option value="current">Current (Latest)</option>
-              <option value="night">Night Shift</option>
-              <option value="day">Day Shift</option>
+              <option value="default">≡ Default</option>
+              <option value="custom">Custom View</option>
             </select>
           </div>
 
-          <div className="flex items-center gap-2">
-            <label htmlFor="period-filter" className="text-sm font-medium text-gray-700">
-              Period:
-            </label>
-            <select
-              id="period-filter"
-              value={periodFilter}
-              onChange={(e) => {
-                setPeriodFilter(e.target.value as PeriodType)
-                // Reset wave filter if switching to early-morning (no waves)
-                if (e.target.value === "early-morning") {
-                  setWaveFilter("all")
-                }
-              }}
-              className="px-3 py-1.5 text-sm border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-[#D71A21] focus:border-transparent"
+          {/* Add Filter Dropdown */}
+          <div className="relative" ref={addFilterRef}>
+            <button
+              type="button"
+              onClick={() => setShowAddFilterDropdown(!showAddFilterDropdown)}
+              className="flex items-center gap-1 px-2 py-1.5 text-xs border border-gray-300 rounded-md bg-white hover:border-gray-400 transition-colors"
             >
-              <option value="all">All Periods</option>
-              <option value="early-morning">Early Morning</option>
-              <option value="late-morning">Late Morning</option>
-              <option value="afternoon">Afternoon</option>
-            </select>
+              <Plus className="w-3 h-3" />
+              <span>Add Filter</span>
+            </button>
+            
+            {showAddFilterDropdown && (
+              <div className="absolute top-full left-0 mt-1 z-50 bg-white border border-gray-200 rounded-lg shadow-lg w-48">
+                <div className="p-2">
+                  <div className="relative mb-2">
+                    <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 w-3 h-3 text-gray-400" />
+                    <input
+                      type="text"
+                      placeholder="Search column..."
+                      className="w-full pl-7 pr-2 py-1.5 text-xs border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-[#D71A21]"
+                    />
+                  </div>
+                  <div className="space-y-0.5">
+                    {["Carrier", "Flight No", "ETD", "Routing", "Staff", "A/C Type", "Regn No"].map((col) => (
+                      <button
+                        key={col}
+                        className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-gray-700 hover:bg-gray-50 rounded transition-colors text-left"
+                        onClick={() => setShowAddFilterDropdown(false)}
+                      >
+                        <span className="text-gray-400">≡</span>
+                        {col}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
+          {/* Search Allocations */}
+          <div className="relative">
+            <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 w-3 h-3 text-gray-400" />
+            <input
+              type="text"
+              placeholder="Search allocations..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-7 pr-2 py-1.5 text-xs border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-[#D71A21] focus:border-transparent w-36"
+            />
+          </div>
+
+          <div className="w-px h-6 bg-gray-200" />
+
+          {/* Shift Type Filter - Compact */}
+          <select
+            id="shift-filter"
+            value={shiftFilter}
+            onChange={(e) => {
+              const newShift = e.target.value as ShiftType
+              setShiftFilter(newShift)
+              // Reset period and wave filters when shift changes
+              setPeriodFilter("all")
+              setWaveFilter("all")
+            }}
+            className="px-2 py-1.5 text-xs border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-[#D71A21] focus:border-transparent"
+          >
+            <option value="current">Current (Latest)</option>
+            <option value="night">Night Shift</option>
+            <option value="day">Day Shift</option>
+          </select>
+
+          {/* Period Filter - Compact (conditional based on shift) */}
+          <select
+            id="period-filter"
+            value={periodFilter}
+            onChange={(e) => {
+              setPeriodFilter(e.target.value as PeriodType)
+              if (e.target.value === "early-morning") {
+                setWaveFilter("all")
+              }
+            }}
+            className="px-2 py-1.5 text-xs border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-[#D71A21] focus:border-transparent"
+          >
+            {shiftFilter === "current" && (
+              <>
+                <option value="all">All Periods</option>
+                <option value="early-morning">Early Morning (00:01-05:59)</option>
+                <option value="late-morning">Late Morning (06:00-12:59)</option>
+                <option value="afternoon">Afternoon (13:00-23:59)</option>
+              </>
+            )}
+            {shiftFilter === "night" && (
+              <>
+                <option value="all">All Periods</option>
+                <option value="early-morning">Early Morning (00:01-05:59)</option>
+                <option value="late-morning">Late Morning (06:00-12:59)</option>
+              </>
+            )}
+            {shiftFilter === "day" && (
+              <>
+                <option value="all">All Periods</option>
+                <option value="afternoon">Afternoon (13:00-23:59)</option>
+              </>
+            )}
+          </select>
+
+          {/* Wave Filter - Compact (conditional) */}
           {showWaveFilter && (
-            <div className="flex items-center gap-2">
-              <label htmlFor="wave-filter" className="text-sm font-medium text-gray-700">
-                Wave:
-              </label>
-              <select
-                id="wave-filter"
-                value={waveFilter}
-                onChange={(e) => setWaveFilter(e.target.value as WaveType)}
-                className="px-3 py-1.5 text-sm border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-[#D71A21] focus:border-transparent"
-              >
-                <option value="all">All Waves</option>
-                <option value="first-wave">First Wave</option>
-                <option value="second-wave">Second Wave</option>
-              </select>
-            </div>
+            <select
+              id="wave-filter"
+              value={waveFilter}
+              onChange={(e) => setWaveFilter(e.target.value as WaveType)}
+              className="px-2 py-1.5 text-xs border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-[#D71A21] focus:border-transparent"
+            >
+              <option value="all">All Waves</option>
+              <option value="first-wave">
+                {periodFilter === "late-morning" ? "First Wave (06:00-09:00)" : "First Wave (13:00-15:59)"}
+              </option>
+              <option value="second-wave">
+                {periodFilter === "late-morning" ? "Second Wave (09:01-12:59)" : "Second Wave (16:00-23:59)"}
+              </option>
+            </select>
           )}
+
+          <div className="flex-1" />
+
+          {/* View Options Panel */}
+          <div className="relative" ref={viewOptionsRef}>
+            <button
+              type="button"
+              onClick={() => setShowViewOptions(!showViewOptions)}
+              className="flex items-center gap-1 px-2 py-1.5 text-xs border border-gray-300 rounded-md bg-white hover:border-gray-400 transition-colors"
+            >
+              <SlidersHorizontal className="w-3 h-3" />
+            </button>
+            
+            {showViewOptions && (
+              <div className="absolute top-full right-0 mt-1 z-50 bg-white border border-gray-200 rounded-lg shadow-lg w-64">
+                <div className="p-3">
+                  <h3 className="text-sm font-semibold text-gray-900 mb-3">View Options</h3>
+                  
+                  {/* Show Allocations */}
+                  <div className="mb-3">
+                    <div className="flex items-center gap-1.5 text-xs text-gray-600 mb-1.5">
+                      <Plane className="w-3 h-3 text-[#D71A21]" />
+                      <span>Show Allocations</span>
+                    </div>
+                    <select className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded">
+                      <option>All Allocations</option>
+                      <option>Assigned Only</option>
+                      <option>Unassigned Only</option>
+                    </select>
+                  </div>
+                  
+                  {/* Ordering */}
+                  <div className="mb-3">
+                    <div className="flex items-center gap-1.5 text-xs text-gray-600 mb-1.5">
+                      <ArrowUpDown className="w-3 h-3" />
+                      <span>Ordering</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <select className="flex-1 px-2 py-1.5 text-xs border border-gray-200 rounded">
+                        <option>ETD Time</option>
+                        <option>Flight Number</option>
+                        <option>Routing</option>
+                      </select>
+                      <button className="p-1.5 border border-gray-200 rounded hover:bg-gray-50">
+                        <ArrowUpDown className="w-3 h-3 text-gray-500" />
+                      </button>
+                    </div>
+                  </div>
+                  
+                  {/* Display Fields */}
+                  <div>
+                    <div className="flex items-center gap-1.5 text-xs text-gray-600 mb-1.5">
+                      <Settings2 className="w-3 h-3" />
+                      <span>Display Fields</span>
+                    </div>
+                    <div className="flex flex-wrap gap-1">
+                      {["Carrier", "Flight No", "ETD", "Routing", "Staff", "Mobile", "A/C Type", "Regn No", "Period", "Wave"].map((field) => (
+                        <span
+                          key={field}
+                          className="px-1.5 py-0.5 text-[10px] bg-[#D71A21]/10 text-[#D71A21] border border-[#D71A21]/20 rounded cursor-pointer hover:bg-[#D71A21]/20 transition-colors"
+                        >
+                          {field}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Allocation count */}
+          <div className="text-xs text-gray-500 whitespace-nowrap">
+            {filteredAllocations.length} of {bupAllocations.length} allocations
+          </div>
         </div>
 
         {/* Results Table */}
-        <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+        <div className="mx-2 bg-white rounded-lg border border-gray-200 overflow-hidden">
           <div className="px-4 py-3 border-b border-gray-200">
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-semibold text-gray-900">Allocations</h3>
               <p className="text-xs text-gray-500">
-                Showing {filteredAllocations.length} flight{filteredAllocations.length !== 1 ? "s" : ""}
-                {currentDate && shiftFilter === "current" && ` for ${currentDate}`}
+                Showing {filteredAllocations.length} of {bupAllocations.length} allocation{bupAllocations.length !== 1 ? "s" : ""}
+                {currentDate && shiftFilter === "current" && ` • Latest: ${currentDate}`}
               </p>
             </div>
           </div>
