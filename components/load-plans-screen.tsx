@@ -471,6 +471,11 @@ export default function LoadPlansScreen({ onLoadPlanSelect }: { onLoadPlanSelect
             flightNumber: header.flightNumber,
             shipmentsCount: shipments.length,
             fileName: f.name,
+            isCritical: header.isCritical,
+          })
+          console.log('[LoadPlansScreen] Header object before save:', {
+            ...header,
+            isCritical: header.isCritical,
           })
           
           // Save to Supabase

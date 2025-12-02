@@ -309,19 +309,116 @@ async function extractTextFromRTF(file: File): Promise<string> {
 }
 
 /**
- * Extract images from DOCX file using mammoth
+ * Extract images from DOCX file
+ * DOCX files are ZIP archives, so we can extract images directly from the ZIP structure
  */
 export async function extractImagesFromDOCX(file: File): Promise<Array<{ buffer: ArrayBuffer; type: string }>> {
   try {
     console.log('[v0] Starting image extraction from DOCX:', file.name)
-    const mammoth = await import('mammoth')
     const arrayBuffer = await file.arrayBuffer()
     console.log('[v0] DOCX file size:', arrayBuffer.byteLength, 'bytes')
     
-    // Extract images using mammoth.images()
-    console.log('[v0] Calling mammoth.images()...')
-    const imagesResult = await mammoth.images({ arrayBuffer })
-    console.log('[v0] mammoth.images() returned', imagesResult.length, 'image(s)')
+    // DOCX files are ZIP archives
+    // Images are stored in word/media/ folder
+    // Use JSZip to extract images directly
+    try {
+      const JSZip = await import('jszip')
+      const zip = await JSZip.default.loadAsync(arrayBuffer)
+      console.log('[v0] DOCX ZIP loaded, searching for images...')
+      
+      const images: Array<{ buffer: ArrayBuffer; type: string }> = []
+      
+      // Find all files in word/media/ folder (where DOCX stores images)
+      const mediaFiles = Object.keys(zip.files).filter(name => 
+        name.startsWith('word/media/') && 
+        !name.endsWith('/') &&
+        /\.(png|jpg|jpeg|gif|bmp|webp)$/i.test(name)
+      )
+      
+      console.log(`[v0] Found ${mediaFiles.length} image file(s) in DOCX`)
+      
+      // Extract each image
+      for (const fileName of mediaFiles) {
+        try {
+          const file = zip.files[fileName]
+          if (!file || file.dir) continue
+          
+          const imageBuffer = await file.async('arraybuffer')
+          const extension = fileName.split('.').pop()?.toLowerCase() || 'png'
+          const contentType = extension === 'jpg' || extension === 'jpeg' 
+            ? 'image/jpeg' 
+            : extension === 'png'
+            ? 'image/png'
+            : extension === 'gif'
+            ? 'image/gif'
+            : extension === 'bmp'
+            ? 'image/bmp'
+            : extension === 'webp'
+            ? 'image/webp'
+            : 'image/png'
+          
+          if (imageBuffer && imageBuffer.byteLength > 0) {
+            images.push({
+              buffer: imageBuffer,
+              type: contentType
+            })
+            console.log(`[v0] ✅ Extracted image: ${fileName}, size: ${imageBuffer.byteLength} bytes, type: ${contentType}`)
+          }
+        } catch (imgError) {
+          console.error(`[v0] Error extracting image ${fileName}:`, imgError)
+        }
+      }
+      
+      if (images.length > 0) {
+        console.log(`[v0] ✅ Successfully extracted ${images.length} image(s) from DOCX`)
+        return images
+      } else {
+        console.log('[v0] ⚠️ No images found in DOCX file')
+        return []
+      }
+    } catch (zipError) {
+      console.error('[v0] Error extracting images with JSZip:', zipError)
+      // Fallback: try mammoth convertToHtml to extract base64 images
+      console.log('[v0] Trying fallback method: mammoth convertToHtml...')
+      try {
+        const mammoth = await import('mammoth')
+        const htmlResult = await mammoth.convertToHtml({ arrayBuffer })
+        
+        // Extract base64 images from HTML
+        const base64Images: Array<{ buffer: ArrayBuffer; type: string }> = []
+        const imgRegex = /<img[^>]+src="data:image\/([^;]+);base64,([^"]+)"/gi
+        let match
+        
+        while ((match = imgRegex.exec(htmlResult.value)) !== null) {
+          try {
+            const imageType = match[1] // png, jpeg, etc.
+            const base64Data = match[2]
+            const binaryString = atob(base64Data)
+            const bytes = new Uint8Array(binaryString.length)
+            for (let i = 0; i < binaryString.length; i++) {
+              bytes[i] = binaryString.charCodeAt(i)
+            }
+            
+            base64Images.push({
+              buffer: bytes.buffer,
+              type: `image/${imageType}`
+            })
+            console.log(`[v0] ✅ Extracted base64 image from HTML, type: image/${imageType}`)
+          } catch (base64Error) {
+            console.error('[v0] Error processing base64 image:', base64Error)
+          }
+        }
+        
+        if (base64Images.length > 0) {
+          console.log(`[v0] ✅ Extracted ${base64Images.length} image(s) from HTML`)
+          return base64Images
+        }
+      } catch (htmlError) {
+        console.error('[v0] convertToHtml also failed:', htmlError)
+      }
+      
+      return []
+    }
     
     const images: Array<{ buffer: ArrayBuffer; type: string }> = []
     
@@ -352,12 +449,50 @@ export async function extractImagesFromDOCX(file: File): Promise<Array<{ buffer:
         } else if (image.src instanceof Uint8Array) {
           buffer = image.src.buffer
           console.log(`[v0] Image ${i + 1}: Using Uint8Array.buffer, size:`, buffer.byteLength)
+        } else if (image.src && typeof image.src === 'object' && 'buffer' in image.src) {
+          // Handle case where src might be a Buffer-like object
+          const src = image.src as any
+          if (src.buffer instanceof ArrayBuffer) {
+            buffer = src.buffer.slice(src.byteOffset || 0, (src.byteOffset || 0) + (src.byteLength || src.length || 0))
+            console.log(`[v0] Image ${i + 1}: Extracted from Buffer-like object, size:`, buffer.byteLength)
+          } else {
+            // Try to convert to Uint8Array first
+            const length = src.length || src.byteLength || 0
+            const uint8Array = new Uint8Array(length)
+            if (src.copy) {
+              src.copy(uint8Array)
+            } else {
+              for (let j = 0; j < length; j++) {
+                uint8Array[j] = src[j] || 0
+              }
+            }
+            buffer = uint8Array.buffer
+            console.log(`[v0] Image ${i + 1}: Converted from Buffer-like to ArrayBuffer, size:`, buffer.byteLength)
+          }
         } else {
           // Try to convert to ArrayBuffer
-          console.log(`[v0] Image ${i + 1}: Attempting conversion, src type:`, typeof image.src)
-          const uint8Array = new Uint8Array(image.src as any)
-          buffer = uint8Array.buffer
-          console.log(`[v0] Image ${i + 1}: Converted to ArrayBuffer, size:`, buffer.byteLength)
+          console.log(`[v0] Image ${i + 1}: Attempting conversion, src type:`, typeof image.src, 'constructor:', image.src?.constructor?.name)
+          try {
+            // Try different conversion methods
+            if (Array.isArray(image.src)) {
+              buffer = new Uint8Array(image.src).buffer
+            } else if (typeof image.src === 'string') {
+              // Base64 string
+              const binaryString = atob(image.src)
+              const bytes = new Uint8Array(binaryString.length)
+              for (let j = 0; j < binaryString.length; j++) {
+                bytes[j] = binaryString.charCodeAt(j)
+              }
+              buffer = bytes.buffer
+            } else {
+              const uint8Array = new Uint8Array(image.src as any)
+              buffer = uint8Array.buffer
+            }
+            console.log(`[v0] Image ${i + 1}: Converted to ArrayBuffer, size:`, buffer.byteLength)
+          } catch (convError) {
+            console.error(`[v0] Failed to convert image ${i + 1} src:`, convError)
+            continue
+          }
         }
         
         // Determine image type from content type or extension

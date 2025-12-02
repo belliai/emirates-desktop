@@ -182,32 +182,99 @@ export async function saveListsDataToSupabase({
     })
 
     // 1. Insert load_plan
-    const { data: loadPlan, error: loadPlanError } = await supabase
+    // Prepare insert data
+    const loadPlanData: any = {
+      flight_number: flightNumber,
+      flight_date: flightDateStr,
+      aircraft_type: results.header.aircraftType || null,
+      aircraft_registration: results.header.aircraftReg || null,
+      header_version: 1,
+      route_origin: sectorInfo.origin,
+      route_destination: sectorInfo.destination,
+      route_full: sectorInfo.full,
+      std_time: stdTime,
+      prepared_by: results.header.preparedBy || null,
+      total_planned_uld: results.header.ttlPlnUld || null,
+      uld_version: results.header.uldVersion || null,
+      prepared_on: preparedOn,
+      sector: results.header.sector || null,
+      header_warning: results.header.headerWarning || null,
+    }
+    
+    // Add is_critical if available (with fallback if column doesn't exist)
+    console.log("[v0] Checking isCritical value:", {
+      isCritical: results.header.isCritical,
+      isCriticalType: typeof results.header.isCritical,
+      isCriticalUndefined: results.header.isCritical === undefined,
+      isCriticalNull: results.header.isCritical === null,
+    })
+    
+    if (results.header.isCritical !== undefined && results.header.isCritical !== null) {
+      loadPlanData.is_critical = results.header.isCritical === true
+      console.log("[v0] ✅ Setting is_critical to:", loadPlanData.is_critical)
+    } else {
+      console.log("[v0] ⚠️ isCritical is undefined or null, defaulting to false")
+      loadPlanData.is_critical = false
+    }
+    
+    console.log("[v0] Inserting load_plan with data:", {
+      ...loadPlanData,
+      is_critical: loadPlanData.is_critical,
+    })
+    
+    let { data: loadPlan, error: loadPlanError } = await supabase
       .from("load_plans")
-      .insert({
-        flight_number: flightNumber,
-        flight_date: flightDateStr,
-        aircraft_type: results.header.aircraftType || null,
-        aircraft_registration: results.header.aircraftReg || null,
-        header_version: 1,
-        route_origin: sectorInfo.origin,
-        route_destination: sectorInfo.destination,
-        route_full: sectorInfo.full,
-        std_time: stdTime,
-        prepared_by: results.header.preparedBy || null,
-        total_planned_uld: results.header.ttlPlnUld || null,
-        uld_version: results.header.uldVersion || null,
-        prepared_on: preparedOn,
-        sector: results.header.sector || null,
-        header_warning: results.header.headerWarning || null,
-        is_critical: results.header.isCritical || false,
-      })
+      .insert(loadPlanData)
       .select()
       .single()
 
+    // If error is about is_critical column, retry without it
     if (loadPlanError) {
-      console.error("[v0] Error inserting load_plan:", loadPlanError)
-      return { success: false, error: loadPlanError.message }
+      const errorMessage = loadPlanError.message || JSON.stringify(loadPlanError) || 'Unknown error'
+      const errorDetails = {
+        message: loadPlanError.message || 'No error message',
+        details: loadPlanError.details || 'No details',
+        hint: loadPlanError.hint || 'No hint',
+        code: loadPlanError.code || 'No error code',
+      }
+      console.error("[v0] Error inserting load_plan:", errorDetails)
+      
+      // Check if error is related to is_critical column
+      if (errorMessage.includes('is_critical') || 
+          errorMessage.includes("Could not find the 'is_critical' column") ||
+          (errorMessage.includes("column") && errorMessage.includes("schema cache"))) {
+        console.warn("[v0] is_critical column not found in schema cache. Retrying without is_critical field...")
+        
+        // Remove is_critical and retry
+        const { is_critical, ...loadPlanDataWithoutCritical } = loadPlanData
+        const retryResult = await supabase
+          .from("load_plans")
+          .insert(loadPlanDataWithoutCritical)
+          .select()
+          .single()
+        
+        if (retryResult.error) {
+          console.error("[v0] Error inserting load_plan (retry without is_critical):", {
+            message: retryResult.error.message || 'No error message',
+            details: retryResult.error.details || 'No details',
+            hint: retryResult.error.hint || 'No hint',
+            code: retryResult.error.code || 'No error code',
+          })
+          return { 
+            success: false, 
+            error: retryResult.error.message || JSON.stringify(retryResult.error) || 'Failed to insert load plan' 
+          }
+        }
+        
+        loadPlan = retryResult.data
+        loadPlanError = null
+        console.warn("[v0] ⚠️ Load plan saved without is_critical field. Please refresh Supabase schema cache or restart the application.")
+      } else {
+        return { 
+          success: false, 
+          error: loadPlanError.message || JSON.stringify(loadPlanError) || 'Failed to insert load plan' 
+        }
+      }
     }
 
     if (!loadPlan) {

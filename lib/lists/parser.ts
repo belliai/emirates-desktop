@@ -151,7 +151,7 @@ export function parseHeader(content: string): LoadPlanHeader {
     ttlPlnUld: ttlPlnUld || undefined,
     uldVersion: uldVersion || undefined,
     headerWarning: headerWarning || undefined,
-    isCritical: isCritical || undefined,
+    isCritical: isCritical === true ? true : undefined, // Explicitly set to true or undefined
   }
 }
 

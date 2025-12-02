@@ -47,6 +47,7 @@
     "html2canvas": "^1.4.1",
     "input-otp": "latest",
     "jspdf": "^3.0.4",
+    "jszip": "^3.10.1",
     "lucide-react": "^0.454.0",
     "mammoth": "latest",
     "next": "15.1.4",
