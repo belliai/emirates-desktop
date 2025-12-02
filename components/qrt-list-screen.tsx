@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { ChevronRight, Plane, Calendar, Package, Users, Clock, FileText, Upload, ChevronDown, ClipboardPaste } from 'lucide-react'
 import LoadPlanDetailScreen from './load-plan-detail-screen'
 import type { LoadPlanDetail } from './load-plan-types'
@@ -11,6 +11,50 @@ import { UploadModal } from './lists/upload-modal'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { ClipboardPasteModal } from './clipboard-paste-modal'
 
+// Type for bay info data from pasted CSV
+export type BayInfo = {
+  sta: string        // STA - Scheduled Time of Arrival
+  flightNo: string   // FLIGHTNO - e.g., "EK 0206"
+  orig: string       // ORIG - Origin
+  via: string        // VIA
+  eta: string        // ETA - Estimated Time of Arrival
+  ata: string        // ATA - Actual Time of Arrival
+  acType: string     // A/T - Aircraft Type
+  regn: string       // REGN - Registration
+  pos: string        // POS - Position/Bay Number
+  term: string       // TERM - Terminal
+  belt: string       // BELT
+  remarks: string    // REMARKS
+}
+
+// Normalize flight number for matching (remove spaces, uppercase)
+function normalizeFlightNo(flightNo: string): string {
+  return flightNo.replace(/\s+/g, '').toUpperCase()
+}
+
+// Parse bay data row into BayInfo object
+function parseBayInfoRow(headers: string[], row: string[]): BayInfo {
+  const getCol = (name: string) => {
+    const idx = headers.findIndex(h => h.toUpperCase() === name.toUpperCase())
+    return idx >= 0 ? row[idx] || '' : ''
+  }
+  
+  return {
+    sta: getCol('STA'),
+    flightNo: getCol('FLIGHTNO'),
+    orig: getCol('ORIG'),
+    via: getCol('VIA'),
+    eta: getCol('ETA'),
+    ata: getCol('ATA'),
+    acType: getCol('A/T'),
+    regn: getCol('REGN'),
+    pos: getCol('POS'),
+    term: getCol('TERM'),
+    belt: getCol('BELT'),
+    remarks: getCol('REMARKS'),
+  }
+}
+
 interface QRTListScreenProps {
   onBack?: () => void
 }
@@ -18,6 +62,7 @@ interface QRTListScreenProps {
 export default function QRTListScreen({ onBack }: QRTListScreenProps) {
   const { loadPlans, setLoadPlans } = useLoadPlans()
   const [selectedLoadPlan, setSelectedLoadPlan] = useState<LoadPlanDetail | null>(null)
+  const [selectedBayInfo, setSelectedBayInfo] = useState<BayInfo | null>(null)
   const [savedDetails, setSavedDetails] = useState<Map<string, LoadPlanDetail>>(new Map())
   const [isLoading, setIsLoading] = useState(true)
   const [showUploadModal, setShowUploadModal] = useState(false)
@@ -25,6 +70,21 @@ export default function QRTListScreen({ onBack }: QRTListScreenProps) {
   const [isBayNumbersOpen, setIsBayNumbersOpen] = useState(false)
   const [bayNumberData, setBayNumberData] = useState<{ headers: string[]; rows: string[][] } | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
+
+  // Create a lookup map from bay data by normalized flight number
+  const bayInfoLookup = useMemo(() => {
+    const lookup = new Map<string, BayInfo>()
+    if (bayNumberData) {
+      bayNumberData.rows.forEach(row => {
+        const bayInfo = parseBayInfoRow(bayNumberData.headers, row)
+        const normalizedFlightNo = normalizeFlightNo(bayInfo.flightNo)
+        if (normalizedFlightNo) {
+          lookup.set(normalizedFlightNo, bayInfo)
+        }
+      })
+    }
+    return lookup
+  }, [bayNumberData])
 
   // Fetch load plans from Supabase on mount
   useEffect(() => {
@@ -50,7 +110,31 @@ export default function QRTListScreen({ onBack }: QRTListScreenProps) {
     fetchLoadPlans()
   }, [setLoadPlans])
 
+  // Sample bay info for demo when no data is pasted
+  const sampleBayInfo: BayInfo = {
+    sta: '11/27/25 23:00',
+    flightNo: 'EK 0206',
+    orig: 'JFK/MXP',
+    via: 'MXP',
+    eta: '2:12',
+    ata: '',
+    acType: 'A380',
+    regn: 'A6EEX',
+    pos: 'D08/A15',
+    term: 'T3',
+    belt: '',
+    remarks: '',
+  }
+
   const handleRowClick = async (loadPlan: LoadPlan) => {
+    // Pick a random bay info row to display, or use sample if no data pasted
+    let bayInfo: BayInfo = sampleBayInfo
+    if (bayNumberData && bayNumberData.rows.length > 0) {
+      const randomIndex = Math.floor(Math.random() * bayNumberData.rows.length)
+      bayInfo = parseBayInfoRow(bayNumberData.headers, bayNumberData.rows[randomIndex])
+    }
+    setSelectedBayInfo(bayInfo)
+    
     // Check if we have a saved version first
     const savedDetail = savedDetails.get(loadPlan.flight)
     if (savedDetail) {
@@ -114,98 +198,60 @@ export default function QRTListScreen({ onBack }: QRTListScreenProps) {
     }
   }
 
-  // Generate placeholder bay numbers and connection times based on destination
-  const addQRTFields = (plan: LoadPlanDetail): LoadPlanDetail => {
-    // Bay number mapping based on common Dubai Airport cargo bays (Terminal 2/3 cargo areas)
-    const bayNumberMap: Record<string, string> = {
-      'JFK': 'C12', 'LHR': 'C15', 'CDG': 'C18', 'FRA': 'C20',
-      'AMS': 'C22', 'MXP': 'C25', 'DXB': 'C30', 'BOM': 'C35',
-      'DEL': 'C38', 'BKK': 'C40', 'SIN': 'C42', 'HKG': 'C45',
-      'SYD': 'C48', 'MEL': 'C50', 'LAX': 'C52', 'SFO': 'C55',
-      'IAD': 'C58', 'ORD': 'C60', 'ATL': 'C62', 'MIA': 'C65',
-      'RUH': 'C28', 'JED': 'C32', 'CAI': 'C36', 'IST': 'C40',
-      'DOH': 'C33', 'KWI': 'C34', 'BAH': 'C35', 'AUH': 'C31',
-    }
-    
-    // Connection time calculation (D-3 means 3 hours before STD)
-    const getConnectionTime = (std: string): string => {
-      if (!std || std.length < 5) return 'D-3'
-      try {
-        const [hours, minutes] = std.split(':').map(Number)
-        if (isNaN(hours) || isNaN(minutes)) return 'D-3'
-        
-        // Calculate 3 hours before STD
-        let connHours = hours - 3
-        let connMinutes = minutes
-        
-        // Handle negative hours (wrap around)
-        if (connHours < 0) {
-          connHours += 24
-        }
-        
-        const connHoursStr = String(connHours).padStart(2, '0')
-        const connMinutesStr = String(connMinutes).padStart(2, '0')
-        return `${connHoursStr}:${connMinutesStr}`
-      } catch {
-        return 'D-3'
-      }
-    }
-    
-    const updatedPlan = {
-      ...plan,
-      sectors: plan.sectors.map(sector => ({
-        ...sector,
-        uldSections: sector.uldSections.map(uldSection => ({
-          ...uldSection,
-          awbs: uldSection.awbs.map(awb => {
-            // Extract destination from orgDes (format: "DXBRUH" or "RUH", last 3 chars or first 3)
-            let dest = ''
-            if (awb.orgDes && awb.orgDes.length >= 3) {
-              // Try last 3 characters first (destination)
-              dest = awb.orgDes.substring(awb.orgDes.length - 3).toUpperCase()
-              // If it starts with DXB, try the part after DXB
-              if (awb.orgDes.toUpperCase().startsWith('DXB') && awb.orgDes.length > 3) {
-                dest = awb.orgDes.substring(3).toUpperCase()
-              }
-            }
-            
-            // Get bay number from map or generate based on destination code
-            let bayNumber = bayNumberMap[dest] || ''
-            if (!bayNumber && dest) {
-              // Generate a bay number based on destination code hash
-              const hash = dest.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0)
-              bayNumber = `C${(hash % 50) + 10}` // C10 to C59
-            }
-            if (!bayNumber) {
-              bayNumber = 'C30' // Default to C30 (DXB)
-            }
-            
-            // Calculate connection time (3 hours before STD)
-            const connTime = getConnectionTime(plan.std)
-            
-            return {
-              ...awb,
-              bayNumber: awb.bayNumber || bayNumber,
-              connTime: awb.connTime || connTime,
-            }
-          })
-        }))
-      }))
-    }
-    
-    return updatedPlan
-  }
-
   if (selectedLoadPlan) {
     const filteredPlan = filterToRampTransferOnly(selectedLoadPlan)
-    const planWithQRTFields = addQRTFields(filteredPlan)
     return (
-      <LoadPlanDetailScreen
-        loadPlan={planWithQRTFields}
-        onBack={() => setSelectedLoadPlan(null)}
-        onSave={handleSave}
-        isQRTList={true}
-      />
+      <div className="min-h-screen bg-gray-50">
+        {/* Bay Info Table */}
+        {selectedBayInfo && (
+          <div className="bg-white border-b border-gray-200">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-gray-100 border-b border-gray-200">
+                  <th className="px-4 py-2 text-left font-semibold text-gray-600">STA</th>
+                  <th className="px-4 py-2 text-left font-semibold text-gray-600">FLIGHTNO</th>
+                  <th className="px-4 py-2 text-left font-semibold text-gray-600">ORIG</th>
+                  <th className="px-4 py-2 text-left font-semibold text-gray-600">VIA</th>
+                  <th className="px-4 py-2 text-left font-semibold text-gray-600">ETA</th>
+                  <th className="px-4 py-2 text-left font-semibold text-gray-600">ATA</th>
+                  <th className="px-4 py-2 text-left font-semibold text-gray-600">A/T</th>
+                  <th className="px-4 py-2 text-left font-semibold text-gray-600">REGN</th>
+                  <th className="px-4 py-2 text-left font-semibold text-gray-600">POS</th>
+                  <th className="px-4 py-2 text-left font-semibold text-gray-600">TERM</th>
+                  <th className="px-4 py-2 text-left font-semibold text-gray-600">BELT</th>
+                  <th className="px-4 py-2 text-left font-semibold text-gray-600">REMARKS</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td className="px-4 py-2 text-gray-900">{selectedBayInfo.sta}</td>
+                  <td className="px-4 py-2 text-gray-900">{selectedBayInfo.flightNo}</td>
+                  <td className="px-4 py-2 text-gray-900">{selectedBayInfo.orig}</td>
+                  <td className="px-4 py-2 text-gray-900">{selectedBayInfo.via}</td>
+                  <td className="px-4 py-2 text-gray-900">{selectedBayInfo.eta}</td>
+                  <td className="px-4 py-2 text-gray-900">{selectedBayInfo.ata}</td>
+                  <td className="px-4 py-2 text-gray-900">{selectedBayInfo.acType}</td>
+                  <td className="px-4 py-2 text-gray-900">{selectedBayInfo.regn}</td>
+                  <td className="px-4 py-2 text-gray-900">{selectedBayInfo.pos}</td>
+                  <td className="px-4 py-2 text-gray-900">{selectedBayInfo.term}</td>
+                  <td className="px-4 py-2 text-gray-900">{selectedBayInfo.belt}</td>
+                  <td className="px-4 py-2 text-gray-900">{selectedBayInfo.remarks}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        )}
+        
+        <LoadPlanDetailScreen
+          loadPlan={filteredPlan}
+          onBack={() => {
+            setSelectedLoadPlan(null)
+            setSelectedBayInfo(null)
+          }}
+          onSave={handleSave}
+          isQRTList={true}
+        />
+      </div>
     )
   }
 
