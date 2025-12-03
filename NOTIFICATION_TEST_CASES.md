@@ -160,3 +160,7 @@ This document describes test cases for the notification system that alerts build
 - Clicking badge opens notification dropdown
 - Notifications can be marked as read individually or all at once
 
+
+
+
+

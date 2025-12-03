@@ -240,7 +240,7 @@ export default function BuildupStaffScreen({ initialStaff, onNavigate }: Buildup
                                 {op.displayName.charAt(0).toUpperCase()}
                               </span>
                             </div>
-                            <span title={op.fullName}>{op.displayName}</span>
+                            <span title={op.fullName}>{op.fullName}</span>
                           </CommandItem>
                         ))}
                       </CommandGroup>

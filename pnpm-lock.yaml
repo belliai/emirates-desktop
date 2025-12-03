@@ -176,6 +176,9 @@ importers:
       rtf-stream-parser:
         specifier: ^3.8.1
         version: 3.8.1
+      rtf2html:
+        specifier: ^1.0.0
+        version: 1.0.0
       sonner:
         specifier: latest
         version: 2.0.7(react-dom@19.0.0(react@19.0.0))(react@19.0.0)
@@ -2243,6 +2246,9 @@ packages:
 
   rtf-stream-parser@3.8.1:
     resolution: {integrity: sha512-iW/5OwC4SS8rvHs+Z4hrUoxchcaX0L1u0KQ24SdeviYRRsrQ+/ZYoF4w/EdNWCBjy7epFwGDBM4Cpp/08XtSew==}
+
+  rtf2html@1.0.0:
+    resolution: {integrity: sha512-HWaYr98nMktZn60UZXe/+wy/EzuFpa7Ihh9yo6Udc8MMQk92P2Q3TIC32IMvHmmx0tuZx94i7ztA2fnHSHt5lw==}
 
   safe-buffer@5.1.2:
     resolution: {integrity: sha512-Gd2UZBJDkXlY7GbJxfsE8/nvKkUEU1G38c1siN6QP6a9PT9MmHB8GnpscSmMJSoF8LOIrt8ud/wPtojys4G6+g==}
@@ -4418,6 +4424,8 @@ snapshots:
       readable-stream: 2.3.8
 
   rtf-stream-parser@3.8.1: {}
+
+  rtf2html@1.0.0: {}
 
   safe-buffer@5.1.2: {}
 

@@ -515,7 +515,7 @@ export default function FlightAssignmentScreen({ initialSupervisor }: FlightAssi
                               {sup.displayName.charAt(0).toUpperCase()}
                             </span>
                           </div>
-                          <span title={sup.fullName}>{sup.displayName}</span>
+                          <span title={sup.fullName}>{sup.fullName}</span>
                         </CommandItem>
                       ))}
                     </CommandGroup>
@@ -911,7 +911,7 @@ function FlightAssignmentRow({ assignment, operatorOptions, onNameChange, onSect
                           assignment.name.toLowerCase() === op.displayName.toLowerCase() ? "opacity-100" : "opacity-0"
                         )}
                       />
-                      {op.displayName}
+                      {op.fullName}
                     </CommandItem>
                   ))}
                 </CommandGroup>

@@ -11,6 +11,7 @@ import { useLoadPlans, type LoadPlan, type ShiftType, type PeriodType, type Wave
 import { getLoadPlansFromSupabase, getLoadPlanDetailFromSupabase, deleteLoadPlanFromSupabase } from "@/lib/load-plans-supabase"
 import { parseHeader, parseShipments, detectCriticalFromFileImages } from "@/lib/lists/parser"
 import { parseRTFHeader, parseRTFShipments, parseRTFFileWithStreamParser } from "@/lib/lists/rtf-parser"
+import { parseRTFWithHtml } from "@/lib/lists/rtf-html-parser"
 import { saveListsDataToSupabase } from "@/lib/lists/supabase-save"
 import type { ListsResults } from "@/lib/lists/types"
 import { generateSpecialCargoReport, generateVUNList, generateQRTList } from "@/lib/lists/report-generators"
@@ -484,42 +485,39 @@ export default function LoadPlansScreen({ onLoadPlanSelect }: { onLoadPlanSelect
           let header, shipments
           
           if (isRTF) {
-            // Use new rtf-stream-parser function - NO DOCX conversion, direct RTF processing
-            console.log('[LoadPlansScreen] Processing RTF file directly with rtf-stream-parser (no DOCX conversion):', f.name)
+            // Use RTF to HTML conversion for better parsing
+            console.log('[LoadPlansScreen] Processing RTF file with RTF-to-HTML conversion:', f.name)
             
             try {
-              const result = await parseRTFFileWithStreamParser(f)
+              const result = await parseRTFWithHtml(f)
               header = result.header
-              
-              // If CRITICAL not detected in text, try OCR on images (for RTF converted to DOCX if needed)
-              if (!header.isCritical) {
-                console.log('[LoadPlansScreen] CRITICAL not detected in RTF text, trying OCR on images...')
-                try {
-                  // Note: RTF image extraction is complex, but we can try if file was converted
-                  // For now, we'll try OCR detection which might work if images are accessible
-                  const isCriticalFromOCR = await detectCriticalFromFileImages(f)
-                  if (isCriticalFromOCR) {
-                    header.isCritical = true
-                    console.log('[LoadPlansScreen] ✅ CRITICAL detected via OCR in RTF!')
-                  } else {
-                    console.log('[LoadPlansScreen] ⚠️ CRITICAL not detected via OCR in RTF')
-                  }
-                } catch (ocrError) {
-                  console.warn('[LoadPlansScreen] OCR detection failed for RTF (expected):', ocrError)
-                  // OCR for RTF is not fully implemented, this is expected
-                }
-              } else {
-                console.log('[LoadPlansScreen] ✅ CRITICAL already detected in RTF text')
-              }
-              
               shipments = result.shipments
               
-              console.log('[LoadPlansScreen] ✅ Successfully parsed RTF file with rtf-stream-parser')
+              console.log('[LoadPlansScreen] ✅ Successfully parsed RTF file with RTF-to-HTML')
+              console.log('[LoadPlansScreen] Parsed header:', {
+                flightNumber: header.flightNumber,
+                date: header.date,
+                aircraftType: header.aircraftType,
+                aircraftReg: header.aircraftReg,
+                sector: header.sector,
+                isCritical: header.isCritical,
+              })
               console.log('[LoadPlansScreen] Parsed shipments:', shipments.length)
             } catch (rtfError) {
-              console.error('[LoadPlansScreen] Error parsing RTF file:', rtfError)
-              failedFiles.push(f.name)
-              continue
+              console.error('[LoadPlansScreen] Error parsing RTF file with RTF-to-HTML:', rtfError)
+              
+              // Fallback to old parser if new one fails
+              console.log('[LoadPlansScreen] Falling back to rtf-stream-parser...')
+              try {
+                const fallbackResult = await parseRTFFileWithStreamParser(f)
+                header = fallbackResult.header
+                shipments = fallbackResult.shipments
+                console.log('[LoadPlansScreen] ✅ Fallback parser succeeded')
+              } catch (fallbackError) {
+                console.error('[LoadPlansScreen] Fallback parser also failed:', fallbackError)
+                failedFiles.push(f.name)
+                continue
+              }
             }
           } else {
             // Process file normally (DOCX, PDF, etc.)
