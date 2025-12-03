@@ -15,6 +15,20 @@ type WorkArea = "All" | "GCR" | "PIL and PER"
 type Shift = "All" | "9am to 9pm" | "9pm to 9am"
 type Module = "All" | "PAX & PF build-up EUR (1st floor, E)" | "PAX & PF build-up AFR (1st floor, F)" | "PAX & PF build-up ME, SubCon, Asia (1st floor, G)" | "Build-up AUS (1st floor, H)" | "US Screening Flights (1st floor, I)" | "Freighter & PAX Breakdown & build-up (Ground floor, F)" | "IND/PAK Build-up (Ground floor, G)" | "PER (Ground floor, H)" | "PIL (Ground floor, I)"
 
+// Filter types
+type FilterColumn = "Flight" | "Date" | "ACFT TYPE" | "ACFT REG" | "PAX" | "STD" | "TTL PLN ULD" | "Completion"
+type FilterOperator = "equals" | "contains" | "greaterThan" | "lessThan" | "greaterThanOrEqual" | "lessThanOrEqual" | "is" | "timeRange"
+type ActiveFilter = {
+  id: string
+  column: FilterColumn
+  operator: FilterOperator
+  value: string | string[] // string[] for multi-select toggle buttons
+}
+
+// Sort types
+type SortColumn = "Flight" | "Date" | "STD" | "Completion" | null
+type SortDirection = "asc" | "desc"
+
 // PIL/PER SHC codes that identify PIL and PER work areas
 const PIL_PER_SHC_CODES = ["FRO", "FRI", "ACT", "CRT", "COL", "ERT", "PIL-ACT", "PIL-COL", "PEF-COL", "PER-COL"]
 
@@ -334,6 +348,10 @@ export default function FlightsViewScreen() {
   const [showViewOptions, setShowViewOptions] = useState(false)
   const addFilterRef = useRef<HTMLDivElement>(null)
   const viewOptionsRef = useRef<HTMLDivElement>(null)
+  const [activeFilters, setActiveFilters] = useState<ActiveFilter[]>([])
+  const [editingFilterId, setEditingFilterId] = useState<string | null>(null)
+  const [sortColumn, setSortColumn] = useState<SortColumn>(null)
+  const [sortDirection, setSortDirection] = useState<SortDirection>("desc")
 
   // Fetch load plans from Supabase on mount
   useEffect(() => {
@@ -454,6 +472,89 @@ export default function FlightsViewScreen() {
     }
   }, [showTimeRangePicker, showAddFilterDropdown, showViewOptions])
 
+  // Apply active filters to load plans
+  function applyActiveFilters(plan: LoadPlan, completion: FlightCompletion): boolean {
+    return activeFilters.every(filter => {
+      switch (filter.column) {
+        case "Completion": {
+          const completionPercent = completion.completionPercentage
+          const status = completion.status
+          
+          // Handle "is" operator with multi-select status toggles
+          if (filter.operator === "is") {
+            if (Array.isArray(filter.value)) {
+              // If no statuses selected, show all
+              if (filter.value.length === 0) return true
+              // Check if flight status matches any selected status
+              return filter.value.includes(status)
+            }
+            return true
+          }
+          
+          // Handle > and < operators with percentage values
+          if (filter.operator === "greaterThan" || filter.operator === "lessThan") {
+            const value = typeof filter.value === "string" ? filter.value.trim() : ""
+            if (!value) return true
+            
+            const filterValue = parseFloat(value)
+            if (isNaN(filterValue)) return true
+            
+            switch (filter.operator) {
+              case "greaterThan":
+                return completionPercent > filterValue
+              case "lessThan":
+                return completionPercent < filterValue
+              default:
+                return true
+            }
+          }
+          
+          return true
+        }
+        case "STD": {
+          // Handle time range filter
+          if (filter.operator === "timeRange") {
+            const value = typeof filter.value === "string" ? filter.value : ""
+            const [startTime, endTime] = value.split("-")
+            if (!startTime || !endTime) return true
+            
+            const stdTime = plan.std || "00:00"
+            const stdHours = parseStdToHours(stdTime)
+            const startHours = parseStdToHours(startTime)
+            const endHours = parseStdToHours(endTime)
+            
+            // Handle overnight ranges (e.g., 22:00 to 06:00)
+            if (endHours < startHours) {
+              return stdHours >= startHours || stdHours <= endHours
+            } else {
+              return stdHours >= startHours && stdHours <= endHours
+            }
+          }
+          
+          // Handle equals operator
+          if (filter.operator === "equals") {
+            const value = typeof filter.value === "string" ? filter.value.trim() : ""
+            if (!value) return true
+            const stdTime = plan.std || "00:00"
+            return stdTime === value
+          }
+          
+          return true
+        }
+        // Placeholder for other columns - will be implemented later
+        case "Flight":
+        case "Date":
+        case "ACFT TYPE":
+        case "ACFT REG":
+        case "PAX":
+        case "TTL PLN ULD":
+          return true // Not implemented yet
+        default:
+          return true
+      }
+    })
+  }
+
   // Filter and sort load plans based on selected shift and custom time range
   // Default sort: by STD descending (latest/most recent flights at the top)
   const filteredLoadPlans = useMemo(() => {
@@ -481,13 +582,41 @@ export default function FlightsViewScreen() {
         }
       }
       
-      return matchesShift && matchesTimeRange
+      // Check active filters
+      const matchesActiveFilters = applyActiveFilters(plan, completion)
+      
+      return matchesShift && matchesTimeRange && matchesActiveFilters
     })
     
-    // Sort by STD descending (latest flights first)
-    // Combines date and STD time for proper chronological sorting
+    // Apply sorting
     return filtered.sort((a, b) => {
-      // Parse date and STD for comparison
+      // If a sort column is selected, sort by that column
+      if (sortColumn) {
+        const completionA = flightCompletions.get(a.flight) || calculateFlightCompletion(a)
+        const completionB = flightCompletions.get(b.flight) || calculateFlightCompletion(b)
+        
+        let comparison = 0
+        switch (sortColumn) {
+          case "Flight":
+            comparison = (a.flight || "").localeCompare(b.flight || "")
+            break
+          case "Date":
+            comparison = (a.date || "").localeCompare(b.date || "")
+            break
+          case "STD":
+            const hoursA = parseStdToHours(a.std || "00:00")
+            const hoursB = parseStdToHours(b.std || "00:00")
+            comparison = hoursA - hoursB
+            break
+          case "Completion":
+            comparison = completionA.completionPercentage - completionB.completionPercentage
+            break
+        }
+        
+        return sortDirection === "asc" ? comparison : -comparison
+      }
+      
+      // Default sort: by Date and STD descending (latest flights first)
       const dateA = a.date || ""
       const dateB = b.date || ""
       const stdA = a.std || "00:00"
@@ -503,7 +632,7 @@ export default function FlightsViewScreen() {
       const hoursB = parseStdToHours(stdB)
       return hoursB - hoursA
     })
-  }, [loadPlans, flightCompletions, selectedShift, customTimeRange])
+  }, [loadPlans, flightCompletions, selectedShift, customTimeRange, activeFilters, sortColumn, sortDirection])
 
   // Count flights by shift for filter badges (work area filtering is at ULD section level, not flight level)
   const filterCounts = useMemo(() => {
@@ -528,6 +657,68 @@ export default function FlightsViewScreen() {
   // Track selected flight for blank view
   const [selectedFlight, setSelectedFlight] = useState<string | null>(null)
   const [isLoadingDetail, setIsLoadingDetail] = useState(false)
+
+  // Sort handlers
+  function handleSort(column: SortColumn) {
+    if (sortColumn === column) {
+      // Toggle direction if clicking same column
+      setSortDirection(prev => prev === "asc" ? "desc" : "asc")
+    } else {
+      // New column - default to desc for Completion (highest first), asc for STD (earliest first)
+      setSortColumn(column)
+      setSortDirection(column === "Completion" ? "desc" : "asc")
+    }
+  }
+
+  // Add filter handlers
+  function handleAddFilter(column: FilterColumn) {
+    let defaultOperator: FilterOperator = "contains"
+    let defaultValue: string | string[] = ""
+    
+    if (column === "Completion") {
+      defaultOperator = "is"
+      defaultValue = [] // Empty array for toggle buttons
+    } else if (column === "STD") {
+      defaultOperator = "timeRange"
+      defaultValue = "09:00-21:00"
+    }
+    
+    const newFilter: ActiveFilter = {
+      id: `${Date.now()}-${Math.random()}`,
+      column,
+      operator: defaultOperator,
+      value: defaultValue
+    }
+    setActiveFilters(prev => [...prev, newFilter])
+    setEditingFilterId(newFilter.id)
+    setShowAddFilterDropdown(false)
+  }
+
+  function handleRemoveFilter(filterId: string) {
+    setActiveFilters(prev => prev.filter(f => f.id !== filterId))
+    if (editingFilterId === filterId) {
+      setEditingFilterId(null)
+    }
+  }
+
+  function handleUpdateFilter(filterId: string, updates: Partial<ActiveFilter>) {
+    setActiveFilters(prev => prev.map(f => 
+      f.id === filterId ? { ...f, ...updates } : f
+    ))
+  }
+
+  function toggleCompletionStatus(filterId: string, statusKey: string) {
+    setActiveFilters(prev => prev.map(filter => {
+      if (filter.id !== filterId) return filter
+      
+      const currentValue = Array.isArray(filter.value) ? filter.value : []
+      const newValue = currentValue.includes(statusKey)
+        ? currentValue.filter(s => s !== statusKey)
+        : [...currentValue, statusKey]
+      
+      return { ...filter, value: newValue }
+    }))
+  }
 
   const handleRowClick = async (loadPlan: LoadPlan) => {
     setSelectedFlight(loadPlan.flight)
@@ -700,45 +891,6 @@ export default function FlightsViewScreen() {
               <option value="default">≡ Default</option>
               <option value="custom">Custom View</option>
             </select>
-          </div>
-
-          {/* Add Filter Dropdown */}
-          <div className="relative" ref={addFilterRef}>
-            <button
-              type="button"
-              onClick={() => setShowAddFilterDropdown(!showAddFilterDropdown)}
-              className="flex items-center gap-1 px-2 py-1.5 text-xs border border-gray-300 rounded-md bg-white hover:border-gray-400 transition-colors"
-            >
-              <Plus className="w-3 h-3" />
-              <span>Add Filter</span>
-            </button>
-            
-            {showAddFilterDropdown && (
-              <div className="absolute top-full left-0 mt-1 z-50 bg-white border border-gray-200 rounded-lg shadow-lg w-48">
-                <div className="p-2">
-                  <div className="relative mb-2">
-                    <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 w-3 h-3 text-gray-400" />
-                    <input
-                      type="text"
-                      placeholder="Search column..."
-                      className="w-full pl-7 pr-2 py-1.5 text-xs border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-[#D71A21]"
-                    />
-                  </div>
-                  <div className="space-y-0.5">
-                    {["Departure Date", "Destination", "Flight Number", "Origin", "Tail Number"].map((col) => (
-                      <button
-                        key={col}
-                        className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-gray-700 hover:bg-gray-50 rounded transition-colors text-left"
-                        onClick={() => setShowAddFilterDropdown(false)}
-                      >
-                        <span className="text-gray-400">≡</span>
-                        {col}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            )}
           </div>
 
           {/* Search Flights */}
@@ -920,6 +1072,187 @@ export default function FlightsViewScreen() {
             {filteredLoadPlans.length} of {loadPlans.length} flights
           </div>
         </div>
+
+        {/* Active Filters Row */}
+        <div className="flex items-center gap-2 mb-4 px-2 flex-wrap">
+          {/* Add Filter Dropdown */}
+          <div className="relative" ref={addFilterRef}>
+            <button
+              type="button"
+              onClick={() => setShowAddFilterDropdown(!showAddFilterDropdown)}
+              className="flex items-center gap-1 px-2 py-1.5 text-xs border border-gray-300 rounded-md bg-white hover:border-gray-400 transition-colors"
+            >
+              <Plus className="w-3 h-3" />
+              <span>Add Filter</span>
+            </button>
+            
+            {showAddFilterDropdown && (
+              <div className="absolute top-full left-0 mt-1 z-50 bg-white border border-gray-200 rounded-lg shadow-lg w-48">
+                <div className="p-2">
+                  <div className="relative mb-2">
+                    <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 w-3 h-3 text-gray-400" />
+                    <input
+                      type="text"
+                      placeholder="Search column..."
+                      className="w-full pl-7 pr-2 py-1.5 text-xs border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-[#D71A21]"
+                    />
+                  </div>
+                  <div className="space-y-0.5">
+                    {(["Flight", "Date", "ACFT TYPE", "ACFT REG", "PAX", "STD", "TTL PLN ULD", "Completion"] as FilterColumn[]).map((col) => (
+                      <button
+                        key={col}
+                        className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-gray-700 hover:bg-gray-50 rounded transition-colors text-left"
+                        onClick={() => handleAddFilter(col)}
+                      >
+                        <Filter className="w-3 h-3 text-gray-400" />
+                        {col}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Active filters */}
+          {activeFilters.map(filter => {
+            const activeStatuses = Array.isArray(filter.value) ? filter.value : []
+            
+            return (
+              <div key={filter.id} className="flex items-center gap-1 px-2 py-1 text-xs border border-gray-300 rounded-md bg-white">
+                <span className="font-medium text-gray-700">{filter.column}</span>
+                <select
+                  value={filter.operator}
+                  onChange={(e) => {
+                    const newOperator = e.target.value as FilterOperator
+                    const updates: Partial<ActiveFilter> = { operator: newOperator }
+                    
+                    // Set default values when switching operator types
+                    if (filter.column === "Completion") {
+                      if (newOperator === "is") {
+                        updates.value = []
+                      } else if (newOperator === "greaterThan" || newOperator === "lessThan") {
+                        updates.value = "50"
+                      }
+                    } else if (filter.column === "STD") {
+                      if (newOperator === "timeRange" && filter.operator !== "timeRange") {
+                        updates.value = "09:00-21:00"
+                      }
+                    }
+                    
+                    handleUpdateFilter(filter.id, updates)
+                  }}
+                  className="px-1 py-0.5 text-xs border-none bg-transparent focus:outline-none focus:ring-1 focus:ring-[#D71A21] rounded"
+                >
+                  {filter.column === "Completion" ? (
+                    <>
+                      <option value="is">is</option>
+                      <option value="greaterThan">&gt;</option>
+                      <option value="lessThan">&lt;</option>
+                    </>
+                  ) : filter.column === "STD" ? (
+                    <>
+                      <option value="timeRange">between</option>
+                      <option value="equals">equals</option>
+                    </>
+                  ) : (
+                    <>
+                      <option value="contains">contains</option>
+                      <option value="equals">equals</option>
+                    </>
+                  )}
+                </select>
+                
+                {/* Render appropriate input based on column and operator */}
+                {filter.column === "Completion" && filter.operator === "is" ? (
+                  <div className="flex items-center gap-1">
+                    {[
+                      { key: "green", label: "Green", bgColor: "bg-green-500", textColor: "text-white", hoverBg: "hover:bg-green-600", inactiveBg: "bg-green-50", inactiveText: "text-green-700", inactiveBorder: "border-green-200" },
+                      { key: "amber", label: "Amber", bgColor: "bg-amber-500", textColor: "text-white", hoverBg: "hover:bg-amber-600", inactiveBg: "bg-amber-50", inactiveText: "text-amber-700", inactiveBorder: "border-amber-200" },
+                      { key: "red", label: "Red", bgColor: "bg-red-500", textColor: "text-white", hoverBg: "hover:bg-red-600", inactiveBg: "bg-red-50", inactiveText: "text-red-700", inactiveBorder: "border-red-200" }
+                    ].map(status => {
+                      const isActive = activeStatuses.includes(status.key)
+                      return (
+                        <button
+                          key={status.key}
+                          onClick={() => toggleCompletionStatus(filter.id, status.key)}
+                          className={`px-2 py-0.5 text-xs rounded transition-colors border ${
+                            isActive 
+                              ? `${status.bgColor} ${status.textColor} border-transparent ${status.hoverBg}` 
+                              : `${status.inactiveBg} ${status.inactiveText} ${status.inactiveBorder} hover:opacity-80`
+                          }`}
+                        >
+                          {status.label}
+                        </button>
+                      )
+                    })}
+                  </div>
+                ) : filter.column === "Completion" && (filter.operator === "greaterThan" || filter.operator === "lessThan") ? (
+                  <select
+                    value={typeof filter.value === "string" ? filter.value : "50"}
+                    onChange={(e) => handleUpdateFilter(filter.id, { value: e.target.value })}
+                    className="px-1 py-0.5 text-xs border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-[#D71A21]"
+                    autoFocus={editingFilterId === filter.id}
+                  >
+                    {[0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100].map(percent => (
+                      <option key={percent} value={percent}>{percent}%</option>
+                    ))}
+                  </select>
+                ) : filter.column === "STD" && filter.operator === "timeRange" ? (
+                <div className="flex items-center gap-1">
+                  <input
+                    type="time"
+                    value={typeof filter.value === "string" ? filter.value.split("-")[0] : "09:00"}
+                    onChange={(e) => {
+                      const currentValue = typeof filter.value === "string" ? filter.value : "09:00-21:00"
+                      const [, end] = currentValue.split("-")
+                      handleUpdateFilter(filter.id, { value: `${e.target.value}-${end || "21:00"}` })
+                    }}
+                    className="w-20 px-1 py-0.5 text-xs border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-[#D71A21]"
+                  />
+                  <span className="text-gray-400">-</span>
+                  <input
+                    type="time"
+                    value={typeof filter.value === "string" ? filter.value.split("-")[1] : "21:00"}
+                    onChange={(e) => {
+                      const currentValue = typeof filter.value === "string" ? filter.value : "09:00-21:00"
+                      const [start] = currentValue.split("-")
+                      handleUpdateFilter(filter.id, { value: `${start || "09:00"}-${e.target.value}` })
+                    }}
+                    className="w-20 px-1 py-0.5 text-xs border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-[#D71A21]"
+                  />
+                </div>
+              ) : (
+                <input
+                  type="text"
+                  value={typeof filter.value === "string" ? filter.value : ""}
+                  onChange={(e) => handleUpdateFilter(filter.id, { value: e.target.value })}
+                  placeholder="value..."
+                  className="w-20 px-1 py-0.5 text-xs border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-[#D71A21]"
+                  autoFocus={editingFilterId === filter.id}
+                />
+              )}
+                
+                <button
+                  onClick={() => handleRemoveFilter(filter.id)}
+                  className="ml-1 text-gray-400 hover:text-red-600 transition-colors"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </div>
+            )
+          })}
+          
+          {/* Clear all button - only show when there are active filters */}
+          {activeFilters.length > 0 && (
+            <button
+              onClick={() => setActiveFilters([])}
+              className="text-xs text-gray-500 hover:text-gray-700 underline"
+            >
+              Clear all
+            </button>
+          )}
+        </div>
         
         <div className="mx-2 rounded-lg border border-gray-200 overflow-x-auto">
           <div className="bg-white">
@@ -958,10 +1291,16 @@ export default function FlightsViewScreen() {
                       <span className="whitespace-nowrap">PAX</span>
                     </div>
                   </th>
-                  <th className="px-2 py-1 text-left font-semibold text-xs">
+                  <th 
+                    className="px-2 py-1 text-left font-semibold text-xs cursor-pointer hover:bg-[#B0151A] transition-colors"
+                    onClick={() => handleSort("STD")}
+                  >
                     <div className="flex items-center gap-2">
                       <Clock className="w-4 h-4 flex-shrink-0" />
                       <span className="whitespace-nowrap">STD</span>
+                      {sortColumn === "STD" && (
+                        <span className="text-[10px]">{sortDirection === "asc" ? "↑" : "↓"}</span>
+                      )}
                     </div>
                   </th>
                   <th className="px-2 py-1 text-left font-semibold text-xs">
@@ -970,10 +1309,16 @@ export default function FlightsViewScreen() {
                       <span className="whitespace-nowrap">TTL PLN ULD</span>
                     </div>
                   </th>
-                  <th className="px-2 py-1 text-left font-semibold text-xs">
+                  <th 
+                    className="px-2 py-1 text-left font-semibold text-xs cursor-pointer hover:bg-[#B0151A] transition-colors"
+                    onClick={() => handleSort("Completion")}
+                  >
                     <div className="flex items-center gap-2">
                       <FileText className="w-4 h-4 flex-shrink-0" />
                       <span className="whitespace-nowrap">Completion</span>
+                      {sortColumn === "Completion" && (
+                        <span className="text-[10px]">{sortDirection === "asc" ? "↑" : "↓"}</span>
+                      )}
                     </div>
                   </th>
                   <th className="px-2 py-1 text-left font-semibold text-xs">
