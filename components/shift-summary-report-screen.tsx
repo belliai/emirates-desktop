@@ -873,11 +873,6 @@ TOTAL\t${totalPending.pmcAmf}\t${totalPending.alfPla}\t${totalPending.akeRke}\t$
     })
   }
 
-  // Generate UWS Delay Report
-  const generateUWSDelayReport = () => {
-    setShowUWSDelayReport(true)
-  }
-
   // Generate hourly time options (00:00 to 23:00)
   const timeOptions = useMemo(() => {
     const options: string[] = []
@@ -942,16 +937,6 @@ TOTAL\t${totalPending.pmcAmf}\t${totalPending.alfPla}\t${totalPending.akeRke}\t$
 
             {/* Top Right Actions */}
             <div className="flex items-center gap-2">
-              {/* Generate UWS Delay Report Button */}
-              <Button
-                onClick={generateUWSDelayReport}
-                variant="outline"
-                size="sm"
-              >
-                <FileText className="w-4 h-4" />
-                Generate UWS Delay Report
-              </Button>
-
               {/* Copy Total Advance vs Total Pending Button */}
               <Button
                 onClick={copyToClipboard}
