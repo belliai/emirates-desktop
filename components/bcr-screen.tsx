@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { ChevronRight, Plane, Calendar, Package, Users, Clock, FileText } from 'lucide-react'
 import LoadPlanDetailScreen from './load-plan-detail-screen'
+import BCRModal from './bcr-modal'
 import type { LoadPlanDetail } from './load-plan-types'
 import { useLoadPlans, type SentBCR } from '@/lib/load-plan-context'
 
@@ -13,23 +14,47 @@ interface BCRScreenProps {
 export default function BCRScreen({ onBack }: BCRScreenProps) {
   const { sentBCRs } = useLoadPlans()
   const [selectedLoadPlan, setSelectedLoadPlan] = useState<LoadPlanDetail | null>(null)
+  const [selectedBCR, setSelectedBCR] = useState<SentBCR | null>(null)
+  const [showBCRModal, setShowBCRModal] = useState(false)
 
   const handleRowClick = (bcr: SentBCR) => {
-    // Open the load plan detail view (read-only) for supervisor verification
+    // Open the load plan detail view with BCR modal on top
     if (bcr.loadPlan) {
       setSelectedLoadPlan(bcr.loadPlan)
+      setSelectedBCR(bcr)
+      setShowBCRModal(true)
     }
   }
 
   // Show load plan detail view when a BCR is selected
   if (selectedLoadPlan) {
     return (
-      <LoadPlanDetailScreen
-        loadPlan={selectedLoadPlan}
-        onBack={() => setSelectedLoadPlan(null)}
-        // Read-only view for supervisor verification
-        enableBulkCheckboxes={true}
-      />
+      <>
+        <LoadPlanDetailScreen
+          loadPlan={selectedLoadPlan}
+          onBack={() => {
+            setSelectedLoadPlan(null)
+            setSelectedBCR(null)
+            setShowBCRModal(false)
+          }}
+          // Read-only view for supervisor verification
+          enableBulkCheckboxes={true}
+        />
+        
+        {/* BCR Modal on top */}
+        {selectedBCR && (
+          <BCRModal
+            isOpen={showBCRModal}
+            onClose={() => {
+              setShowBCRModal(false)
+              setSelectedBCR(null)
+              setSelectedLoadPlan(null)
+            }}
+            loadPlan={selectedBCR.loadPlan}
+            bcrData={selectedBCR.bcrData}
+          />
+        )}
+      </>
     )
   }
 
