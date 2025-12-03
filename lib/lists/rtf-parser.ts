@@ -1052,6 +1052,42 @@ export function parseRTFShipments(content: string, header: LoadPlanHeader): Ship
       }
     }
     
+    // Check for "TO BE LDD IN" ULD section markers
+    // Examples: "TO BE LDD IN 02PMC", "TO BE LDD IN 01AKE", "TO BE LDD IN 04PMC/05AKE(STATION REQUIREMENT/DO NOT LOAD ALF'S/PLA'S)"
+    // These should be treated as ULD sections just like "XX 01AKE XX"
+    const toBeLddMatch = line.match(/^TO BE LDD IN\s+(.+)/i)
+    if (toBeLddMatch && inShipmentSection) {
+      const uldContent = toBeLddMatch[1].trim().toUpperCase()
+      if (uldContent && uldContent.length > 0) {
+        // Format as "XX {content} XX" to match existing ULD format
+        const formattedULD = `XX ${uldContent} XX`
+        
+        console.log("[RTFParser] ✅ TO BE LDD IN ULD section detected:", formattedULD, "- buffer has", awbBuffer.length, "AWB rows")
+        
+        // If there are AWB rows in buffer, assign this ULD to all of them
+        if (awbBuffer.length > 0) {
+          awbBuffer.forEach((shipment) => {
+            // Append to existing ULD if present, otherwise set as ULD
+            if (shipment.uld && shipment.uld.trim()) {
+              shipment.uld = `${shipment.uld} --- ${formattedULD}`
+            } else {
+              shipment.uld = formattedULD
+            }
+            const s = shipment as Partial<Shipment> & { sector?: string }
+            s.sector = currentSector
+          })
+          shipments.push(...(awbBuffer as Shipment[]))
+          awbBuffer.length = 0
+          console.log("[RTFParser] ✅ TO BE LDD IN ULD section:", formattedULD, "- assigned to buffered AWB rows")
+        } else {
+          // If buffer is empty, this ULD section is for upcoming AWB rows
+          currentULD = formattedULD
+          console.log("[RTFParser] ✅ TO BE LDD IN ULD section:", formattedULD, "- will be used for upcoming AWB rows")
+        }
+        continue
+      }
+    }
+    
     // Check for special notes - HANYA yang ada bracket "[ ]"
     // Examples: "[Must be load in Fire containment equipment]"
     // Simpan dengan bracket "[ ]" tetap ada

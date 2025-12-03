@@ -267,6 +267,19 @@ function parseShipmentsFromHtml(html: string, header: LoadPlanHeader): Shipment[
       continue
     }
     
+    // Check for "TO BE LDD IN" ULD section markers
+    // Examples: "TO BE LDD IN 02PMC", "TO BE LDD IN 01AKE", "TO BE LDD IN 04PMC/05AKE(STATION REQUIREMENT/DO NOT LOAD ALF'S/PLA'S)"
+    // These should be treated as ULD sections just like "XX 01AKE XX"
+    const toBeLddMatch = line.match(/^TO BE LDD IN\s+(.+)/i)
+    if (toBeLddMatch) {
+      const uldContent = toBeLddMatch[1].trim().toUpperCase()
+      if (uldContent && uldContent.length > 0) {
+        currentULD = `XX ${uldContent} XX`
+        console.log("[RTF-HTML] TO BE LDD IN ULD section detected:", currentULD)
+        continue
+      }
+    }
+    
     if (!inShipmentSection) continue
     
     // Try to parse shipment line
