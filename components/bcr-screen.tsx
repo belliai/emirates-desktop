@@ -48,7 +48,6 @@ export default function BCRScreen({ onBack }: BCRScreenProps) {
             onClose={() => {
               setShowBCRModal(false)
               setSelectedBCR(null)
-              setSelectedLoadPlan(null)
             }}
             loadPlan={selectedBCR.loadPlan}
             bcrData={selectedBCR.bcrData}
