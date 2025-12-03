@@ -2864,28 +2864,200 @@ TOTAL\t${totalPending.pmcAmf}\t${totalPending.alfPla}\t${totalPending.akeRke}\t$
         <div className="space-y-6">
           {/* Header Info */}
           <div className="bg-white border border-gray-200 rounded-lg p-4">
-            <div className="text-sm text-gray-600 mb-3">
-              Supervisor Shift Report-Perishable // {date} // SHIFT : {shift} // {dutyHours}HRS
-            </div>
-            <div className="flex gap-4 mb-4">
-              <div>
-                <label className="text-xs font-medium text-gray-700">Checked by Supervisor</label>
-                <EditableField
-                  value={supervisor}
-                  onChange={setSupervisor}
-                  className="text-sm font-medium"
-                  placeholder="Name"
-                />
-                <EditableField
-                  value={supervisorID}
-                  onChange={setSupervisorID}
-                  className="text-sm text-gray-500"
-                  placeholder="Staff ID"
-                />
-              </div>
-            </div>
-
             {/* Staff Performance Section */}
+            
+            {/* Build-UP Section */}
+            <div className="mb-4">
+              <div className="text-sm font-medium text-gray-700 mb-2 bg-orange-100 px-2 py-1">Build-UP</div>
+              <table className="w-full text-xs border border-gray-300">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-2 py-1.5 text-left border border-gray-300">EKP</th>
+                    <th className="px-2 py-1.5 text-center border border-gray-300">AKE / DPE<br/>(B/UP)</th>
+                    <th className="px-2 py-1.5 text-center border border-gray-300">ALF / DQF<br/>(B/UP)</th>
+                    <th className="px-2 py-1.5 text-center border border-gray-300">LD-PMC/AMF<br/>(B/UP)</th>
+                    <th className="px-2 py-1.5 text-center border border-gray-300">MD-Q6/Q7<br/>(B/UP)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td className="px-2 py-1 border border-gray-300 font-medium">Units Built in shift</td>
+                    <td className="px-1 py-1 border border-gray-300 text-center">
+                      <ExcelCell
+                        value={perBuildUpData.builtUnits.akeDpe.toString()}
+                        onChange={(v) => setPerBuildUpData(prev => ({
+                          ...prev,
+                          builtUnits: { ...prev.builtUnits, akeDpe: v }
+                        }))}
+                        className="text-xs text-center w-full"
+                      />
+                    </td>
+                    <td className="px-1 py-1 border border-gray-300 text-center">
+                      <ExcelCell
+                        value={perBuildUpData.builtUnits.alfDqf}
+                        onChange={(v) => setPerBuildUpData(prev => ({
+                          ...prev,
+                          builtUnits: { ...prev.builtUnits, alfDqf: v }
+                        }))}
+                      />
+                    </td>
+                    <td className="px-1 py-1 border border-gray-300 text-center">
+                      <ExcelCell
+                        value={perBuildUpData.builtUnits.ldPmcAmf}
+                        onChange={(v) => setPerBuildUpData(prev => ({
+                          ...prev,
+                          builtUnits: { ...prev.builtUnits, ldPmcAmf: v }
+                        }))}
+                      />
+                    </td>
+                    <td className="px-1 py-1 border border-gray-300 text-center">
+                      <ExcelCell
+                        value={perBuildUpData.builtUnits.mdQ6Q7}
+                        onChange={(v) => setPerBuildUpData(prev => ({
+                          ...prev,
+                          builtUnits: { ...prev.builtUnits, mdQ6Q7: v }
+                        }))}
+                      />
+                    </td>
+                  </tr>
+                  <tr>
+                    <td className="px-2 py-1 border border-gray-300 font-medium">THRU units in shift</td>
+                    <td className="px-1 py-1 border border-gray-300 text-center">
+                      <ExcelCell
+                        value={perBuildUpData.thruUnits.akeDpe.toString()}
+                        onChange={(v) => setPerBuildUpData(prev => ({
+                          ...prev,
+                          thruUnits: { ...prev.thruUnits, akeDpe: v }
+                        }))}
+                        className="text-xs text-center w-full"
+                      />
+                    </td>
+                    <td className="px-1 py-1 border border-gray-300 text-center">
+                      <ExcelCell
+                        value={perBuildUpData.thruUnits.alfDqf}
+                        onChange={(v) => setPerBuildUpData(prev => ({
+                          ...prev,
+                          thruUnits: { ...prev.thruUnits, alfDqf: v }
+                        }))}
+                      />
+                    </td>
+                    <td className="px-1 py-1 border border-gray-300 text-center">
+                      <ExcelCell
+                        value={perBuildUpData.thruUnits.ldPmcAmf}
+                        onChange={(v) => setPerBuildUpData(prev => ({
+                          ...prev,
+                          thruUnits: { ...prev.thruUnits, ldPmcAmf: v }
+                        }))}
+                      />
+                    </td>
+                    <td className="px-1 py-1 border border-gray-300 text-center">
+                      <ExcelCell
+                        value={perBuildUpData.thruUnits.mdQ6Q7}
+                        onChange={(v) => setPerBuildUpData(prev => ({
+                          ...prev,
+                          thruUnits: { ...prev.thruUnits, mdQ6Q7: v }
+                        }))}
+                      />
+                    </td>
+                  </tr>
+                  <tr>
+                    <td className="px-2 py-1 border border-gray-300 font-medium">Advance units built for next shift</td>
+                    <td className="px-1 py-1 border border-gray-300 text-center">
+                      <ExcelCell
+                        value={perBuildUpData.advanceUnitsBuiltNextShift.akeDpe.toString()}
+                        onChange={(v) => setPerBuildUpData(prev => ({
+                          ...prev,
+                          advanceUnitsBuiltNextShift: { ...prev.advanceUnitsBuiltNextShift, akeDpe: v }
+                        }))}
+                        className="text-xs text-center w-full"
+                      />
+                    </td>
+                    <td className="px-1 py-1 border border-gray-300 text-center">
+                      <ExcelCell
+                        value={perBuildUpData.advanceUnitsBuiltNextShift.alfDqf}
+                        onChange={(v) => setPerBuildUpData(prev => ({
+                          ...prev,
+                          advanceUnitsBuiltNextShift: { ...prev.advanceUnitsBuiltNextShift, alfDqf: v }
+                        }))}
+                      />
+                    </td>
+                    <td className="px-1 py-1 border border-gray-300 text-center">
+                      <ExcelCell
+                        value={perBuildUpData.advanceUnitsBuiltNextShift.ldPmcAmf}
+                        onChange={(v) => setPerBuildUpData(prev => ({
+                          ...prev,
+                          advanceUnitsBuiltNextShift: { ...prev.advanceUnitsBuiltNextShift, ldPmcAmf: v }
+                        }))}
+                      />
+                    </td>
+                    <td className="px-1 py-1 border border-gray-300 text-center">
+                      <ExcelCell
+                        value={perBuildUpData.advanceUnitsBuiltNextShift.mdQ6Q7}
+                        onChange={(v) => setPerBuildUpData(prev => ({
+                          ...prev,
+                          advanceUnitsBuiltNextShift: { ...prev.advanceUnitsBuiltNextShift, mdQ6Q7: v }
+                        }))}
+                      />
+                    </td>
+                  </tr>
+                  <tr>
+                    <td className="px-2 py-1 border border-gray-300 font-medium">Advance THRU units for the next shift</td>
+                    <td className="px-1 py-1 border border-gray-300 text-center">
+                      <ExcelCell
+                        value={perBuildUpData.advanceThruUnitsNextShift.akeDpe.toString()}
+                        onChange={(v) => setPerBuildUpData(prev => ({
+                          ...prev,
+                          advanceThruUnitsNextShift: { ...prev.advanceThruUnitsNextShift, akeDpe: v }
+                        }))}
+                        className="text-xs text-center w-full"
+                      />
+                    </td>
+                    <td className="px-1 py-1 border border-gray-300 text-center">
+                      <ExcelCell
+                        value={perBuildUpData.advanceThruUnitsNextShift.alfDqf}
+                        onChange={(v) => setPerBuildUpData(prev => ({
+                          ...prev,
+                          advanceThruUnitsNextShift: { ...prev.advanceThruUnitsNextShift, alfDqf: v }
+                        }))}
+                      />
+                    </td>
+                    <td className="px-1 py-1 border border-gray-300 text-center">
+                      <ExcelCell
+                        value={perBuildUpData.advanceThruUnitsNextShift.ldPmcAmf}
+                        onChange={(v) => setPerBuildUpData(prev => ({
+                          ...prev,
+                          advanceThruUnitsNextShift: { ...prev.advanceThruUnitsNextShift, ldPmcAmf: v }
+                        }))}
+                      />
+                    </td>
+                    <td className="px-1 py-1 border border-gray-300 text-center">
+                      <ExcelCell
+                        value={perBuildUpData.advanceThruUnitsNextShift.mdQ6Q7}
+                        onChange={(v) => setPerBuildUpData(prev => ({
+                          ...prev,
+                          advanceThruUnitsNextShift: { ...prev.advanceThruUnitsNextShift, mdQ6Q7: v }
+                        }))}
+                      />
+                    </td>
+                  </tr>
+                  <tr className="bg-green-50 font-semibold">
+                    <td className="px-2 py-1 border border-gray-300">Total Built units</td>
+                    <td className="px-2 py-1 border border-gray-300 text-center">
+                      {getAkeDpeNumeric(perBuildUpData.builtUnits.akeDpe) + getAkeDpeNumeric(perBuildUpData.thruUnits.akeDpe) + getAkeDpeNumeric(perBuildUpData.advanceUnitsBuiltNextShift.akeDpe) + getAkeDpeNumeric(perBuildUpData.advanceThruUnitsNextShift.akeDpe)}
+                    </td>
+                    <td className="px-2 py-1 border border-gray-300 text-center">
+                      {perBuildUpData.builtUnits.alfDqf + perBuildUpData.thruUnits.alfDqf + perBuildUpData.advanceUnitsBuiltNextShift.alfDqf + perBuildUpData.advanceThruUnitsNextShift.alfDqf}
+                    </td>
+                    <td className="px-2 py-1 border border-gray-300 text-center">
+                      {perBuildUpData.builtUnits.ldPmcAmf + perBuildUpData.thruUnits.ldPmcAmf + perBuildUpData.advanceUnitsBuiltNextShift.ldPmcAmf + perBuildUpData.advanceThruUnitsNextShift.ldPmcAmf}
+                    </td>
+                    <td className="px-2 py-1 border border-gray-300 text-center">
+                      {perBuildUpData.builtUnits.mdQ6Q7 + perBuildUpData.thruUnits.mdQ6Q7 + perBuildUpData.advanceUnitsBuiltNextShift.mdQ6Q7 + perBuildUpData.advanceThruUnitsNextShift.mdQ6Q7}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
             <div className="mb-4">
               <div className="text-sm font-medium text-gray-700 mb-2 bg-orange-100 px-2 py-1">Staff Performance</div>
               <div className="overflow-x-auto max-h-96 overflow-y-auto">
@@ -3041,199 +3213,6 @@ TOTAL\t${totalPending.pmcAmf}\t${totalPending.alfPla}\t${totalPending.akeRke}\t$
                   </tbody>
                 </table>
               </div>
-            </div>
-
-            {/* Build-UP Section */}
-            <div className="mb-4">
-              <div className="text-sm font-medium text-gray-700 mb-2 bg-orange-100 px-2 py-1">Build-UP</div>
-              <table className="w-full text-xs border border-gray-300">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-2 py-1.5 text-left border border-gray-300">EKP</th>
-                    <th className="px-2 py-1.5 text-center border border-gray-300">AKE / DPE<br/>(B/UP)</th>
-                    <th className="px-2 py-1.5 text-center border border-gray-300">ALF / DQF<br/>(B/UP)</th>
-                    <th className="px-2 py-1.5 text-center border border-gray-300">LD-PMC/AMF<br/>(B/UP)</th>
-                    <th className="px-2 py-1.5 text-center border border-gray-300">MD-Q6/Q7<br/>(B/UP)</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <td className="px-2 py-1 border border-gray-300 font-medium">Units Built in shift</td>
-                    <td className="px-1 py-1 border border-gray-300 text-center">
-                      <EditableField
-                        value={perBuildUpData.builtUnits.akeDpe.toString()}
-                        onChange={(v) => setPerBuildUpData(prev => ({
-                          ...prev,
-                          builtUnits: { ...prev.builtUnits, akeDpe: v }
-                        }))}
-                        className="text-xs text-center w-full"
-                      />
-                    </td>
-                    <td className="px-1 py-1 border border-gray-300 text-center">
-                      <ExcelCell
-                        value={perBuildUpData.builtUnits.alfDqf}
-                        onChange={(v) => setPerBuildUpData(prev => ({
-                          ...prev,
-                          builtUnits: { ...prev.builtUnits, alfDqf: v }
-                        }))}
-                      />
-                    </td>
-                    <td className="px-1 py-1 border border-gray-300 text-center">
-                      <ExcelCell
-                        value={perBuildUpData.builtUnits.ldPmcAmf}
-                        onChange={(v) => setPerBuildUpData(prev => ({
-                          ...prev,
-                          builtUnits: { ...prev.builtUnits, ldPmcAmf: v }
-                        }))}
-                      />
-                    </td>
-                    <td className="px-1 py-1 border border-gray-300 text-center">
-                      <ExcelCell
-                        value={perBuildUpData.builtUnits.mdQ6Q7}
-                        onChange={(v) => setPerBuildUpData(prev => ({
-                          ...prev,
-                          builtUnits: { ...prev.builtUnits, mdQ6Q7: v }
-                        }))}
-                      />
-                    </td>
-                  </tr>
-                  <tr>
-                    <td className="px-2 py-1 border border-gray-300 font-medium">THRU units in shift</td>
-                    <td className="px-1 py-1 border border-gray-300 text-center">
-                      <EditableField
-                        value={perBuildUpData.thruUnits.akeDpe.toString()}
-                        onChange={(v) => setPerBuildUpData(prev => ({
-                          ...prev,
-                          thruUnits: { ...prev.thruUnits, akeDpe: v }
-                        }))}
-                        className="text-xs text-center w-full"
-                      />
-                    </td>
-                    <td className="px-1 py-1 border border-gray-300 text-center">
-                      <ExcelCell
-                        value={perBuildUpData.thruUnits.alfDqf}
-                        onChange={(v) => setPerBuildUpData(prev => ({
-                          ...prev,
-                          thruUnits: { ...prev.thruUnits, alfDqf: v }
-                        }))}
-                      />
-                    </td>
-                    <td className="px-1 py-1 border border-gray-300 text-center">
-                      <ExcelCell
-                        value={perBuildUpData.thruUnits.ldPmcAmf}
-                        onChange={(v) => setPerBuildUpData(prev => ({
-                          ...prev,
-                          thruUnits: { ...prev.thruUnits, ldPmcAmf: v }
-                        }))}
-                      />
-                    </td>
-                    <td className="px-1 py-1 border border-gray-300 text-center">
-                      <ExcelCell
-                        value={perBuildUpData.thruUnits.mdQ6Q7}
-                        onChange={(v) => setPerBuildUpData(prev => ({
-                          ...prev,
-                          thruUnits: { ...prev.thruUnits, mdQ6Q7: v }
-                        }))}
-                      />
-                    </td>
-                  </tr>
-                  <tr>
-                    <td className="px-2 py-1 border border-gray-300 font-medium">Advance units built for next shift</td>
-                    <td className="px-1 py-1 border border-gray-300 text-center">
-                      <EditableField
-                        value={perBuildUpData.advanceUnitsBuiltNextShift.akeDpe.toString()}
-                        onChange={(v) => setPerBuildUpData(prev => ({
-                          ...prev,
-                          advanceUnitsBuiltNextShift: { ...prev.advanceUnitsBuiltNextShift, akeDpe: v }
-                        }))}
-                        className="text-xs text-center w-full"
-                      />
-                    </td>
-                    <td className="px-1 py-1 border border-gray-300 text-center">
-                      <ExcelCell
-                        value={perBuildUpData.advanceUnitsBuiltNextShift.alfDqf}
-                        onChange={(v) => setPerBuildUpData(prev => ({
-                          ...prev,
-                          advanceUnitsBuiltNextShift: { ...prev.advanceUnitsBuiltNextShift, alfDqf: v }
-                        }))}
-                      />
-                    </td>
-                    <td className="px-1 py-1 border border-gray-300 text-center">
-                      <ExcelCell
-                        value={perBuildUpData.advanceUnitsBuiltNextShift.ldPmcAmf}
-                        onChange={(v) => setPerBuildUpData(prev => ({
-                          ...prev,
-                          advanceUnitsBuiltNextShift: { ...prev.advanceUnitsBuiltNextShift, ldPmcAmf: v }
-                        }))}
-                      />
-                    </td>
-                    <td className="px-1 py-1 border border-gray-300 text-center">
-                      <ExcelCell
-                        value={perBuildUpData.advanceUnitsBuiltNextShift.mdQ6Q7}
-                        onChange={(v) => setPerBuildUpData(prev => ({
-                          ...prev,
-                          advanceUnitsBuiltNextShift: { ...prev.advanceUnitsBuiltNextShift, mdQ6Q7: v }
-                        }))}
-                      />
-                    </td>
-                  </tr>
-                  <tr>
-                    <td className="px-2 py-1 border border-gray-300 font-medium">Advance THRU units for the next shift</td>
-                    <td className="px-1 py-1 border border-gray-300 text-center">
-                      <EditableField
-                        value={perBuildUpData.advanceThruUnitsNextShift.akeDpe.toString()}
-                        onChange={(v) => setPerBuildUpData(prev => ({
-                          ...prev,
-                          advanceThruUnitsNextShift: { ...prev.advanceThruUnitsNextShift, akeDpe: v }
-                        }))}
-                        className="text-xs text-center w-full"
-                      />
-                    </td>
-                    <td className="px-1 py-1 border border-gray-300 text-center">
-                      <ExcelCell
-                        value={perBuildUpData.advanceThruUnitsNextShift.alfDqf}
-                        onChange={(v) => setPerBuildUpData(prev => ({
-                          ...prev,
-                          advanceThruUnitsNextShift: { ...prev.advanceThruUnitsNextShift, alfDqf: v }
-                        }))}
-                      />
-                    </td>
-                    <td className="px-1 py-1 border border-gray-300 text-center">
-                      <ExcelCell
-                        value={perBuildUpData.advanceThruUnitsNextShift.ldPmcAmf}
-                        onChange={(v) => setPerBuildUpData(prev => ({
-                          ...prev,
-                          advanceThruUnitsNextShift: { ...prev.advanceThruUnitsNextShift, ldPmcAmf: v }
-                        }))}
-                      />
-                    </td>
-                    <td className="px-1 py-1 border border-gray-300 text-center">
-                      <ExcelCell
-                        value={perBuildUpData.advanceThruUnitsNextShift.mdQ6Q7}
-                        onChange={(v) => setPerBuildUpData(prev => ({
-                          ...prev,
-                          advanceThruUnitsNextShift: { ...prev.advanceThruUnitsNextShift, mdQ6Q7: v }
-                        }))}
-                      />
-                    </td>
-                  </tr>
-                  <tr className="bg-green-50 font-semibold">
-                    <td className="px-2 py-1 border border-gray-300">Total Built units</td>
-                    <td className="px-2 py-1 border border-gray-300 text-center">
-                      {getAkeDpeNumeric(perBuildUpData.builtUnits.akeDpe) + getAkeDpeNumeric(perBuildUpData.thruUnits.akeDpe) + getAkeDpeNumeric(perBuildUpData.advanceUnitsBuiltNextShift.akeDpe) + getAkeDpeNumeric(perBuildUpData.advanceThruUnitsNextShift.akeDpe)}
-                    </td>
-                    <td className="px-2 py-1 border border-gray-300 text-center">
-                      {perBuildUpData.builtUnits.alfDqf + perBuildUpData.thruUnits.alfDqf + perBuildUpData.advanceUnitsBuiltNextShift.alfDqf + perBuildUpData.advanceThruUnitsNextShift.alfDqf}
-                    </td>
-                    <td className="px-2 py-1 border border-gray-300 text-center">
-                      {perBuildUpData.builtUnits.ldPmcAmf + perBuildUpData.thruUnits.ldPmcAmf + perBuildUpData.advanceUnitsBuiltNextShift.ldPmcAmf + perBuildUpData.advanceThruUnitsNextShift.ldPmcAmf}
-                    </td>
-                    <td className="px-2 py-1 border border-gray-300 text-center">
-                      {perBuildUpData.builtUnits.mdQ6Q7 + perBuildUpData.thruUnits.mdQ6Q7 + perBuildUpData.advanceUnitsBuiltNextShift.mdQ6Q7 + perBuildUpData.advanceThruUnitsNextShift.mdQ6Q7}
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
             </div>
 
             {/* Bulk Details Section - Build-Up Only */}
