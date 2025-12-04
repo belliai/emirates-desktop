@@ -473,7 +473,10 @@ export default function LoadPlansScreen({ onLoadPlanSelect }: { onLoadPlanSelect
           let header, shipments
           
           // If file is actually DOCX (even if extension is .rtf), use DOCX parser
+          // This happens when someone saves a DOCX file with .rtf extension
           if (actualFormat === 'docx') {
+            console.log('[RTFParser] ⚠️ File has .rtf extension but is actually DOCX (detected by magic bytes PK\\x03\\x04)')
+            console.log('[RTFParser] ℹ️ This file is a DOCX/ZIP file that was renamed to .rtf - using DOCX parser instead of RTF parser')
             // Use extractTextFromDOCX directly to avoid RTF extraction based on extension
             const content = await extractTextFromDOCX(f)
             
@@ -498,15 +501,16 @@ export default function LoadPlansScreen({ onLoadPlanSelect }: { onLoadPlanSelect
             shipments = parseShipments(content, header)
           } else if (isRTF) {
             // Use RTF parser directly (rtf-stream-parser)
-            console.log('[LoadPlansScreen] Processing RTF file with rtf-parser:', f.name)
+            console.log('[RTFParser] ✅ File is genuine RTF format (magic bytes: {\\rtf)')
+            console.log('[RTFParser] Processing RTF file with rtf-parser:', f.name)
             
             try {
               const result = await parseRTFFileWithStreamParser(f)
               header = result.header
               shipments = result.shipments
               
-              console.log('[LoadPlansScreen] ✅ Successfully parsed RTF file with rtf-parser')
-              console.log('[LoadPlansScreen] Parsed header:', {
+              console.log('[RTFParser] ✅ Successfully parsed RTF file with rtf-parser')
+              console.log('[RTFParser] Parsed header:', {
                 flightNumber: header.flightNumber,
                 date: header.date,
                 aircraftType: header.aircraftType,
@@ -514,14 +518,26 @@ export default function LoadPlansScreen({ onLoadPlanSelect }: { onLoadPlanSelect
                 sector: header.sector,
                 isCritical: header.isCritical,
               })
-              console.log('[LoadPlansScreen] Parsed shipments:', shipments.length)
+              console.log('[RTFParser] Parsed shipments:', shipments.length)
             } catch (rtfError) {
-              console.error('[LoadPlansScreen] Error parsing RTF file with rtf-parser:', rtfError)
+              console.error('[RTFParser] ❌ Error parsing RTF file with rtf-parser:', rtfError)
+              console.error('[RTFParser] Error details:', {
+                fileName: f.name,
+                errorMessage: rtfError instanceof Error ? rtfError.message : String(rtfError),
+                errorStack: rtfError instanceof Error ? rtfError.stack : undefined
+              })
               failedFiles.push(f.name)
               continue
             }
           } else {
-            // Process file normally (DOCX, PDF, etc.)
+            // Process file normally (DOCX, PDF, etc.) or unknown format
+            console.log('[RTFParser] ⚠️ File format is unknown or not RTF/DOCX')
+            console.log('[RTFParser] File info:', {
+              fileName: f.name,
+              actualFormat,
+              extension: f.name.split('.').pop(),
+              note: 'Will try generic extraction method'
+            })
             const content = await extractTextFromFile(f)
             
             header = parseHeader(content)
