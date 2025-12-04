@@ -5,7 +5,7 @@
 
 import type { LoadPlanHeader, Shipment } from "./types"
 import { extractTextFromFile } from "./file-extractors"
-import { addSpacesToJoinedWords } from "./text-helpers"
+import { addSpacesToJoinedWords, parseShipmentLine } from "./text-helpers"
 
 /**
  * Preprocess RTF content to clean up RTF-specific artifacts
@@ -862,14 +862,118 @@ export function parseRTFShipments(content: string, header: LoadPlanHeader): Ship
       continue
     }
     
+    // Check if this line contains shipment pattern (3 digits + AWB pattern)
+    // Shipment pattern can be at the start OR in the middle (after header warning)
+    const shipmentPattern = /\d{3}\s+\d{3}-\d{8}/
+    const shipmentPatternMatch = line.match(shipmentPattern)
+    const isShipmentLine = shipmentPatternMatch !== null
+    
+    if (!isShipmentLine) {
+      // Not a shipment line, but might be ULD or other info
+      // Check for ULD pattern
+      const hasULDMarkers = /xx\s+/i.test(line) && /\s+xx/i.test(line)
+      if (hasULDMarkers && inShipmentSection) {
+        // Extract ULD content (same logic as below)
+        const uldMatch = line.match(/xx\s+(.+?)\s+xx(.*)/i)
+        if (uldMatch) {
+          const betweenXX = uldMatch[1].trim()
+          const afterXX = uldMatch[2].trim()
+          currentULD = (betweenXX + (afterXX ? " " + afterXX : "")).trim()
+          if (currentULD) {
+            currentULD = `XX ${currentULD} XX`
+          }
+        }
+      }
+      continue
+    }
+    
+    // Extract shipment part from line (might have header warning before it)
+    let shipmentLine = line
+    if (shipmentPatternMatch && shipmentPatternMatch.index !== undefined && shipmentPatternMatch.index > 0) {
+      // Shipment pattern is not at the start - extract only the shipment part
+      shipmentLine = line.substring(shipmentPatternMatch.index).trim()
+      console.log('[RTFParser] Found shipment pattern in middle of line, extracted:', shipmentLine.substring(0, 100))
+    }
+    
     // Parse shipment line - RTF may have inconsistent spacing, so normalize first
     // But preserve multiple spaces for table alignment - use \s+ instead of single space
     // First normalize: replace 3+ spaces with 2 spaces (preserve table structure)
-    let normalizedLine = line.replace(/\s{3,}/g, "  ")
+    let normalizedLine = shipmentLine.replace(/\s{3,}/g, "  ")
     // Then normalize remaining: replace 2+ spaces with single space for regex matching
     normalizedLine = normalizedLine.replace(/\s{2,}/g, " ")
     
-    // Try full match first - more flexible regex for RTF format
+    // Try using parseShipmentLine first (handles joined fields better)
+    const parsedFields = parseShipmentLine(normalizedLine)
+    if (!parsedFields && isShipmentLine) {
+      console.log('[RTFParser] ⚠️ Failed to parse shipment line:', normalizedLine.substring(0, 150))
+    }
+    if (parsedFields) {
+      console.log('[RTFParser] ✅ Parsed shipment:', parsedFields.serial, parsedFields.awb, parsedFields.origin, parsedFields.destination, 'PCS:', parsedFields.pcs)
+      // Extract ULD from the line (after SI, before next shipment)
+      // ULD pattern: XX...XX or text after SI
+      let uldValue = parsedFields.uld || ""
+      
+      // If ULD not found in parsedFields, try to extract from line
+      if (!uldValue) {
+        const siIndex = normalizedLine.lastIndexOf(` ${parsedFields.si} `)
+        if (siIndex >= 0) {
+          const afterSI = normalizedLine.substring(siIndex + ` ${parsedFields.si} `.length).trim()
+          // Check if there's ULD after SI (before next shipment pattern)
+          // ULD can be: XX...XX, XX...XX (with spaces), or just text
+          const uldMatch = afterSI.match(/^(XX\s+.*?\s+XX|XX[^X]+XX|[^0-9]+?)(?=\s+\d{3}\s+\d{3}-\d{8}|$)/)
+          if (uldMatch) {
+            uldValue = uldMatch[1].trim()
+          } else if (afterSI && !afterSI.match(/^\d{3}\s+\d{3}-\d{8}/)) {
+            // If there's text after SI and it's not a shipment, it might be ULD
+            uldValue = afterSI.trim()
+          }
+        }
+      }
+      
+      // Use currentULD if set (from previous ULD line)
+      if (currentULD && currentULD.trim()) {
+        uldValue = currentULD
+        currentULD = ""
+      }
+      
+      // Create shipment from parsed fields
+      const shipment: Partial<Shipment> = {
+        serialNo: parsedFields.serial,
+        awbNo: parsedFields.awb,
+        origin: parsedFields.origin,
+        destination: parsedFields.destination,
+        pieces: Number.parseInt(parsedFields.pcs) || 0,
+        weight: Number.parseFloat(parsedFields.wgt) || 0,
+        volume: Number.parseFloat(parsedFields.vol) || 0,
+        lvol: Number.parseFloat(parsedFields.lvol) || 0,
+        shc: parsedFields.shc,
+        manDesc: parsedFields.manDesc,
+        pcode: parsedFields.pcode,
+        pc: parsedFields.pc,
+        thc: parsedFields.thc,
+        bs: parsedFields.bs,
+        pi: parsedFields.pi,
+        fltIn: parsedFields.fltIn,
+        arrDtTime: parsedFields.arrDtTime,
+        qnnAqnn: "",
+        whs: "",
+        si: parsedFields.si,
+        uld: uldValue || "",
+        specialNotes: parsedFields.specialNotes,
+        isRampTransfer: isRampTransfer,
+        sector: currentSector,
+      }
+      
+      // Add to shipments (ULD is already set)
+      const s = shipment as Partial<Shipment> & { sector?: string }
+      s.sector = currentSector
+      shipments.push(shipment as Shipment)
+      
+      currentShipment = null
+      continue
+    }
+    
+    // Fallback: Try full match first - more flexible regex for RTF format
     // Format: SER AWB ORG/DES PCS WGT VOL LVOL SHC MAN.DESC PCODE PC THC BS PI FLTIN ARRDT.TIME SI
     // Based on example: "001 176-92204630 ICNAMM 6 70.0 0.5 0.5 AXA-COL MEDICAL KITS AXA P1 SS N EK0323 29Feb0454 33:10/ N"
     // MAN.DESC can have spaces (MEDICAL KITS, CHILLED BONE-IN, etc.)
