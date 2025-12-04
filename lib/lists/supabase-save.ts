@@ -15,6 +15,41 @@ export interface SaveListsDataResult {
 }
 
 /**
+ * Format ULD allocation string to ensure proper spacing
+ * Adds space after "XX" at the start and before "XX" at the end if not already present
+ * Examples:
+ * - "XX02PMCXX" -> "XX 02PMC XX"
+ * - "XXTOPUPJNGUNITXX" -> "XX TOPUPJNGUNIT XX"
+ * - "XX01ALF 01AKEXX--- HLONEK041" -> "XX 01ALF 01AKE XX --- HLONEK041"
+ * - "XX 01ALF 01AKE XX --- HLONEK041" -> "XX 01ALF 01AKE XX --- HLONEK041" (already correct)
+ */
+function formatULD(uld: string | null | undefined): string | null {
+  if (!uld || !uld.trim()) {
+    return null
+  }
+  
+  let formatted = uld.trim()
+  
+  // Step 1: Add space after "XX" at the start if not already present
+  // Pattern: "XX" followed immediately by non-space, non-X character
+  if (/^XX[^X\s]/i.test(formatted)) {
+    formatted = formatted.replace(/^(XX)([^X\s])/i, '$1 $2')
+  }
+  
+  // Step 2: Find all "XX" patterns (case insensitive) and ensure space before them
+  // Pattern: any character (except space and X) followed by "XX"
+  // We need to be careful not to match "XX" that's already part of a correctly formatted pattern
+  // Replace: character + "XX" -> character + " XX"
+  // But skip if there's already a space before "XX"
+  formatted = formatted.replace(/([^X\s])(XX)/gi, '$1 $2')
+  
+  // Step 3: Clean up any double spaces that might have been created
+  formatted = formatted.replace(/\s{2,}/g, ' ')
+  
+  return formatted
+}
+
+/**
  * Parse date string to Date object
  * Handles formats like "1 Oct", "1-Oct", "1 Oct 2024", etc.
  * Returns current date as fallback if parsing fails
@@ -355,8 +390,8 @@ export async function saveListsDataToSupabase({
           warehouse_code: truncate(shipment.whs, 50),
           // SI field - only store original SI value, NOT special notes
           special_instructions: truncate(shipment.si, 50),
-          // ULD allocation - store only ULD, special notes are stored separately
-          uld_allocation: truncate(shipment.uld, 50),
+          // ULD allocation - format ULD with proper spacing before saving
+          uld_allocation: truncate(formatULD(shipment.uld), 50),
           // Special notes - store in separate column (e.g., "[Must be load in Fire containment equipment]")
           // Join multiple special notes with newline
           special_notes: shipment.specialNotes && shipment.specialNotes.length > 0
