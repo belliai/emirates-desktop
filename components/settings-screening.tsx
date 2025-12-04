@@ -1,7 +1,8 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useMemo } from "react"
 import { Search, Plus, Trash2, Shield, Settings, ArrowLeft } from "lucide-react"
+import { TagInput } from "./tag-input"
 
 type MasterScreeningRule = {
   id: string
@@ -12,6 +13,199 @@ type MasterScreeningRule = {
   outboundCity: string
   outboundCode: string
   remarks: string
+}
+
+type InboundScreeningEntry = {
+  country: string
+  city: string
+  code: string
+  remarks: string
+  isFirstInGroup: boolean
+  groupSize: number
+  textColor?: string
+  isBold?: boolean
+  isSpecialRow?: boolean
+  colSpan?: number
+}
+
+type OutboundScreeningEntry = {
+  country: string
+  city: string
+  code: string
+  isFirstInGroup: boolean
+  groupSize: number
+  textColor?: string
+}
+
+// Helper functions to process screening rules
+function generateInboundScreening(rules: MasterScreeningRule[]): InboundScreeningEntry[] {
+  const entries: InboundScreeningEntry[] = []
+  
+  // Filter rules where inbound is not "*" (meaning there's an inbound screening requirement)
+  const inboundRules = rules.filter(
+    rule => rule.inboundCountry !== "*" && rule.inboundCode !== "*"
+  )
+  
+  // Group by country
+  const countryGroups = new Map<string, Array<{ city: string; code: string; remarks: string }>>()
+  
+  inboundRules.forEach(rule => {
+    const codes = rule.inboundCode.split(',').map(c => c.trim())
+    const cities = rule.inboundCity.includes(',') 
+      ? rule.inboundCity.split(',').map(c => c.trim())
+      : [rule.inboundCity]
+    
+    codes.forEach((code, idx) => {
+      const city = cities[idx] || cities[0] || rule.inboundCity
+      if (!countryGroups.has(rule.inboundCountry)) {
+        countryGroups.set(rule.inboundCountry, [])
+      }
+      countryGroups.get(rule.inboundCountry)!.push({ city, code, remarks: rule.remarks })
+    })
+  })
+  
+  // Convert to entries with proper grouping
+  countryGroups.forEach((items, country) => {
+    items.forEach((item, idx) => {
+      entries.push({
+        country: country,
+        city: item.city,
+        code: item.code,
+        remarks: item.remarks,
+        isFirstInGroup: idx === 0,
+        groupSize: items.length,
+        isBold: item.code !== "" && item.code !== "*",
+        isSpecialRow: false,
+        colSpan: 1
+      })
+    })
+  })
+  
+  // Add special rows (special cases with specific logic)
+  const specialRules = rules.filter(rule => 
+    rule.inboundCountry === "RFS (Trucks)" ||
+    rule.inboundCountry === "PO MAIL" ||
+    rule.inboundCountry === "High Risk Cargo & Mail (HRCM)"
+  )
+  
+  specialRules.forEach(rule => {
+    entries.push({
+      country: rule.inboundCountry,
+      city: rule.inboundCity,
+      code: "",
+      remarks: rule.remarks,
+      isFirstInGroup: true,
+      groupSize: 1,
+      isSpecialRow: true,
+      colSpan: 1
+    })
+  })
+  
+  // Add special destination-based rows
+  const specialDestRules = rules.filter(rule =>
+    (rule.inboundCountry === "Bangladesh" && rule.outboundCountry === "Australia") ||
+    (rule.inboundCountry === "Egypt" && rule.outboundCountry === "Australia")
+  )
+  
+  specialDestRules.forEach(rule => {
+    entries.push({
+      country: "",
+      city: "",
+      code: "",
+      remarks: `${rule.inboundCountry} to ${rule.outboundCountry} ${rule.remarks}`,
+      isFirstInGroup: true,
+      groupSize: 1,
+      isSpecialRow: true,
+      colSpan: 3
+    })
+  })
+  
+  return entries
+}
+
+function generateOutboundScreening(rules: MasterScreeningRule[]): OutboundScreeningEntry[] {
+  const entries: OutboundScreeningEntry[] = []
+  
+  // Filter rules where outbound is not "*" and inbound is "*"
+  const outboundRules = rules.filter(
+    rule => rule.outboundCountry !== "*" && 
+            rule.outboundCountry !== "EU" && 
+            rule.outboundCountry !== "EU/UK" &&
+            rule.outboundCountry !== "Australia" &&
+            rule.inboundCountry === "*"
+  )
+  
+  // Group by country
+  const countryGroups = new Map<string, Array<{ city: string; code: string }>>()
+  
+  outboundRules.forEach(rule => {
+    const codes = rule.outboundCode.split(',').map(c => c.trim())
+    const cities = rule.outboundCity.includes(',') && codes.length > 1
+      ? rule.outboundCity.split(',').map(c => c.trim())
+      : codes.map(() => rule.outboundCity)
+    
+    codes.forEach((code, idx) => {
+      const city = cities[idx] || rule.outboundCity
+      if (!countryGroups.has(rule.outboundCountry)) {
+        countryGroups.set(rule.outboundCountry, [])
+      }
+      countryGroups.get(rule.outboundCountry)!.push({ city, code })
+    })
+  })
+  
+  // Convert to entries with proper grouping
+  countryGroups.forEach((items, country) => {
+    items.forEach((item, idx) => {
+      entries.push({
+        country: country,
+        city: item.city,
+        code: item.code,
+        isFirstInGroup: idx === 0,
+        groupSize: items.length,
+        textColor: country === "Egypt" ? "text-red-600" : undefined
+      })
+    })
+  })
+  
+  return entries
+}
+
+function generateHRCMforEU(rules: MasterScreeningRule[]): string[] {
+  const countries = rules
+    .filter(rule => 
+      rule.remarks.includes("SHR to be applied on CSD") && 
+      rule.outboundCountry === "EU"
+    )
+    .map(rule => rule.inboundCountry)
+  
+  return countries
+}
+
+function generateHRCMforCanada(rules: MasterScreeningRule[]): { regular: string[]; embargo: string[] } {
+  const canadaRules = rules.filter(rule => 
+    rule.outboundCountry === "Canada" && 
+    rule.inboundCountry !== "*"
+  )
+  
+  const regular = canadaRules
+    .filter(rule => !rule.remarks.toLowerCase().includes("embargo"))
+    .map(rule => rule.inboundCountry)
+  
+  const embargo = canadaRules
+    .filter(rule => rule.remarks.toLowerCase().includes("embargo"))
+    .map(rule => rule.inboundCountry)
+  
+  return { regular, embargo }
+}
+
+function generateNonRA3Stations(rules: MasterScreeningRule[]): Array<{ city: string; code: string; remarks: string }> {
+  return rules
+    .filter(rule => rule.remarks.includes("Not validated RA3"))
+    .map(rule => ({
+      city: rule.inboundCity,
+      code: rule.inboundCode,
+      remarks: rule.remarks
+    }))
 }
 
 export default function SettingsScreening() {
@@ -89,6 +283,13 @@ export default function SettingsScreening() {
     { id: "55", inboundCountry: "Cambodia", inboundCity: "Siem Reap", inboundCode: "SAI", outboundCountry: "EU/UK", outboundCity: "*", outboundCode: "*", remarks: "Not validated RA3 - Valid until 18-08-2025" },
     { id: "56", inboundCountry: "Vietnam", inboundCity: "DA NANG", inboundCode: "DAD", outboundCountry: "EU/UK", outboundCity: "*", outboundCode: "*", remarks: "Not validated RA3 - Valid until 03-11-2025" },
   ])
+
+  // Compute table data from screening rules
+  const inboundData = useMemo(() => generateInboundScreening(screeningRules), [screeningRules])
+  const outboundData = useMemo(() => generateOutboundScreening(screeningRules), [screeningRules])
+  const hrcmEUData = useMemo(() => generateHRCMforEU(screeningRules), [screeningRules])
+  const hrcmCanadaData = useMemo(() => generateHRCMforCanada(screeningRules), [screeningRules])
+  const nonRA3Data = useMemo(() => generateNonRA3Stations(screeningRules), [screeningRules])
 
   const updateRule = (id: string, field: keyof MasterScreeningRule, value: string) => {
     setScreeningRules(screeningRules.map((rule) => (rule.id === id ? { ...rule, [field]: value } : rule)))
@@ -177,7 +378,12 @@ export default function SettingsScreening() {
                     <EditableCell value={rule.inboundCity} onChange={(value) => updateRule(rule.id, "inboundCity", value)} />
                   </td>
                   <td className="px-3 py-2">
-                    <EditableCell value={rule.inboundCode} onChange={(value) => updateRule(rule.id, "inboundCode", value)} />
+                    <TagInput 
+                      value={rule.inboundCode} 
+                      onChange={(value) => updateRule(rule.id, "inboundCode", value)}
+                      placeholder="Add code..."
+                      maxVisible={2}
+                    />
                   </td>
                   <td className="px-3 py-2">
                     <EditableCell value={rule.outboundCountry} onChange={(value) => updateRule(rule.id, "outboundCountry", value)} />
@@ -186,7 +392,12 @@ export default function SettingsScreening() {
                     <EditableCell value={rule.outboundCity} onChange={(value) => updateRule(rule.id, "outboundCity", value)} />
                   </td>
                   <td className="px-3 py-2">
-                    <EditableCell value={rule.outboundCode} onChange={(value) => updateRule(rule.id, "outboundCode", value)} />
+                    <TagInput 
+                      value={rule.outboundCode} 
+                      onChange={(value) => updateRule(rule.id, "outboundCode", value)}
+                      placeholder="Add code..."
+                      maxVisible={2}
+                    />
                   </td>
                   <td className="px-3 py-2">
                     <EditableCell value={rule.remarks} onChange={(value) => updateRule(rule.id, "remarks", value)} />
@@ -238,130 +449,35 @@ export default function SettingsScreening() {
                   </tr>
                 </thead>
                 <tbody className="text-gray-900">
-                  <tr className="border-b border-gray-100">
-                    <td className="px-3 py-2">Pakistan</td>
-                    <td className="px-3 py-2 font-bold">SIALKOT</td>
-                    <td className="px-3 py-2 font-bold">SKT</td>
-                  </tr>
-                  <tr className="border-b border-gray-100">
-                    <td className="px-3 py-2"></td>
-                    <td className="px-3 py-2 font-bold">PESHAWAR</td>
-                    <td className="px-3 py-2 font-bold">PEW</td>
-                  </tr>
-                  <tr className="border-b border-gray-100">
-                    <td className="px-3 py-2">Iran</td>
-                    <td className="px-3 py-2 font-bold">TEHRAN</td>
-                    <td className="px-3 py-2 font-bold">IKA</td>
-                  </tr>
-                  <tr className="border-b border-gray-100">
-                    <td className="px-3 py-2"></td>
-                    <td className="px-3 py-2 font-bold">BASRA</td>
-                    <td className="px-3 py-2 font-bold">BSR</td>
-                  </tr>
-                  <tr className="border-b border-gray-100">
-                    <td className="px-3 py-2">Iraq</td>
-                    <td className="px-3 py-2 font-bold">BAGHDAD</td>
-                    <td className="px-3 py-2 font-bold">BGW</td>
-                  </tr>
-                  <tr className="border-b border-gray-100">
-                    <td className="px-3 py-2">Sudan</td>
-                    <td className="px-3 py-2 font-bold">KHARTOUM</td>
-                    <td className="px-3 py-2 font-bold">KRT</td>
-                  </tr>
-                  <tr className="border-b border-gray-100">
-                    <td className="px-3 py-2">RFS (Trucks)</td>
-                    <td className="px-3 py-2">All trucks - except from DWC</td>
-                    <td className="px-3 py-2"></td>
-                  </tr>
-                  <tr className="border-b border-gray-100">
-                    <td className="px-3 py-2">PO MAIL</td>
-                    <td className="px-3 py-2">All transit and transfer mail</td>
-                    <td className="px-3 py-2"></td>
-                  </tr>
-                  <tr className="border-b border-gray-100">
-                    <td className="px-3 py-2">High Risk Cargo & Mail (HRCM)</td>
-                    <td className="px-3 py-2">Reference C&MHM C.6/5.2</td>
-                    <td className="px-3 py-2"></td>
-                  </tr>
-                  <tr className="border-b border-gray-100">
-                    <td className="px-3 py-2">Guinea</td>
-                    <td className="px-3 py-2">Conakry</td>
-                    <td className="px-3 py-2 font-bold">CKY</td>
-                  </tr>
-                  <tr className="border-b border-gray-100">
-                    <td className="px-3 py-2 font-bold">Bangladesh</td>
-                    <td className="px-3 py-2">DHAKA</td>
-                    <td className="px-3 py-2 font-bold">DAC*</td>
-                  </tr>
-                  <tr className="border-b border-gray-100">
-                    <td className="px-3 py-2" rowSpan={3}>Pakistan</td>
-                    <td className="px-3 py-2 font-bold">KARACHI</td>
-                    <td className="px-3 py-2 font-bold">KHI</td>
-                  </tr>
-                  <tr className="border-b border-gray-100">
-                    <td className="px-3 py-2 font-bold">ISLAMABAD</td>
-                    <td className="px-3 py-2 font-bold">ISB</td>
-                  </tr>
-                  <tr className="border-b border-gray-100">
-                    <td className="px-3 py-2 font-bold">LAHORE</td>
-                    <td className="px-3 py-2 font-bold">LHE</td>
-                  </tr>
-                  <tr className="border-b border-gray-100">
-                    <td className="px-3 py-2" rowSpan={2}>Nigeria</td>
-                    <td className="px-3 py-2">Lagos</td>
-                    <td className="px-3 py-2 font-bold">LOS</td>
-                  </tr>
-                  <tr className="border-b border-gray-100">
-                    <td className="px-3 py-2">Abuja</td>
-                    <td className="px-3 py-2 font-bold">ABV</td>
-                  </tr>
-                  <tr className="border-b border-gray-100 text-red-600">
-                    <td className="px-3 py-2 font-bold">CAIRO</td>
-                    <td className="px-3 py-2 font-bold">Egypt</td>
-                    <td className="px-3 py-2 font-bold">CAI</td>
-                  </tr>
-                  <tr className="border-b border-gray-100 text-red-600">
-                    <td className="px-3 py-2 font-bold">AMMAN</td>
-                    <td className="px-3 py-2 font-bold">Jordan</td>
-                    <td className="px-3 py-2 font-bold">AMM</td>
-                  </tr>
-                  <tr className="border-b border-gray-100 text-purple-600">
-                    <td className="px-3 py-2 font-bold">LARNACA</td>
-                    <td className="px-3 py-2 font-bold">Cyprus</td>
-                    <td className="px-3 py-2 font-bold">LCA*</td>
-                  </tr>
-                  <tr className="border-b border-gray-100">
-                    <td className="px-3 py-2">MULTAN</td>
-                    <td className="px-3 py-2">Pakistan</td>
-                    <td className="px-3 py-2 font-bold">MUX</td>
-                  </tr>
-                  <tr className="border-b border-gray-100">
-                    <td className="px-3 py-2">MASHAD</td>
-                    <td className="px-3 py-2">Iran</td>
-                    <td className="px-3 py-2 font-bold">MHD</td>
-                  </tr>
-                  <tr className="border-b border-gray-100 text-blue-600">
-                    <td className="px-3 py-2 font-bold">CDG / NCE</td>
-                    <td className="px-3 py-2 font-bold">FRANCE</td>
-                    <td className="px-3 py-2 font-bold">FRANCE</td>
-                  </tr>
-                  <tr className="border-b border-gray-100">
-                    <td className="px-3 py-2">Lebanon</td>
-                    <td className="px-3 py-2 font-bold">BEIRUT</td>
-                    <td className="px-3 py-2 font-bold">BEY</td>
-                  </tr>
-                  <tr className="border-b border-gray-100">
-                    <td className="px-3 py-2 font-bold" colSpan={3}>
-                      <span className="font-bold">Bangladesh</span> to <span className="font-bold">Australia</span> require
-                      screening if not SHR
-                    </td>
-                  </tr>
-                  <tr className="border-b border-gray-100">
-                    <td className="px-3 py-2 font-bold" colSpan={3}>
-                      <span className="font-bold">Egypt</span> to <span className="font-bold">Australia</span> require
-                      screening - Embargo in NGSC
-                    </td>
-                  </tr>
+                  {inboundData.map((entry, idx) => {
+                    if (entry.colSpan === 3) {
+                      return (
+                        <tr key={idx} className="border-b border-gray-100">
+                          <td className="px-3 py-2 font-bold" colSpan={3}>
+                            {entry.remarks}
+                          </td>
+                        </tr>
+                      )
+                    }
+                    
+                    return (
+                      <tr key={idx} className={`border-b border-gray-100 ${entry.textColor || ""}`}>
+                        {entry.isFirstInGroup && entry.groupSize > 1 ? (
+                          <td className="px-3 py-2" rowSpan={entry.groupSize}>
+                            {entry.country}
+                          </td>
+                        ) : entry.groupSize === 1 ? (
+                          <td className="px-3 py-2">{entry.country}</td>
+                        ) : null}
+                        <td className={`px-3 py-2 ${entry.isBold ? "font-bold" : ""}`}>
+                          {entry.city}
+                        </td>
+                        <td className={`px-3 py-2 ${entry.isBold ? "font-bold" : ""}`}>
+                          {entry.code}
+                        </td>
+                      </tr>
+                    )
+                  })}
                 </tbody>
               </table>
             </div>
@@ -382,109 +498,19 @@ export default function SettingsScreening() {
                   </tr>
                 </thead>
                 <tbody className="text-gray-900">
-                  <tr className="border-b border-gray-100">
-                    <td className="px-3 py-2" rowSpan={13}>
-                      United States of America
-                    </td>
-                    <td className="px-3 py-2 font-bold">NEW YORK</td>
-                    <td className="px-3 py-2 font-bold">JFK</td>
-                  </tr>
-                  <tr className="border-b border-gray-100">
-                    <td className="px-3 py-2 font-bold">SEATTLE</td>
-                    <td className="px-3 py-2 font-bold">SEA</td>
-                  </tr>
-                  <tr className="border-b border-gray-100">
-                    <td className="px-3 py-2 font-bold">ORLANDO</td>
-                    <td className="px-3 py-2 font-bold">MCO</td>
-                  </tr>
-                  <tr className="border-b border-gray-100">
-                    <td className="px-3 py-2 font-bold">LOS ANGELES</td>
-                    <td className="px-3 py-2 font-bold">LAX</td>
-                  </tr>
-                  <tr className="border-b border-gray-100">
-                    <td className="px-3 py-2 font-bold">HOUSTON</td>
-                    <td className="px-3 py-2 font-bold">IAH</td>
-                  </tr>
-                  <tr className="border-b border-gray-100">
-                    <td className="px-3 py-2 font-bold">BOSTON</td>
-                    <td className="px-3 py-2 font-bold">BOS</td>
-                  </tr>
-                  <tr className="border-b border-gray-100">
-                    <td className="px-3 py-2 font-bold">DALLAS</td>
-                    <td className="px-3 py-2 font-bold">DFW</td>
-                  </tr>
-                  <tr className="border-b border-gray-100">
-                    <td className="px-3 py-2 font-bold">WASHINGTON</td>
-                    <td className="px-3 py-2 font-bold">IAD</td>
-                  </tr>
-                  <tr className="border-b border-gray-100">
-                    <td className="px-3 py-2 font-bold">SAN FRANCISCO</td>
-                    <td className="px-3 py-2 font-bold">SFO</td>
-                  </tr>
-                  <tr className="border-b border-gray-100">
-                    <td className="px-3 py-2 font-bold">CHICAGO</td>
-                    <td className="px-3 py-2 font-bold">ORD</td>
-                  </tr>
-                  <tr className="border-b border-gray-100">
-                    <td className="px-3 py-2 font-bold">FORT LAUDERDALE</td>
-                    <td className="px-3 py-2 font-bold">FLL</td>
-                  </tr>
-                  <tr className="border-b border-gray-100">
-                    <td className="px-3 py-2 font-bold">NEWARK</td>
-                    <td className="px-3 py-2 font-bold">EWR</td>
-                  </tr>
-                  <tr className="border-b border-gray-100">
-                    <td className="px-3 py-2 font-bold">MIAMI</td>
-                    <td className="px-3 py-2 font-bold">MIA</td>
-                  </tr>
-                  <tr className="border-b border-gray-100">
-                    <td className="px-3 py-2" rowSpan={2}>
-                      Canada*
-                    </td>
-                    <td className="px-3 py-2 font-bold">TORONTO</td>
-                    <td className="px-3 py-2 font-bold">YYZ</td>
-                  </tr>
-                  <tr className="border-b border-gray-100">
-                    <td className="px-3 py-2 font-bold">MONTREAL</td>
-                    <td className="px-3 py-2 font-bold">YUL</td>
-                  </tr>
-                  <tr className="border-b border-gray-100">
-                    <td className="px-3 py-2">Israel</td>
-                    <td className="px-3 py-2">Tel Aviv</td>
-                    <td className="px-3 py-2 font-bold">TLV</td>
-                  </tr>
-                  <tr className="border-b border-gray-100">
-                    <td className="px-3 py-2">Lebanon*</td>
-                    <td className="px-3 py-2 font-bold">BEIRUT</td>
-                    <td className="px-3 py-2 font-bold">BEY</td>
-                  </tr>
-                  <tr className="border-b border-gray-100 text-red-600">
-                    <td className="px-3 py-2 font-bold">Egypt</td>
-                    <td className="px-3 py-2 font-bold">CAIRO</td>
-                    <td className="px-3 py-2 font-bold">CAI</td>
-                  </tr>
-                  <tr className="border-b border-gray-100">
-                    <td className="px-3 py-2" rowSpan={2}>
-                      Turkey
-                    </td>
-                    <td className="px-3 py-2 font-bold">ISTANBUL</td>
-                    <td className="px-3 py-2 font-bold">IST</td>
-                  </tr>
-                  <tr className="border-b border-gray-100">
-                    <td className="px-3 py-2 font-bold">SABIHA GOKCEN</td>
-                    <td className="px-3 py-2 font-bold">SAW</td>
-                  </tr>
-                  <tr className="border-b border-gray-100">
-                    <td className="px-3 py-2" rowSpan={2}>
-                      Iraq
-                    </td>
-                    <td className="px-3 py-2 font-bold">BAGHDAD</td>
-                    <td className="px-3 py-2 font-bold">BGW</td>
-                  </tr>
-                  <tr className="border-b border-gray-100">
-                    <td className="px-3 py-2 font-bold">BASRA / Erbil</td>
-                    <td className="px-3 py-2 font-bold">BSR / EBL</td>
-                  </tr>
+                  {outboundData.map((entry, idx) => (
+                    <tr key={idx} className={`border-b border-gray-100 ${entry.textColor || ""}`}>
+                      {entry.isFirstInGroup && entry.groupSize > 1 ? (
+                        <td className="px-3 py-2" rowSpan={entry.groupSize}>
+                          {entry.country}
+                        </td>
+                      ) : entry.groupSize === 1 ? (
+                        <td className="px-3 py-2">{entry.country}</td>
+                      ) : null}
+                      <td className="px-3 py-2 font-bold">{entry.city}</td>
+                      <td className="px-3 py-2 font-bold">{entry.code}</td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             </div>
@@ -502,42 +528,20 @@ export default function SettingsScreening() {
             <div className="overflow-x-auto">
               <table className="w-full text-xs">
                 <tbody className="text-gray-900">
-                  <tr className="border-b border-gray-200">
-                    <td className="px-3 py-2 border-r border-gray-200">Federal Republic of Nigeria</td>
-                    <td className="px-3 py-2">Republic of China</td>
-                  </tr>
-                  <tr className="border-b border-gray-200">
-                    <td className="px-3 py-2 border-r border-gray-200">Federal Republic of Somalia</td>
-                    <td className="px-3 py-2">Republic of Iraq</td>
-                  </tr>
-                  <tr className="border-b border-gray-200">
-                    <td className="px-3 py-2 border-r border-gray-200">Islamic Republic of Afghanistan</td>
-                    <td className="px-3 py-2">Republic of Mali</td>
-                  </tr>
-                  <tr className="border-b border-gray-200">
-                    <td className="px-3 py-2 border-r border-gray-200">Islamic Republic of Mauritania</td>
-                    <td className="px-3 py-2">Republic of Niger</td>
-                  </tr>
-                  <tr className="border-b border-gray-200">
-                    <td className="px-3 py-2 border-r border-gray-200">Islamic Republic of Pakistan</td>
-                    <td className="px-3 py-2">Republic of the Sudan</td>
-                  </tr>
-                  <tr className="border-b border-gray-200">
-                    <td className="px-3 py-2 border-r border-gray-200">Lebanese Republic</td>
-                    <td className="px-3 py-2">Republic of Yemen</td>
-                  </tr>
-                  <tr className="border-b border-gray-200">
-                    <td className="px-3 py-2 border-r border-gray-200">Libya</td>
-                    <td className="px-3 py-2">Syrian Arab Republic</td>
-                  </tr>
-                  <tr className="border-b border-gray-200">
-                    <td className="px-3 py-2 border-r border-gray-200">People's Republic of Bangladesh</td>
-                    <td className="px-3 py-2">Republic of Chad</td>
-                  </tr>
-                  <tr className="border-b border-gray-200">
-                    <td className="px-3 py-2 border-r border-gray-200">Kuwait</td>
-                    <td className="px-3 py-2"></td>
-                  </tr>
+                  {Array.from({ length: Math.ceil(hrcmEUData.length / 2) }).map((_, rowIdx) => {
+                    const leftIdx = rowIdx * 2
+                    const rightIdx = leftIdx + 1
+                    return (
+                      <tr key={rowIdx} className="border-b border-gray-200">
+                        <td className="px-3 py-2 border-r border-gray-200">
+                          {hrcmEUData[leftIdx] || ""}
+                        </td>
+                        <td className="px-3 py-2">
+                          {hrcmEUData[rightIdx] || ""}
+                        </td>
+                      </tr>
+                    )
+                  })}
                 </tbody>
               </table>
             </div>
@@ -552,35 +556,43 @@ export default function SettingsScreening() {
             <div className="overflow-x-auto">
               <table className="w-full text-xs">
                 <tbody className="text-gray-900">
-                  <tr className="border-b border-gray-200">
-                    <td className="px-3 py-2 border-r border-gray-200">Afghanistan</td>
-                    <td className="px-3 py-2">Nigeria</td>
-                  </tr>
-                  <tr className="border-b border-gray-200">
-                    <td className="px-3 py-2 border-r border-gray-200">Iran</td>
-                    <td className="px-3 py-2">Sudan</td>
-                  </tr>
-                  <tr className="border-b border-gray-200">
-                    <td className="px-3 py-2 border-r border-gray-200">Iraq</td>
-                    <td className="px-3 py-2">Syria</td>
-                  </tr>
-                  <tr className="border-b border-gray-200">
-                    <td className="px-3 py-2 border-r border-gray-200">Lebanon</td>
-                    <td className="px-3 py-2">Mali</td>
-                  </tr>
-                  <tr className="border-b border-gray-200">
-                    <td className="px-3 py-2 border-r border-gray-200">Libya</td>
-                    <td className="px-3 py-2"></td>
-                  </tr>
-                  <tr className="border-b-4 border-[#D71A21]">
-                    <td className="px-3 py-2 text-center font-bold" colSpan={2}>
-                      Embargo
-                    </td>
-                  </tr>
-                  <tr className="border-b border-gray-200">
-                    <td className="px-3 py-2 border-r border-gray-200">Somalia</td>
-                    <td className="px-3 py-2">Yemen</td>
-                  </tr>
+                  {Array.from({ length: Math.ceil(hrcmCanadaData.regular.length / 2) }).map((_, rowIdx) => {
+                    const leftIdx = rowIdx * 2
+                    const rightIdx = leftIdx + 1
+                    return (
+                      <tr key={`regular-${rowIdx}`} className="border-b border-gray-200">
+                        <td className="px-3 py-2 border-r border-gray-200">
+                          {hrcmCanadaData.regular[leftIdx] || ""}
+                        </td>
+                        <td className="px-3 py-2">
+                          {hrcmCanadaData.regular[rightIdx] || ""}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                  {hrcmCanadaData.embargo.length > 0 && (
+                    <>
+                      <tr className="border-b-4 border-[#D71A21]">
+                        <td className="px-3 py-2 text-center font-bold" colSpan={2}>
+                          Embargo
+                        </td>
+                      </tr>
+                      {Array.from({ length: Math.ceil(hrcmCanadaData.embargo.length / 2) }).map((_, rowIdx) => {
+                        const leftIdx = rowIdx * 2
+                        const rightIdx = leftIdx + 1
+                        return (
+                          <tr key={`embargo-${rowIdx}`} className="border-b border-gray-200">
+                            <td className="px-3 py-2 border-r border-gray-200">
+                              {hrcmCanadaData.embargo[leftIdx] || ""}
+                            </td>
+                            <td className="px-3 py-2">
+                              {hrcmCanadaData.embargo[rightIdx] || ""}
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </>
+                  )}
                 </tbody>
               </table>
             </div>
@@ -603,37 +615,27 @@ export default function SettingsScreening() {
           </div>
           <div className="p-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-gray-900">
-              <div className="space-y-2">
-                <p>Basra (BSR)</p>
-                <p>Conakry (CKY)</p>
-                <p className="pt-4">Moscow (DME)</p>
-                <p>Tehran (IKA)</p>
-                <p className="pt-4">Saint Petersburg (LED)</p>
-                <p>Medina (MED)</p>
-                <p>Trivandrum (TRV)</p>
-                <p>Siem Reap (SAI) ** 18-08-2025</p>
-                <p>DA NANG (DAD) **03-11-2025</p>
-              </div>
-              <div className="space-y-2">
-                <p className="line-through text-red-600">
-                  Krong Ta Khmau - KTH ** 10OCT2025 - Email from Rahul 17 September 2025 07:34
-                </p>
-                <p className="line-through text-red-600">
-                  Istanbul (IST)** Revoked email from Rahul (Thu 11/09/2025 11:57
-                </p>
-                <p className="pt-4 line-through text-red-600">
-                  Phnom Penh (PNH) * 01-May-24 (revoked message from Rahul)
-                </p>
-                <p className="font-bold text-red-600">
-                  Denpasar (DPS)** 5-DEC-2024 - updates (09DEC) (Transit Screening Exemption) SHC code for shipments screened by
-                  ID/RAC is extended until 01-APR-01 till
-                </p>
-                <p className="font-bold">
-                  ANGKASA PURA LOGISTICS) -ref Rahul email Monday, December 9, 2024 1:36 PM / refer corresponding correction
-                  email. K Sent: 28 May 2025 12:24 as RA3/00013-C3 (PT JAS) are now acceptable (MEMO M0002E/2024 relaes on
-                  02-JUN-2025)
-                </p>
-              </div>
+              {Array.from({ length: 2 }).map((_, colIdx) => (
+                <div key={colIdx} className="space-y-2">
+                  {nonRA3Data
+                    .filter((_, idx) => idx % 2 === colIdx)
+                    .map((station, idx) => {
+                      const displayText = station.code 
+                        ? `${station.city} (${station.code})`
+                        : station.city
+                      
+                      const hasValidityDate = station.remarks.includes("Valid until")
+                      const validityMatch = station.remarks.match(/Valid until (\d{2}-\d{2}-\d{4})/)
+                      const validityText = validityMatch ? ` ** ${validityMatch[1]}` : ""
+                      
+                      return (
+                        <p key={idx}>
+                          {displayText}{validityText}
+                        </p>
+                      )
+                    })}
+                </div>
+              ))}
             </div>
             <div className="mt-4 p-3 bg-gray-50 rounded text-xs text-gray-700">
               <p>

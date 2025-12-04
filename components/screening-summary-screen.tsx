@@ -85,8 +85,48 @@ export default function ScreeningSummaryScreen() {
     otherSectorScreening: "Other Sector Screening",
   }
 
-  // Recalculate overall totals automatically
+  // Calculate total screened values from flight details
+  const totalScreenedValues = useMemo(() => {
+    return editableFlightDetails.reduce(
+      (acc, flight) => ({
+        shipments: acc.shipments + flight.screenedShipments,
+        pcs: acc.pcs + flight.screenedPcs,
+        grWt: acc.grWt + flight.screenedGrWt,
+      }),
+      { shipments: 0, pcs: 0, grWt: 0 }
+    )
+  }, [editableFlightDetails])
+
+  // Recalculate overall totals automatically with auto-calculated pending pcs and grWt
   const recalculatedScreeningData = useMemo(() => {
+    // Auto-calculate totalPending.pcs and totalPending.grWt for each category
+    const usaCaScreeningWithCalc = {
+      ...screeningData.usaCaScreening,
+      totalPending: {
+        ...screeningData.usaCaScreening.totalPending,
+        pcs: Math.max(0, screeningData.usaCaScreening.totalBooked.pcs - totalScreenedValues.pcs),
+        grWt: Math.max(0, screeningData.usaCaScreening.totalBooked.grWt - totalScreenedValues.grWt),
+      },
+    }
+
+    const usaCaNoScreeningWithCalc = {
+      ...screeningData.usaCaNoScreening,
+      totalPending: {
+        ...screeningData.usaCaNoScreening.totalPending,
+        pcs: Math.max(0, screeningData.usaCaNoScreening.totalBooked.pcs - 0),
+        grWt: Math.max(0, screeningData.usaCaNoScreening.totalBooked.grWt - 0),
+      },
+    }
+
+    const otherSectorScreeningWithCalc = {
+      ...screeningData.otherSectorScreening,
+      totalPending: {
+        ...screeningData.otherSectorScreening.totalPending,
+        pcs: Math.max(0, screeningData.otherSectorScreening.totalBooked.pcs - 0),
+        grWt: Math.max(0, screeningData.otherSectorScreening.totalBooked.grWt - 0),
+      },
+    }
+
     const newOverall = {
       totalBooked: {
         pcs: screeningData.usaCaScreening.totalBooked.pcs + 
@@ -106,12 +146,12 @@ export default function ScreeningSummaryScreen() {
                screeningData.otherSectorScreening.totalBooked.kBase,
       },
       totalPending: {
-        pcs: screeningData.usaCaScreening.totalPending.pcs + 
-             screeningData.usaCaNoScreening.totalPending.pcs + 
-             screeningData.otherSectorScreening.totalPending.pcs,
-        grWt: screeningData.usaCaScreening.totalPending.grWt + 
-              screeningData.usaCaNoScreening.totalPending.grWt + 
-              screeningData.otherSectorScreening.totalPending.grWt,
+        pcs: usaCaScreeningWithCalc.totalPending.pcs + 
+             usaCaNoScreeningWithCalc.totalPending.pcs + 
+             otherSectorScreeningWithCalc.totalPending.pcs,
+        grWt: usaCaScreeningWithCalc.totalPending.grWt + 
+              usaCaNoScreeningWithCalc.totalPending.grWt + 
+              otherSectorScreeningWithCalc.totalPending.grWt,
         mABase: screeningData.usaCaScreening.totalPending.mABase + 
                 screeningData.usaCaNoScreening.totalPending.mABase + 
                 screeningData.otherSectorScreening.totalPending.mABase,
@@ -125,10 +165,12 @@ export default function ScreeningSummaryScreen() {
     }
     
     return {
-      ...screeningData,
+      usaCaScreening: usaCaScreeningWithCalc,
+      usaCaNoScreening: usaCaNoScreeningWithCalc,
+      otherSectorScreening: otherSectorScreeningWithCalc,
       overall: newOverall,
     }
-  }, [screeningData.usaCaScreening, screeningData.usaCaNoScreening, screeningData.otherSectorScreening])
+  }, [screeningData, totalScreenedValues])
 
   // Calculate Total Screening Load (same as Total Load for now)
   const totalScreeningLoad = useMemo(() => {
@@ -346,21 +388,15 @@ export default function ScreeningSummaryScreen() {
                             className="w-full text-center border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-gray-400"
                           />
                         </td>
-                        <td className="px-2 py-2 border border-gray-300 text-center">
-                          <input
-                            type="number"
-                            value={screeningData.usaCaScreening.totalPending.pcs}
-                            onChange={(e) => updateScreeningData("usaCaScreening", "totalPending", "pcs", parseInt(e.target.value) || 0)}
-                            className="w-full text-center border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-gray-400"
-                          />
+                        <td className="px-2 py-2 border border-gray-300 text-center bg-gray-100">
+                          <div className="text-center text-gray-700 font-medium">
+                            {recalculatedScreeningData.usaCaScreening.totalPending.pcs.toLocaleString()}
+                          </div>
                         </td>
-                        <td className="px-2 py-2 border border-gray-300 text-center">
-                          <input
-                            type="number"
-                            value={screeningData.usaCaScreening.totalPending.grWt}
-                            onChange={(e) => updateScreeningData("usaCaScreening", "totalPending", "grWt", parseInt(e.target.value) || 0)}
-                            className="w-full text-center border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-gray-400"
-                          />
+                        <td className="px-2 py-2 border border-gray-300 text-center bg-gray-100">
+                          <div className="text-center text-gray-700 font-medium">
+                            {recalculatedScreeningData.usaCaScreening.totalPending.grWt.toLocaleString()}
+                          </div>
                         </td>
                         <td className="px-2 py-2 border border-gray-300 text-center">
                           <input
@@ -429,21 +465,15 @@ export default function ScreeningSummaryScreen() {
                             className="w-full text-center border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-gray-400"
                           />
                         </td>
-                        <td className="px-2 py-2 border border-gray-300 text-center">
-                          <input
-                            type="number"
-                            value={screeningData.usaCaNoScreening.totalPending.pcs}
-                            onChange={(e) => updateScreeningData("usaCaNoScreening", "totalPending", "pcs", parseInt(e.target.value) || 0)}
-                            className="w-full text-center border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-gray-400"
-                          />
+                        <td className="px-2 py-2 border border-gray-300 text-center bg-gray-100">
+                          <div className="text-center text-gray-700 font-medium">
+                            {recalculatedScreeningData.usaCaNoScreening.totalPending.pcs.toLocaleString()}
+                          </div>
                         </td>
-                        <td className="px-2 py-2 border border-gray-300 text-center">
-                          <input
-                            type="number"
-                            value={screeningData.usaCaNoScreening.totalPending.grWt}
-                            onChange={(e) => updateScreeningData("usaCaNoScreening", "totalPending", "grWt", parseInt(e.target.value) || 0)}
-                            className="w-full text-center border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-gray-400"
-                          />
+                        <td className="px-2 py-2 border border-gray-300 text-center bg-gray-100">
+                          <div className="text-center text-gray-700 font-medium">
+                            {recalculatedScreeningData.usaCaNoScreening.totalPending.grWt.toLocaleString()}
+                          </div>
                         </td>
                         <td className="px-2 py-2 border border-gray-300 text-center">
                           <input
@@ -512,21 +542,15 @@ export default function ScreeningSummaryScreen() {
                             className="w-full text-center border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-gray-400"
                           />
                         </td>
-                        <td className="px-2 py-2 border border-gray-300 text-center">
-                          <input
-                            type="number"
-                            value={screeningData.otherSectorScreening.totalPending.pcs}
-                            onChange={(e) => updateScreeningData("otherSectorScreening", "totalPending", "pcs", parseInt(e.target.value) || 0)}
-                            className="w-full text-center border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-gray-400"
-                          />
+                        <td className="px-2 py-2 border border-gray-300 text-center bg-gray-100">
+                          <div className="text-center text-gray-700 font-medium">
+                            {recalculatedScreeningData.otherSectorScreening.totalPending.pcs.toLocaleString()}
+                          </div>
                         </td>
-                        <td className="px-2 py-2 border border-gray-300 text-center">
-                          <input
-                            type="number"
-                            value={screeningData.otherSectorScreening.totalPending.grWt}
-                            onChange={(e) => updateScreeningData("otherSectorScreening", "totalPending", "grWt", parseInt(e.target.value) || 0)}
-                            className="w-full text-center border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-gray-400"
-                          />
+                        <td className="px-2 py-2 border border-gray-300 text-center bg-gray-100">
+                          <div className="text-center text-gray-700 font-medium">
+                            {recalculatedScreeningData.otherSectorScreening.totalPending.grWt.toLocaleString()}
+                          </div>
                         </td>
                         <td className="px-2 py-2 border border-gray-300 text-center">
                           <input
@@ -598,21 +622,15 @@ export default function ScreeningSummaryScreen() {
                           className="w-full text-center border-2 border-yellow-400 rounded bg-yellow-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-yellow-500 font-semibold"
                         />
                       </td>
-                      <td className="px-2 py-2 border border-gray-300 text-center">
-                        <input
-                          type="number"
-                          value={screeningData[screeningFilter].totalPending.pcs}
-                          onChange={(e) => updateScreeningData(screeningFilter, "totalPending", "pcs", parseInt(e.target.value) || 0)}
-                          className="w-full text-center border border-blue-300 rounded bg-blue-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        />
+                      <td className="px-2 py-2 border border-gray-300 text-center bg-gray-100">
+                        <div className="text-center text-gray-700 font-medium">
+                          {recalculatedScreeningData[screeningFilter].totalPending.pcs.toLocaleString()}
+                        </div>
                       </td>
-                      <td className="px-2 py-2 border border-gray-300 text-center">
-                        <input
-                          type="number"
-                          value={screeningData[screeningFilter].totalPending.grWt}
-                          onChange={(e) => updateScreeningData(screeningFilter, "totalPending", "grWt", parseInt(e.target.value) || 0)}
-                          className="w-full text-center border border-blue-300 rounded bg-blue-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        />
+                      <td className="px-2 py-2 border border-gray-300 text-center bg-gray-100">
+                        <div className="text-center text-gray-700 font-medium">
+                          {recalculatedScreeningData[screeningFilter].totalPending.grWt.toLocaleString()}
+                        </div>
                       </td>
                       <td className="px-2 py-2 border border-gray-300 text-center">
                         <input
