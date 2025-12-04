@@ -18,16 +18,30 @@ export async function detectFileFormat(file: File): Promise<'rtf' | 'docx' | 'un
   const arrayBuffer = await file.arrayBuffer()
   const uint8Array = new Uint8Array(arrayBuffer.slice(0, 8))
   
-  // RTF files start with {\rtf
+  // Log magic bytes for debugging
+  const magicBytes = Array.from(uint8Array).map(b => '0x' + b.toString(16).padStart(2, '0').toUpperCase()).join(' ')
+  const magicBytesAsText = String.fromCharCode(...Array.from(uint8Array).filter(b => b >= 32 && b <= 126))
+  
+  console.log('[RTFParser] Magic bytes detection:', {
+    fileName: file.name,
+    magicBytes,
+    magicBytesAsText: magicBytesAsText.replace(/[^\x20-\x7E]/g, '.'),
+    first8Bytes: Array.from(uint8Array)
+  })
+  
+  // RTF files start with {\rtf (0x7B = '{', 0x5C = '\', 0x72 = 'r', 0x74 = 't', 0x66 = 'f')
   if (uint8Array[0] === 0x7B && uint8Array[1] === 0x5C && uint8Array[2] === 0x72 && uint8Array[3] === 0x74 && uint8Array[4] === 0x66) {
+    console.log('[RTFParser] ✅ Detected as RTF (magic bytes: {\\rtf)')
     return 'rtf'
   }
   
-  // DOCX/ZIP files start with PK\x03\x04 (ZIP signature)
+  // DOCX/ZIP files start with PK\x03\x04 (ZIP signature: 0x50 = 'P', 0x4B = 'K', 0x03, 0x04)
   if (uint8Array[0] === 0x50 && uint8Array[1] === 0x4B && uint8Array[2] === 0x03 && uint8Array[3] === 0x04) {
+    console.log('[RTFParser] ✅ Detected as DOCX/ZIP (magic bytes: PK\\x03\\x04)')
     return 'docx'
   }
   
+  console.warn('[RTFParser] ⚠️ Unknown file format (magic bytes do not match RTF or DOCX)')
   return 'unknown'
 }
 

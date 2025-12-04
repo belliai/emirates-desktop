@@ -212,6 +212,15 @@ export async function saveListsDataToSupabase({
       route_origin: loadPlanData.route_origin,
       route_destination: loadPlanData.route_destination,
       route_full: loadPlanData.route_full,
+      header_warning: loadPlanData.header_warning,
+    })
+    
+    // Log headerWarning from results for debugging
+    console.log("[v0] Header warning from results:", {
+      headerWarning: results.header.headerWarning,
+      headerWarningType: typeof results.header.headerWarning,
+      headerWarningLength: results.header.headerWarning?.length,
+      headerWarningPreview: results.header.headerWarning?.substring(0, 100),
     })
     
     // Add is_critical if available (with fallback if column doesn't exist)
