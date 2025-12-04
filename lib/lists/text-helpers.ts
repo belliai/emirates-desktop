@@ -248,7 +248,7 @@ export function addSpacesToJoinedWords(text: string): string {
  * Parse shipment line with joined fields
  * Handles cases where fields are joined without spaces (e.g., "BAHLHR1", "VAL- ECCCONSOLIDATIONVALP2")
  * 
- * Format: SER AWB ORG/DES PCS WGT VOL LVOL SHC MAN.DESC PCODE PC THC BS PI FLTIN ARRDT.TIME SI
+ * Format: SER AWB ORG/DES PCS WGT VOL LVOL SHC MAN.DESC PCODE PC THC BS PI FLTIN ARRDT.TIME QNN/AQNN WHS SI
  * Example: "001 176-90972910 BAHLHR1  4.5  0.1  0.1 VAL- ECCCONSOLIDATIONVALP2 QWTSSNEK0836 01Mar0605 08:25/  N XXXYPBOXXX"
  */
 export interface ParsedShipmentFields {
@@ -269,6 +269,8 @@ export interface ParsedShipmentFields {
   pi: string
   fltIn: string
   arrDtTime: string
+  qnnAqnn: string
+  whs: string
   si: string
   uld: string
   specialNotes: string[]
@@ -409,7 +411,41 @@ export function parseShipmentLine(line: string): ParsedShipmentFields | null {
     // ULD will be extracted from next line or from current line if available
   }
   
-  // Find ARRDT.TIME pattern (date + time) - before SI
+  // Find WHS (warehouse code) - before SI, after QNN/AQNN
+  // WHS is typically a short code or empty, extract cautiously
+  let whs = ""
+  // Look for a short alphanumeric code at the end (before where SI was)
+  // Pattern: non-date, non-flight-number text at the end
+  const whsPattern = /\s+([A-Z0-9]{2,6})\s*$/
+  const whsMatch = remaining.match(whsPattern)
+  // Only extract if it's not a date or flight number pattern
+  if (whsMatch && !/\d{2}[A-Za-z]{3}\d{2,4}/.test(whsMatch[1]) && !/^[A-Z]{2}\d{4}$/.test(whsMatch[1])) {
+    const potentialWhs = whsMatch[1]
+    // Make sure it's not part of a date/time string
+    const beforeWhs = remaining.substring(0, remaining.length - whsMatch[0].length)
+    if (!beforeWhs.match(/[\d:\/]\s*$/)) {
+      whs = potentialWhs
+      remaining = beforeWhs.trim()
+    }
+  }
+  
+  // Find QNN/AQNN - before WHS, after ARRDT.TIME
+  // QNN/AQNN is typically a quantity or alphanumeric code or empty
+  let qnnAqnn = ""
+  const qnnPattern = /\s+([A-Z0-9\/]{2,10})\s*$/
+  const qnnMatch = remaining.match(qnnPattern)
+  // Only extract if it's not a date, time, or flight number pattern
+  if (qnnMatch && !/\d{2}[A-Za-z]{3}\d{2,4}/.test(qnnMatch[1]) && !/^[A-Z]{2}\d{4}$/.test(qnnMatch[1]) && !/^[\d:\/]+$/.test(qnnMatch[1])) {
+    const potentialQnn = qnnMatch[1]
+    // Make sure it's not part of a date/time string
+    const beforeQnn = remaining.substring(0, remaining.length - qnnMatch[0].length)
+    if (!beforeQnn.match(/[\d:\/]\s*$/)) {
+      qnnAqnn = potentialQnn
+      remaining = beforeQnn.trim()
+    }
+  }
+  
+  // Find ARRDT.TIME pattern (date + time) - before QNN/AQNN
   let arrDtTime = ""
   const dateTimePattern = /(\d{2}[A-Za-z]{3}\d{2,4}(?:\s+[\d:\/]+)?)\s*$/
   const dateTimeMatch = remaining.match(dateTimePattern)
@@ -594,6 +630,8 @@ export function parseShipmentLine(line: string): ParsedShipmentFields | null {
     pi,
     fltIn,
     arrDtTime,
+    qnnAqnn,
+    whs,
     si,
     uld: uld || "",
     specialNotes,

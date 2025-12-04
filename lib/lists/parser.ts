@@ -371,7 +371,7 @@ export function parseShipments(content: string, header: LoadPlanHeader): Shipmen
     if (inShipmentSection) {
       // Regex to parse shipment line - SHC can be single code (VUN) or multiple codes (VUN-CRT-EAP)
       // More flexible regex that handles variable spacing and optional fields
-      // Pattern: SER AWB ORG/DES PCS WGT VOL LVOL SHC MAN.DESC PCODE PC THC BS PI FLTIN ARRDT.TIME SI
+      // Pattern: SER AWB ORG/DES PCS WGT VOL LVOL SHC MAN.DESC PCODE PC THC BS PI FLTIN ARRDT.TIME QNN/AQNN WHS SI
       // PC can be optional (e.g., shipment 010 has "PXS    QRT" without PC)
       // Some shipments may not have FLTIN/ARRDT.TIME (e.g., shipment 002)
       // Try standard format first (with SS and FLTIN, PC optional)
@@ -383,17 +383,18 @@ export function parseShipments(content: string, header: LoadPlanHeader): Shipmen
       const normalizedLine = line.replace(/\s+/g, " ")
       // Updated regex to handle various date/time formats from RTF files:
       // Examples from user's RTF:
-      // - "001 ... EK0323 29Feb0454 33:10/ N" (date with embedded time + separate time)
-      // - "002 ... EK9918 29Feb0315 25:35/34:50 N" (date with embedded time + multiple times)
-      // - "011 ... N" (no FLTIN/ARRDT/TIME)
-      // Pattern breakdown:
-      // - FLTIN: EK0323 or empty
-      // - ARRDT: 29Feb0454 (date + HHMM time embedded) or 29Feb2024 or 29Feb24
-      // - TIME: 33:10/ or 25:35/34:50 (time with optional multiple values separated by /)
-      // Note: MAN.DESC uses (.+?) which is non-greedy to stop at PCODE
-      // THC can be empty (just spaces), so use * instead of + for optional matching
+      // - "002 ... SS Y EK0509 12Oct0024 13:29/           N" (with FLTIN and ARRDT.TIME)
+      // - "001 ... SS N                                   N" (without FLTIN/ARRDT.TIME)
+      // Pattern breakdown after BS PI:
+      // - FLTIN: EK0509 (optional capture group)
+      // - ARRDT DATE: 12Oct0024 (date part, optional capture group)
+      // - ARRDT TIME: 13:29/ (time part with trailing /, optional capture group)
+      // - QNN/AQNN: captures any non-Y/N text before SI (optional)
+      // - WHS: captures any non-Y/N text between QNN and SI (optional)
+      // - SI: Y or N (required at end)
+      // Between ARRDT.TIME and SI there's often just whitespace
       let shipmentMatch = normalizedLine.match(
-        /^(\d{3})\s+(\d{3}-\d{8})\s+([A-Z]{3})([A-Z]{3})\s+(\d+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([A-Z-]+)\s+(.+?)\s+([A-Z]{3})\s+([A-Z]\d)?\s*([A-Z0-9\s]*?)\s+(SS)\s+([YN])\s+([A-Z]+\d+)?\s*(\d{2}[A-Za-z]{3}\d{2,4}(?:\s+[\d:\/]+)?)?\s*([\d:\/\s]+)?\s*([YN])?$/i,
+        /^(\d{3})\s+(\d{3}-\d{8})\s+([A-Z]{3})([A-Z]{3})\s+(\d+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([A-Z-]+)\s+(.+?)\s+([A-Z]{3})\s+([A-Z]\d)?\s*([A-Z0-9\s]*?)\s+(SS|BS|NN)\s+([YN])\s+([A-Z]{2}\d{4})?\s*(\d{2}[A-Za-z]{3}\d{2,4})?\s*([\d:\/]+)?\s*([A-Z0-9\/]+)?\s*([A-Z0-9]+)?\s+([YN])\s*$/i,
       )
       
       // If first regex doesn't match, try format without FLTIN/ARRDT.TIME (e.g., shipment 002)
@@ -449,6 +450,8 @@ export function parseShipments(content: string, header: LoadPlanHeader): Shipmen
             "", // fltIn (empty)
             "", // arrDate (empty)
             "", // arrTime (empty)
+            "", // qnnAqnn (empty)
+            "", // whs (empty)
             si, // si
           ]
         } else {
@@ -479,6 +482,8 @@ export function parseShipments(content: string, header: LoadPlanHeader): Shipmen
               noPCMatch[15] || "", // fltIn
               noPCMatch[16] || "", // arrDate
               noPCMatch[17] || "", // arrTime
+              "", // qnnAqnn (empty)
+              "", // whs (empty)
               noPCMatch[18] || "N", // si
             ]
           } else {
@@ -515,6 +520,8 @@ export function parseShipments(content: string, header: LoadPlanHeader): Shipmen
           fltIn,
           arrDate,
           arrTime,
+          qnnAqnn,
+          whs,
           si,
         ] = shipmentMatch
 
@@ -591,8 +598,8 @@ export function parseShipments(content: string, header: LoadPlanHeader): Shipmen
           pi: pi,
           fltIn: fltIn || "",
           arrDtTime: `${arrDate || ""} ${arrTime || ""}`.trim(),
-          qnnAqnn: "",
-          whs: "",
+          qnnAqnn: (qnnAqnn || "").trim(),
+          whs: (whs || "").trim(),
           si: si || "N",
           uld: currentULD || "", // Assign currentULD jika ada, jika tidak akan di-assign nanti
           specialNotes: [],

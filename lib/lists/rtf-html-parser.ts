@@ -543,6 +543,39 @@ function parseShipmentsFromHtml(html: string, header: LoadPlanHeader): Shipment[
           }
         }
         
+        // QNN/AQNN (optional alphanumeric code)
+        // Look ahead to check if there's a field before WHS/SI
+        // QNN/AQNN should not be Y or N (those are SI values)
+        if (idx < restParts.length && !/^[YN]$/i.test(restParts[idx])) {
+          // Check if this might be WHS (next to last) or QNN (before WHS)
+          const remaining = restParts.length - idx
+          if (remaining === 3) {
+            // Format: QNN WHS SI
+            qnnAqnn = restParts[idx++]
+          } else if (remaining === 2) {
+            // Could be: QNN SI or WHS SI
+            // If next is SI (Y/N), this is either QNN or WHS
+            if (/^[YN]$/i.test(restParts[idx + 1])) {
+              // Assume this is QNN if it looks like a quantity/code
+              qnnAqnn = restParts[idx++]
+            }
+          } else if (remaining > 3) {
+            // Multiple fields remaining, take as QNN
+            qnnAqnn = restParts[idx++]
+          }
+        }
+        
+        // WHS (warehouse code, optional)
+        if (idx < restParts.length && !/^[YN]$/i.test(restParts[idx])) {
+          // Check if next field is SI
+          if (idx + 1 < restParts.length && /^[YN]$/i.test(restParts[idx + 1])) {
+            whs = restParts[idx++]
+          } else if (idx === restParts.length - 1) {
+            // This is the last field but not Y/N, might be WHS without SI
+            whs = restParts[idx++]
+          }
+        }
+        
         // SI (last field, Y or N)
         if (idx < restParts.length && /^[YN]$/i.test(restParts[restParts.length - 1])) {
           si = restParts[restParts.length - 1].toUpperCase()

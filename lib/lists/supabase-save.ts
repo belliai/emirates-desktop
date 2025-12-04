@@ -161,7 +161,35 @@ function parseDateTimeString(dateTimeStr: string): string | null {
   if (!dateTimeStr) return null
   
   try {
-    // Try to parse common datetime formats
+    // Handle load plan format: "12Oct0024 13:29/" or "11Oct0439 29:28/"
+    // Format: DDMmmHHMM TIME/ where DD=day, Mmm=month, HHMM=time
+    const loadPlanMatch = dateTimeStr.match(/^(\d{2})([A-Za-z]{3})(\d{4})/)
+    if (loadPlanMatch) {
+      const day = parseInt(loadPlanMatch[1], 10)
+      const monthStr = loadPlanMatch[2]
+      const timeStr = loadPlanMatch[3] // HHMM format
+      
+      const monthMap: { [key: string]: number } = {
+        jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5,
+        jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11
+      }
+      
+      const month = monthMap[monthStr.toLowerCase()]
+      if (month !== undefined) {
+        const hours = parseInt(timeStr.substring(0, 2), 10)
+        const minutes = parseInt(timeStr.substring(2, 4), 10)
+        
+        // Use current year as the year is not in the format
+        const currentYear = new Date().getFullYear()
+        const parsed = new Date(currentYear, month, day, hours, minutes)
+        
+        if (!isNaN(parsed.getTime())) {
+          return parsed.toISOString()
+        }
+      }
+    }
+    
+    // Try to parse common datetime formats as fallback
     const parsed = new Date(dateTimeStr)
     if (!isNaN(parsed.getTime())) {
       return parsed.toISOString()
