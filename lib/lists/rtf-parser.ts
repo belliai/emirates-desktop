@@ -787,6 +787,13 @@ export function parseRTFShipments(content: string, header: LoadPlanHeader): Ship
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim()
+    
+    // Debug: log lines that might contain multiple shipments
+    if (line.includes('011') && line.includes('012')) {
+      console.log('[RTFParser] 🔍 parseRTFShipments: Line', i, 'contains both 011 and 012')
+      console.log('[RTFParser] Full line content:', line)
+      console.log('[RTFParser] Line length:', line.length)
+    }
 
     // Check for new SECTOR marker
     const sectorMatch = line.match(/^SECTOR:\s*([A-Z]{6})/i)
@@ -864,9 +871,42 @@ export function parseRTFShipments(content: string, header: LoadPlanHeader): Ship
     
     // Check if this line contains shipment pattern (3 digits + AWB pattern)
     // Shipment pattern can be at the start OR in the middle (after header warning)
+    // IMPORTANT: Check for multiple shipments FIRST before processing single shipment
     const shipmentPattern = /\d{3}\s+\d{3}-\d{8}/
     const shipmentPatternMatch = line.match(shipmentPattern)
     const isShipmentLine = shipmentPatternMatch !== null
+    
+    // Check for multiple shipments in the same line FIRST (before checking if it's a shipment line)
+    // This ensures we catch cases like "011 ... 012 ..." even if they're in one line
+    // Use more flexible regex to catch variations: "011 176-94346136" or "011  176-94346136" (multiple spaces)
+    const allShipmentMatches: Array<{ index: number; match: string }> = []
+    let match
+    // More flexible regex: 3 digits, one or more spaces, 3 digits, dash, 8 digits
+    const shipmentRegex = /\d{3}\s+\d{3}-\d{8}/g
+    // Reset regex lastIndex to ensure we search from the beginning
+    shipmentRegex.lastIndex = 0
+    while ((match = shipmentRegex.exec(line)) !== null) {
+      allShipmentMatches.push({ index: match.index, match: match[0] })
+    }
+    
+    // Also try a more flexible pattern in case the first one doesn't match
+    // Pattern: 3 digits, any whitespace, 3 digits, dash, 8 digits
+    if (allShipmentMatches.length === 0) {
+      const flexibleRegex = /\d{3}\s+\d{3}-\d{8}/g
+      flexibleRegex.lastIndex = 0
+      while ((match = flexibleRegex.exec(line)) !== null) {
+        allShipmentMatches.push({ index: match.index, match: match[0] })
+      }
+    }
+    
+    // Debug: log if we found multiple shipments or if line contains 011 and 012
+    if (allShipmentMatches.length > 1) {
+      console.log('[RTFParser] 🔍 Found', allShipmentMatches.length, 'shipments in one line:', allShipmentMatches.map(m => m.match).join(', '))
+      console.log('[RTFParser] Line content:', line.substring(0, 250))
+    } else if (line.includes('011') && line.includes('012')) {
+      console.log('[RTFParser] ⚠️ Line contains 011 and 012 but only found', allShipmentMatches.length, 'shipment pattern(s)')
+      console.log('[RTFParser] Line content:', line.substring(0, 250))
+    }
     
     if (!isShipmentLine) {
       // Not a shipment line, but might be ULD or other info
@@ -887,6 +927,152 @@ export function parseRTFShipments(content: string, header: LoadPlanHeader): Ship
       continue
     }
     
+    // If there are multiple shipments, process each one separately
+    if (allShipmentMatches.length > 1) {
+      console.log('[RTFParser] Found', allShipmentMatches.length, 'shipments in one line, splitting...')
+      
+      for (let j = 0; j < allShipmentMatches.length; j++) {
+        const start = allShipmentMatches[j].index
+        const end = j < allShipmentMatches.length - 1 ? allShipmentMatches[j + 1].index : line.length
+        let shipmentLine = line.substring(start, end).trim()
+        
+        console.log('[RTFParser] Processing shipment', j + 1, 'of', allShipmentMatches.length, '- serial:', allShipmentMatches[j].match.split(/\s+/)[0])
+        console.log('[RTFParser] Extracted line:', shipmentLine.substring(0, 150))
+        
+        // Extract shipment part from line (might have header warning before it for first shipment)
+        if (j === 0 && shipmentPatternMatch && shipmentPatternMatch.index !== undefined && shipmentPatternMatch.index > 0) {
+          // First shipment might have header warning before it
+          shipmentLine = line.substring(shipmentPatternMatch.index, end).trim()
+          console.log('[RTFParser] First shipment had header warning, adjusted line:', shipmentLine.substring(0, 150))
+        }
+        
+        // Ensure shipment line starts with shipment pattern
+        if (!/^\d{3}\s+\d{3}-\d{8}/.test(shipmentLine)) {
+          console.log('[RTFParser] ⚠️ Shipment line does not start with pattern, trying to fix...')
+          // Try to find shipment pattern in the line
+          const patternMatch = shipmentLine.match(/\d{3}\s+\d{3}-\d{8}/)
+          if (patternMatch && patternMatch.index !== undefined) {
+            shipmentLine = shipmentLine.substring(patternMatch.index).trim()
+            console.log('[RTFParser] Fixed shipment line:', shipmentLine.substring(0, 150))
+          }
+        }
+        
+        // Parse shipment line - RTF may have inconsistent spacing, so normalize first
+        // But preserve multiple spaces for table alignment - use \s+ instead of single space
+        // First normalize: replace 3+ spaces with 2 spaces (preserve table structure)
+        let normalizedLine = shipmentLine.replace(/\s{3,}/g, "  ")
+        // Then normalize remaining: replace 2+ spaces with single space for regex matching
+        normalizedLine = normalizedLine.replace(/\s{2,}/g, " ")
+        
+        console.log('[RTFParser] Normalized line for shipment', j + 1, ':', normalizedLine.substring(0, 150))
+        
+        // Try using parseShipmentLine first (handles joined fields better)
+        let parsedFields = parseShipmentLine(normalizedLine)
+        
+        // If parseShipmentLine failed, try to extract at least basic fields
+        if (!parsedFields) {
+          console.log('[RTFParser] ⚠️ parseShipmentLine failed for shipment', j + 1, 'of', allShipmentMatches.length, ', trying basic extraction...')
+          // Try basic extraction: SER AWB ORG/DES (handle cases like "KULLHR11" where ORG/DES/PCS are joined)
+          const basicMatch = normalizedLine.match(/^(\d{3})\s+(\d{3}-\d{8})\s+([A-Z]{3})([A-Z]{3})(\d*)/)
+          if (basicMatch) {
+            // Create minimal parsed fields structure
+            parsedFields = {
+              serial: basicMatch[1],
+              awb: basicMatch[2],
+              origin: basicMatch[3],
+              destination: basicMatch[4],
+              pcs: basicMatch[5] || "0",
+              wgt: "0",
+              vol: "0",
+              lvol: "0",
+              shc: "",
+              manDesc: "",
+              pcode: "",
+              pc: "",
+              thc: "",
+              bs: "SS",
+              pi: "N",
+              fltIn: "",
+              arrDtTime: "",
+              si: "N",
+              uld: "",
+              specialNotes: []
+            }
+            console.log('[RTFParser] ✅ Extracted basic fields for shipment', j + 1, ':', parsedFields.serial, parsedFields.awb, parsedFields.origin, parsedFields.destination, 'PCS:', parsedFields.pcs)
+          } else {
+            console.log('[RTFParser] ❌ Failed to extract even basic fields for shipment', j + 1, '- line:', normalizedLine.substring(0, 150))
+          }
+        }
+        
+        if (parsedFields) {
+          console.log('[RTFParser] ✅ Parsed shipment', j + 1, 'of', allShipmentMatches.length, ':', parsedFields.serial, parsedFields.awb)
+          
+          // Extract ULD from the line (after SI, before next shipment)
+          let uldValue = parsedFields.uld || ""
+          
+          // If ULD not found in parsedFields, try to extract from line
+          if (!uldValue) {
+            const siIndex = normalizedLine.lastIndexOf(` ${parsedFields.si} `)
+            if (siIndex >= 0) {
+              const afterSI = normalizedLine.substring(siIndex + ` ${parsedFields.si} `.length).trim()
+              // Check if there's ULD after SI (before next shipment pattern)
+              const uldMatch = afterSI.match(/^(XX\s+.*?\s+XX|XX[^X]+XX|[^0-9]+?)(?=\s+\d{3}\s+\d{3}-\d{8}|$)/)
+              if (uldMatch) {
+                uldValue = uldMatch[1].trim()
+              } else if (afterSI && !afterSI.match(/^\d{3}\s+\d{3}-\d{8}/)) {
+                uldValue = afterSI.trim()
+              }
+            }
+          }
+          
+          // Use currentULD if set (from previous ULD line)
+          if (currentULD && currentULD.trim()) {
+            uldValue = currentULD
+            currentULD = ""
+          }
+          
+          // Create shipment from parsed fields
+          const shipment: Partial<Shipment> = {
+            serialNo: parsedFields.serial,
+            awbNo: parsedFields.awb,
+            origin: parsedFields.origin,
+            destination: parsedFields.destination,
+            pieces: Number.parseInt(parsedFields.pcs) || 0,
+            weight: Number.parseFloat(parsedFields.wgt) || 0,
+            volume: Number.parseFloat(parsedFields.vol) || 0,
+            lvol: Number.parseFloat(parsedFields.lvol) || 0,
+            shc: parsedFields.shc,
+            manDesc: parsedFields.manDesc,
+            pcode: parsedFields.pcode,
+            pc: parsedFields.pc,
+            thc: parsedFields.thc,
+            bs: parsedFields.bs,
+            pi: parsedFields.pi,
+            fltIn: parsedFields.fltIn,
+            arrDtTime: parsedFields.arrDtTime,
+            qnnAqnn: "",
+            whs: "",
+            si: parsedFields.si,
+            uld: uldValue || "",
+            specialNotes: parsedFields.specialNotes,
+            isRampTransfer: isRampTransfer,
+            sector: currentSector,
+          }
+          
+          // Add to shipments (ULD is already set)
+          const s = shipment as Partial<Shipment> & { sector?: string }
+          s.sector = currentSector
+          shipments.push(shipment as Shipment)
+        } else {
+          console.log('[RTFParser] ⚠️ Failed to parse shipment', j + 1, 'of', allShipmentMatches.length, ':', normalizedLine.substring(0, 150))
+        }
+      }
+      
+      // After processing all shipments in the line, continue to next line
+      continue
+    }
+    
+    // Single shipment in line - process normally
     // Extract shipment part from line (might have header warning before it)
     let shipmentLine = line
     if (shipmentPatternMatch && shipmentPatternMatch.index !== undefined && shipmentPatternMatch.index > 0) {
@@ -1915,39 +2101,45 @@ async function extractTextFromRTFDirect(file: File): Promise<string> {
       line = line.replace(/[{}]/g, "")
       
       // IMPORTANT: Split multiple shipments that are joined in one line
-      // Pattern: shipment ends with "N " or "Y " followed by another shipment starting with 3 digits
-      // Example: "001 ... N 002 ..." should be split into two lines
-      // Also handle cases like "038 ... N XXBULKXX **** MAIL**** 039 ..."
-      const shipmentSplitPattern = /(\d{3}\s+\d{3}-\d{8}[\s\S]*?)\s+([YN])\s+(?=\d{3}\s+\d{3}-\d{8})/g
-      if (shipmentSplitPattern.test(line)) {
-        // Split the line into multiple shipments
-        // Find all shipment starts
-        const shipmentStarts: number[] = []
-        let match
-        const regex = /\d{3}\s+\d{3}-\d{8}/g
-        while ((match = regex.exec(line)) !== null) {
-          shipmentStarts.push(match.index)
+      // Check if line contains multiple shipment patterns (more flexible - don't require N/Y before next shipment)
+      // Example: "001 ... N 002 ..." or "011 ... N XX01AKEXX 012 ..." should be split into two lines
+      // Find all shipment starts first
+      const shipmentStarts: number[] = []
+      let match
+      const regex = /\d{3}\s+\d{3}-\d{8}/g
+      regex.lastIndex = 0 // Reset regex
+      while ((match = regex.exec(line)) !== null) {
+        shipmentStarts.push(match.index)
+      }
+      
+      // Debug: log if line contains 011 and 012
+      if (line.includes('011') && line.includes('012')) {
+        console.log('[RTFParser] 🔍 Preprocessing: Line contains 011 and 012, found', shipmentStarts.length, 'shipment patterns')
+        console.log('[RTFParser] Line content:', line.substring(0, 250))
+      }
+      
+      if (shipmentStarts.length > 1) {
+        // Multiple shipments in one line - split them
+        console.log('[RTFParser] Preprocessing: Found', shipmentStarts.length, 'shipments in one line, splitting...')
+        if (line.includes('011') && line.includes('012')) {
+          console.log('[RTFParser] 🔍 Preprocessing: Splitting line with 011 and 012')
         }
-        
-        if (shipmentStarts.length > 1) {
-          // Multiple shipments in one line - split them
-          for (let j = 0; j < shipmentStarts.length; j++) {
-            const start = shipmentStarts[j]
-            const end = j < shipmentStarts.length - 1 ? shipmentStarts[j + 1] : line.length
-            const shipmentLine = line.substring(start, end).trim()
-            
-            if (shipmentLine && /^\d{3}\s+\d{3}-\d{8}/.test(shipmentLine)) {
-              // Save previous line if it's a shipment
-              if (currentLine && /^\d{3}\s+\d{3}-\d{8}/.test(currentLine)) {
-                cleanedLines.push(currentLine)
-              } else if (currentLine && !/^\d{3}\s+\d{3}-\d{8}/.test(currentLine)) {
-                cleanedLines.push(currentLine)
-              }
-              currentLine = shipmentLine
+        for (let j = 0; j < shipmentStarts.length; j++) {
+          const start = shipmentStarts[j]
+          const end = j < shipmentStarts.length - 1 ? shipmentStarts[j + 1] : line.length
+          const shipmentLine = line.substring(start, end).trim()
+          
+          if (shipmentLine && /^\d{3}\s+\d{3}-\d{8}/.test(shipmentLine)) {
+            // Save previous line if it's a shipment
+            if (currentLine && /^\d{3}\s+\d{3}-\d{8}/.test(currentLine)) {
+              cleanedLines.push(currentLine)
+            } else if (currentLine && !/^\d{3}\s+\d{3}-\d{8}/.test(currentLine)) {
+              cleanedLines.push(currentLine)
             }
+            currentLine = shipmentLine
           }
-          continue
         }
+        continue
       }
       
       // Check if this line should be joined with previous line
@@ -1988,36 +2180,58 @@ async function extractTextFromRTFDirect(file: File): Promise<string> {
     // Normalize spacing in each line - but preserve multiple spaces for table alignment
     // Also split any remaining multiple shipments in one line
     const finalLines: string[] = []
-    for (const line of cleanedLines) {
-      // Check if line contains multiple shipments (pattern: ... N 001 ... or ... Y 002 ...)
-      const multiShipmentPattern = /(\d{3}\s+\d{3}-\d{8}[\s\S]*?)\s+([YN])\s+(?=\d{3}\s+\d{3}-\d{8})/g
-      if (multiShipmentPattern.test(line)) {
-        // Split into multiple shipments
-        const shipmentStarts: number[] = []
-        let match
-        const regex = /\d{3}\s+\d{3}-\d{8}/g
-        while ((match = regex.exec(line)) !== null) {
-          shipmentStarts.push(match.index)
+    for (let lineIdx = 0; lineIdx < cleanedLines.length; lineIdx++) {
+      const line = cleanedLines[lineIdx]
+      
+      // Debug: log if line contains 011 and 012
+      if (line.includes('011') && line.includes('012')) {
+        console.log('[RTFParser] 🔍 Final processing: Line', lineIdx, 'contains 011 and 012')
+        console.log('[RTFParser] Line content:', line.substring(0, 300))
+      }
+      
+      // Check if line contains multiple shipments (more flexible - don't require N/Y before next shipment)
+      // Find all shipment starts first
+      const shipmentStarts: number[] = []
+      let match
+      const regex = /\d{3}\s+\d{3}-\d{8}/g
+      regex.lastIndex = 0 // Reset regex
+      while ((match = regex.exec(line)) !== null) {
+        shipmentStarts.push(match.index)
+      }
+      
+      // Debug: log if line contains 011 and 012
+      if (line.includes('011') && line.includes('012')) {
+        console.log('[RTFParser] 🔍 Final processing: Line', lineIdx, 'contains 011 and 012, found', shipmentStarts.length, 'shipment patterns')
+        console.log('[RTFParser] Shipment starts:', shipmentStarts)
+      }
+      
+      if (shipmentStarts.length > 1) {
+        // Multiple shipments in one line - split them
+        console.log('[RTFParser] Final processing: Found', shipmentStarts.length, 'shipments in one line, splitting...')
+        if (line.includes('011') && line.includes('012')) {
+          console.log('[RTFParser] 🔍 Final processing: Splitting line', lineIdx, 'with 011 and 012')
         }
-        
-        if (shipmentStarts.length > 1) {
-          for (let j = 0; j < shipmentStarts.length; j++) {
-            const start = shipmentStarts[j]
-            const end = j < shipmentStarts.length - 1 ? shipmentStarts[j + 1] : line.length
-            let shipmentLine = line.substring(start, end).trim()
-            
-            // Clean up the shipment line
-            if (/^\d{3}\s+\d{3}-\d{8}/.test(shipmentLine)) {
-              // Remove any RTF artifacts that might be in the middle
-              shipmentLine = shipmentLine.replace(/\\\*[0-9a-fA-F]*/g, "")
-              shipmentLine = shipmentLine.replace(/[{}]/g, "")
-              // Normalize spacing but preserve structure
-              shipmentLine = shipmentLine.replace(/\s{3,}/g, "  ").trim()
-              finalLines.push(shipmentLine)
-            }
+        for (let j = 0; j < shipmentStarts.length; j++) {
+          const start = shipmentStarts[j]
+          const end = j < shipmentStarts.length - 1 ? shipmentStarts[j + 1] : line.length
+          let shipmentLine = line.substring(start, end).trim()
+          
+          console.log('[RTFParser] Final processing: Split shipment', j + 1, 'of', shipmentStarts.length, '- extracted:', shipmentLine.substring(0, 100))
+          
+          // Clean up the shipment line
+          if (/^\d{3}\s+\d{3}-\d{8}/.test(shipmentLine)) {
+            // Remove any RTF artifacts that might be in the middle
+            shipmentLine = shipmentLine.replace(/\\\*[0-9a-fA-F]*/g, "")
+            shipmentLine = shipmentLine.replace(/[{}]/g, "")
+            // Normalize spacing but preserve structure
+            shipmentLine = shipmentLine.replace(/\s{3,}/g, "  ").trim()
+            finalLines.push(shipmentLine)
+            console.log('[RTFParser] Final processing: Added shipment', j + 1, 'to finalLines:', shipmentLine.substring(0, 80))
+          } else {
+            console.log('[RTFParser] ⚠️ Final processing: Shipment', j + 1, 'does not start with pattern:', shipmentLine.substring(0, 100))
           }
-          continue
         }
+        continue
       }
       
       // Single shipment or non-shipment line
