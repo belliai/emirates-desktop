@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { ChevronDown, ChevronRight } from "lucide-react"
+import { ChevronDown, ChevronRight, Plus, SlidersHorizontal } from "lucide-react"
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from "recharts"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -257,8 +257,91 @@ export default function BDNDashboardScreen() {
   return (
     <div className="min-h-screen bg-gray-50 p-4">
       <div className="max-w-full">
-        <div className="mb-4">
-          <h1 className="text-xl font-bold text-gray-900">Workload Visibility</h1>
+        {/* Header */}
+        <div className="flex justify-between items-center mb-4 px-2">
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900">Workload Visibility</h2>
+            <p className="text-sm text-gray-500">Real-time workload tracking and screening summary</p>
+          </div>
+        </div>
+
+        {/* Filters */}
+        <div className="flex items-center gap-2 mb-4 px-2 flex-wrap">
+          {/* Default View Dropdown */}
+          <div className="flex items-center">
+            <select
+              className="px-2 py-1.5 text-xs border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-[#D71A21] focus:border-transparent"
+              disabled
+            >
+              <option value="default">≡ Default</option>
+            </select>
+          </div>
+
+          {/* Search */}
+          <div className="relative">
+            <input
+              type="text"
+              placeholder="Search..."
+              disabled
+              className="pl-7 pr-2 py-1.5 text-xs border border-gray-300 rounded-md bg-gray-100 focus:outline-none w-32 cursor-not-allowed"
+            />
+          </div>
+
+          <div className="w-px h-6 bg-gray-200" />
+
+          {/* Work Area Filter - Functional */}
+          <WorkAreaFilterControls />
+
+          {/* Shift Filter */}
+          <select
+            className="px-2 py-1.5 text-xs border border-gray-300 rounded-md bg-gray-100 focus:outline-none cursor-not-allowed"
+            disabled
+          >
+            <option value="all">Shift: All</option>
+          </select>
+
+          {/* Time Range */}
+          <button
+            type="button"
+            disabled
+            className="flex items-center gap-1 px-2 py-1.5 text-xs border border-gray-300 rounded-md bg-gray-100 cursor-not-allowed"
+          >
+            Time
+          </button>
+
+          {/* Module Filter */}
+          <select
+            className="px-2 py-1.5 text-xs border border-gray-300 rounded-md bg-gray-100 focus:outline-none cursor-not-allowed max-w-40 truncate"
+            disabled
+          >
+            <option value="all">Module: All</option>
+          </select>
+
+          <div className="flex-1" />
+
+          {/* View Options */}
+          <button
+            type="button"
+            disabled
+            className="flex items-center gap-1 px-2 py-1.5 text-xs border border-gray-300 rounded-md bg-gray-100 cursor-not-allowed"
+          >
+            <SlidersHorizontal className="w-3 h-3" />
+          </button>
+        </div>
+
+        {/* Add Filter Row */}
+        <div className="flex items-center gap-2 mb-4 px-2 flex-wrap">
+          {/* Add Filter Button - Placeholder */}
+          <div className="relative">
+            <button
+              type="button"
+              disabled
+              className="flex items-center gap-1 px-2 py-1.5 text-xs border border-gray-300 rounded-md bg-gray-100 cursor-not-allowed"
+            >
+              <Plus className="w-3 h-3" />
+              <span>Add Filter</span>
+            </button>
+          </div>
         </div>
 
         {/* Top Half - Workload */}
