@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useRef, useEffect, useMemo } from "react"
-import { ChevronRight, Plane, Calendar, Package, Users, Clock, FileText, Upload, Trash2, AlertTriangle, CheckCircle, XCircle, Plus, Search, SlidersHorizontal, Settings2, ArrowUpDown } from "lucide-react"
+import { ChevronRight, Plane, Calendar, Package, Users, Clock, FileText, Upload, Trash2, AlertTriangle, CheckCircle, XCircle, Plus, Search, SlidersHorizontal, Settings2, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react"
 import LoadPlanDetailScreen from "./load-plan-detail-screen"
 import type { LoadPlanDetail } from "./load-plan-types"
 import { extractTextFromFile, extractTextFromDOCX } from "@/lib/lists/file-extractors"
@@ -206,6 +206,8 @@ export default function LoadPlansScreen({ onLoadPlanSelect }: { onLoadPlanSelect
   const [periodFilter, setPeriodFilter] = useState<PeriodType>("all")
   const [waveFilter, setWaveFilter] = useState<WaveType>("all")
   const [workAreaFilter, setWorkAreaFilter] = useState<WorkArea>("All")
+  const [sortColumn, setSortColumn] = useState<"std" | "flight" | "date">("std")
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc")
   const addFilterRef = useRef<HTMLDivElement>(null)
   const viewOptionsRef = useRef<HTMLDivElement>(null)
 
@@ -304,29 +306,57 @@ export default function LoadPlansScreen({ onLoadPlanSelect }: { onLoadPlanSelect
       )
     }
 
-    // Sort by STD descending (most recent first)
-    // Combines date and STD time for proper chronological sorting
+    // Sort based on selected column and direction
     return filtered.sort((a, b) => {
-      // Parse date and STD for comparison
-      const dateA = a.date || ""
-      const dateB = b.date || ""
-      const stdA = a.std || "00:00"
-      const stdB = b.std || "00:00"
+      let comparison = 0
       
-      // Compare dates first (descending - latest date first)
-      if (dateA !== dateB) {
-        return dateB.localeCompare(dateA)
+      if (sortColumn === "flight") {
+        // Sort by flight number
+        const flightA = a.flight || ""
+        const flightB = b.flight || ""
+        comparison = flightA.localeCompare(flightB)
+      } else if (sortColumn === "date") {
+        // Sort by date only
+        const dateA = a.date || ""
+        const dateB = b.date || ""
+        comparison = dateA.localeCompare(dateB)
+      } else {
+        // Sort by STD (default) - combines date and STD time for proper chronological sorting
+        const dateA = a.date || ""
+        const dateB = b.date || ""
+        const stdA = a.std || "00:00"
+        const stdB = b.std || "00:00"
+        
+        // Compare dates first
+        if (dateA !== dateB) {
+          comparison = dateA.localeCompare(dateB)
+        } else {
+          // If same date, compare STD times
+          const hoursA = parseStdToHours(stdA)
+          const hoursB = parseStdToHours(stdB)
+          comparison = hoursA - hoursB
+        }
       }
       
-      // If same date, compare STD times (descending - latest time first)
-      const hoursA = parseStdToHours(stdA)
-      const hoursB = parseStdToHours(stdB)
-      return hoursB - hoursA
+      // Apply sort direction
+      return sortDirection === "asc" ? comparison : -comparison
     })
-  }, [loadPlans, shiftFilter, periodFilter, waveFilter, searchQuery])
+  }, [loadPlans, shiftFilter, periodFilter, waveFilter, searchQuery, sortColumn, sortDirection])
 
   // Determine if wave filter should be shown
   const showWaveFilter = periodFilter === "late-morning" || periodFilter === "afternoon"
+
+  // Handle column header click for sorting
+  const handleSortByColumn = (column: "std" | "flight" | "date") => {
+    if (sortColumn === column) {
+      // Toggle direction if clicking the same column
+      setSortDirection(sortDirection === "asc" ? "desc" : "asc")
+    } else {
+      // Set new column and default to ascending
+      setSortColumn(column)
+      setSortDirection("asc")
+    }
+  }
 
   const handleRowClick = async (loadPlan: LoadPlan) => {
     // Check if we have a saved version first
@@ -892,13 +922,21 @@ export default function LoadPlansScreen({ onLoadPlanSelect }: { onLoadPlanSelect
                       <span>Ordering</span>
                     </div>
                     <div className="flex items-center gap-1">
-                      <select className="flex-1 px-2 py-1.5 text-xs border border-gray-200 rounded">
-                        <option>STD Time</option>
-                        <option>Flight Number</option>
-                        <option>Date</option>
+                      <select 
+                        value={sortColumn}
+                        onChange={(e) => setSortColumn(e.target.value as "std" | "flight" | "date")}
+                        className="flex-1 px-2 py-1.5 text-xs border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-[#D71A21]"
+                      >
+                        <option value="std">STD Time</option>
+                        <option value="flight">Flight Number</option>
+                        <option value="date">Date</option>
                       </select>
-                      <button className="p-1.5 border border-gray-200 rounded hover:bg-gray-50">
-                        <ArrowUpDown className="w-3 h-3 text-gray-500" />
+                      <button 
+                        onClick={() => setSortDirection(sortDirection === "asc" ? "desc" : "asc")}
+                        className="p-1.5 border border-gray-200 rounded hover:bg-gray-50 transition-colors"
+                        title={sortDirection === "asc" ? "Ascending" : "Descending"}
+                      >
+                        <ArrowUpDown className={`w-3 h-3 text-gray-500 ${sortDirection === "asc" ? "rotate-180" : ""}`} />
                       </button>
                     </div>
                   </div>
@@ -936,16 +974,36 @@ export default function LoadPlansScreen({ onLoadPlanSelect }: { onLoadPlanSelect
             <table className="w-full">
               <thead>
                 <tr className="bg-[#D71A21] text-white">
-                  <th className="px-2 py-1 text-left font-semibold text-xs">
+                  <th 
+                    className="px-2 py-1 text-left font-semibold text-xs cursor-pointer hover:bg-[#B01419] transition-colors select-none"
+                    onClick={() => handleSortByColumn("flight")}
+                  >
                     <div className="flex items-center gap-2">
                       <Plane className="w-4 h-4 flex-shrink-0" />
                       <span className="whitespace-nowrap">Flight</span>
+                      {sortColumn === "flight" && (
+                        sortDirection === "asc" ? (
+                          <ArrowUp className="w-3 h-3 flex-shrink-0" />
+                        ) : (
+                          <ArrowDown className="w-3 h-3 flex-shrink-0" />
+                        )
+                      )}
                     </div>
                   </th>
-                  <th className="px-2 py-1 text-left font-semibold text-xs">
+                  <th 
+                    className="px-2 py-1 text-left font-semibold text-xs cursor-pointer hover:bg-[#B01419] transition-colors select-none"
+                    onClick={() => handleSortByColumn("date")}
+                  >
                     <div className="flex items-center gap-2">
                       <Calendar className="w-4 h-4 flex-shrink-0" />
                       <span className="whitespace-nowrap">Date</span>
+                      {sortColumn === "date" && (
+                        sortDirection === "asc" ? (
+                          <ArrowUp className="w-3 h-3 flex-shrink-0" />
+                        ) : (
+                          <ArrowDown className="w-3 h-3 flex-shrink-0" />
+                        )
+                      )}
                     </div>
                   </th>
                   <th className="px-2 py-1 text-left font-semibold text-xs">
@@ -966,10 +1024,20 @@ export default function LoadPlansScreen({ onLoadPlanSelect }: { onLoadPlanSelect
                       <span className="whitespace-nowrap">PAX</span>
                     </div>
                   </th>
-                  <th className="px-2 py-1 text-left font-semibold text-xs">
+                  <th 
+                    className="px-2 py-1 text-left font-semibold text-xs cursor-pointer hover:bg-[#B01419] transition-colors select-none"
+                    onClick={() => handleSortByColumn("std")}
+                  >
                     <div className="flex items-center gap-2">
                       <Clock className="w-4 h-4 flex-shrink-0" />
                       <span className="whitespace-nowrap">STD</span>
+                      {sortColumn === "std" && (
+                        sortDirection === "asc" ? (
+                          <ArrowUp className="w-3 h-3 flex-shrink-0" />
+                        ) : (
+                          <ArrowDown className="w-3 h-3 flex-shrink-0" />
+                        )
+                      )}
                     </div>
                   </th>
                   <th className="px-2 py-1 text-left font-semibold text-xs">
