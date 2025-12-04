@@ -12,6 +12,7 @@ import { getULDEntriesFromStorage } from "@/lib/uld-storage"
 // Types for completion tracking
 type CompletionStatus = "green" | "amber" | "red"
 type WorkArea = "All" | "GCR" | "PIL and PER"
+type PilPerSubFilter = "Both" | "PIL only" | "PER only"
 type Shift = "All" | "9am to 9pm" | "9pm to 9am"
 type Module = "All" | "PAX & PF build-up EUR (1st floor, E)" | "PAX & PF build-up AFR (1st floor, F)" | "PAX & PF build-up ME, SubCon, Asia (1st floor, G)" | "Build-up AUS (1st floor, H)" | "US Screening Flights (1st floor, I)" | "Freighter & PAX Breakdown & build-up (Ground floor, F)" | "IND/PAK Build-up (Ground floor, G)" | "PER (Ground floor, H)" | "PIL (Ground floor, I)"
 
@@ -46,14 +47,49 @@ export function hasPilPerShcCode(awb: AWBRow): boolean {
 }
 
 /**
+ * Check if an AWB has PIL SHC code (contains "PIL" in the SHC)
+ * Used to distinguish between PIL and PER work areas
+ */
+export function hasPilShcCode(awb: AWBRow): boolean {
+  if (!awb.shc || awb.shc.trim() === "") {
+    return false
+  }
+  
+  const shcUpper = awb.shc.trim().toUpperCase()
+  return shcUpper.includes("PIL")
+}
+
+/**
+ * Check if an AWB has PER SHC code (has PIL/PER codes but NOT "PIL")
+ * Used to distinguish between PIL and PER work areas
+ */
+export function hasPerShcCode(awb: AWBRow): boolean {
+  return hasPilPerShcCode(awb) && !hasPilShcCode(awb)
+}
+
+/**
  * Check if a ULD section contains any AWB with PIL/PER SHC codes
  */
 export function uldSectionHasPilPerShc(uldSection: ULDSection): boolean {
   return uldSection.awbs.some(awb => hasPilPerShcCode(awb))
 }
 
-// Export WorkArea type for use in other components
-export type { WorkArea }
+/**
+ * Check if a ULD section contains any AWB with PIL SHC codes
+ */
+export function uldSectionHasPilShc(uldSection: ULDSection): boolean {
+  return uldSection.awbs.some(awb => hasPilShcCode(awb))
+}
+
+/**
+ * Check if a ULD section contains any AWB with PER SHC codes
+ */
+export function uldSectionHasPerShc(uldSection: ULDSection): boolean {
+  return uldSection.awbs.some(awb => hasPerShcCode(awb))
+}
+
+// Export WorkArea and PilPerSubFilter types for use in other components
+export type { WorkArea, PilPerSubFilter }
 
 // Two 9-9 shifts
 const SHIFTS: Shift[] = ["All", "9am to 9pm", "9pm to 9am"]
@@ -191,8 +227,9 @@ function parseTTLPlnUld(ttlPlnUld: string): number {
  * uses the total count of ULD number slots (including empty ones)
  * @param loadPlanDetail - The load plan detail
  * @param workAreaFilter - Optional work area filter ("All", "GCR", or "PIL and PER")
+ * @param pilPerSubFilter - Optional PIL/PER sub-filter ("Both", "PIL only", or "PER only")
  */
-function calculateTotalPlannedULDs(loadPlanDetail: LoadPlanDetail, workAreaFilter?: WorkArea): number {
+function calculateTotalPlannedULDs(loadPlanDetail: LoadPlanDetail, workAreaFilter?: WorkArea, pilPerSubFilter?: PilPerSubFilter): number {
   // Get entries from localStorage if they exist
   let entriesMap: Map<string, ULDEntry[]> = new Map()
   if (typeof window !== 'undefined') {
@@ -212,6 +249,15 @@ function calculateTotalPlannedULDs(loadPlanDetail: LoadPlanDetail, workAreaFilte
       let shouldInclude = true
       if (workAreaFilter === "PIL and PER") {
         shouldInclude = uldSectionHasPilPerShc(uldSection)
+        
+        // Apply PIL/PER sub-filter
+        if (shouldInclude && pilPerSubFilter && pilPerSubFilter !== "Both") {
+          if (pilPerSubFilter === "PIL only") {
+            shouldInclude = uldSectionHasPilShc(uldSection)
+          } else if (pilPerSubFilter === "PER only") {
+            shouldInclude = uldSectionHasPerShc(uldSection)
+          }
+        }
       } else if (workAreaFilter === "GCR") {
         // GCR = everything that's NOT PIL/PER
         shouldInclude = !uldSectionHasPilPerShc(uldSection)
@@ -251,8 +297,9 @@ function calculateTotalPlannedULDs(loadPlanDetail: LoadPlanDetail, workAreaFilte
  * @param flightNumber - The flight number
  * @param loadPlanDetail - The load plan detail (needed to check ULD section SHC codes)
  * @param workAreaFilter - Optional work area filter ("All", "GCR", or "PIL and PER")
+ * @param pilPerSubFilter - Optional PIL/PER sub-filter ("Both", "PIL only", or "PER only")
  */
-function calculateTotalMarkedULDs(flightNumber: string, loadPlanDetail: LoadPlanDetail, workAreaFilter?: WorkArea): number {
+function calculateTotalMarkedULDs(flightNumber: string, loadPlanDetail: LoadPlanDetail, workAreaFilter?: WorkArea, pilPerSubFilter?: PilPerSubFilter): number {
   if (typeof window === 'undefined') return 0
   
   try {
@@ -277,6 +324,15 @@ function calculateTotalMarkedULDs(flightNumber: string, loadPlanDetail: LoadPlan
         let shouldInclude = true
         if (workAreaFilter === "PIL and PER") {
           shouldInclude = uldSectionHasPilPerShc(uldSection)
+          
+          // Apply PIL/PER sub-filter
+          if (shouldInclude && pilPerSubFilter && pilPerSubFilter !== "Both") {
+            if (pilPerSubFilter === "PIL only") {
+              shouldInclude = uldSectionHasPilShc(uldSection)
+            } else if (pilPerSubFilter === "PER only") {
+              shouldInclude = uldSectionHasPerShc(uldSection)
+            }
+          }
         } else if (workAreaFilter === "GCR") {
           // GCR = everything that's NOT PIL/PER
           shouldInclude = !uldSectionHasPilPerShc(uldSection)
@@ -337,7 +393,10 @@ export default function FlightsViewScreen() {
   const [isLoading, setIsLoading] = useState(true)
   const [flightCompletions, setFlightCompletions] = useState<Map<string, FlightCompletion>>(new Map())
   const [loadPlanDetailsCache, setLoadPlanDetailsCache] = useState<Map<string, LoadPlanDetail>>(new Map())
-  const [selectedWorkArea, setSelectedWorkArea] = useState<WorkArea>("All")
+  // Independent toggles for work areas
+  const [isGcrActive, setIsGcrActive] = useState(true)
+  const [isPilPerActive, setIsPilPerActive] = useState(true)
+  const [pilPerSubFilter, setPilPerSubFilter] = useState<PilPerSubFilter>("Both")
   const [selectedShift, setSelectedShift] = useState<Shift>("All" as Shift)
   const [selectedModule, setSelectedModule] = useState<Module>("All")
   const [customTimeRange, setCustomTimeRange] = useState<{ start: string; end: string } | null>(null)
@@ -352,6 +411,12 @@ export default function FlightsViewScreen() {
   const [editingFilterId, setEditingFilterId] = useState<string | null>(null)
   const [sortColumn, setSortColumn] = useState<SortColumn>(null)
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc")
+  
+  // Derive selectedWorkArea from toggle states
+  const selectedWorkArea: WorkArea = (isGcrActive && isPilPerActive) ? "All" 
+    : isGcrActive ? "GCR" 
+    : isPilPerActive ? "PIL and PER" 
+    : "All" // Default to "All" when neither is active
 
   // Fetch load plans from Supabase on mount
   useEffect(() => {
@@ -411,8 +476,8 @@ export default function FlightsViewScreen() {
       
       // Always use detail-based calculation if available (same as load plan detail screen)
       if (cachedDetail) {
-        const totalPlannedULDs = calculateTotalPlannedULDs(cachedDetail, selectedWorkArea)
-        const totalMarkedULDs = calculateTotalMarkedULDs(plan.flight, cachedDetail, selectedWorkArea)
+        const totalPlannedULDs = calculateTotalPlannedULDs(cachedDetail, selectedWorkArea, pilPerSubFilter)
+        const totalMarkedULDs = calculateTotalMarkedULDs(plan.flight, cachedDetail, selectedWorkArea, pilPerSubFilter)
         const completionPercentage = totalPlannedULDs > 0 
           ? Math.round((totalMarkedULDs / totalPlannedULDs) * 100) 
           : 0
@@ -439,7 +504,7 @@ export default function FlightsViewScreen() {
     })
     
     setFlightCompletions(recalculatedCompletions)
-  }, [loadPlans, loadPlanDetailsCache, selectedWorkArea, uldUpdateTrigger])
+  }, [loadPlans, loadPlanDetailsCache, selectedWorkArea, pilPerSubFilter, uldUpdateTrigger])
 
   // Generate hourly time options (00:00 to 23:00)
   const timeOptions = useMemo(() => {
@@ -773,8 +838,8 @@ export default function FlightsViewScreen() {
       // Recalculate progress when ULD entries are updated (uldUpdateTrigger changes)
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const _ = uldUpdateTrigger // Force recalculation when this changes
-      const totalPlannedULDs = calculateTotalPlannedULDs(selectedLoadPlan, selectedWorkArea)
-      const totalMarkedULDs = calculateTotalMarkedULDs(selectedLoadPlan.flight, selectedLoadPlan, selectedWorkArea)
+      const totalPlannedULDs = calculateTotalPlannedULDs(selectedLoadPlan, selectedWorkArea, pilPerSubFilter)
+      const totalMarkedULDs = calculateTotalMarkedULDs(selectedLoadPlan.flight, selectedLoadPlan, selectedWorkArea, pilPerSubFilter)
       const completionPercentage = totalPlannedULDs > 0 
         ? Math.round((totalMarkedULDs / totalPlannedULDs) * 100) 
         : 0
@@ -821,6 +886,7 @@ export default function FlightsViewScreen() {
             }}
             enableBulkCheckboxes={true}
             workAreaFilter={selectedWorkArea}
+            pilPerSubFilter={pilPerSubFilter}
             onULDUpdate={() => {
               // Trigger re-render to recalculate progress bar
               setUldUpdateTrigger(prev => prev + 1)
@@ -905,17 +971,52 @@ export default function FlightsViewScreen() {
 
           <div className="w-px h-6 bg-gray-200" />
 
-          {/* Work Area Filter - Compact */}
-          <select
-            id="work-area-filter"
-            value={selectedWorkArea}
-            onChange={(e) => setSelectedWorkArea(e.target.value as WorkArea)}
-            className="px-2 py-1.5 text-xs border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-[#D71A21] focus:border-transparent"
-          >
-            <option value="All">Work Area: All</option>
-            <option value="GCR">Work Area: GCR</option>
-            <option value="PIL and PER">Work Area: PIL/PER</option>
-          </select>
+          {/* Work Area Filter - Independent Toggle Buttons */}
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setIsGcrActive(!isGcrActive)}
+              className={`px-3 py-1.5 text-xs rounded-md transition-colors ${
+                isGcrActive
+                  ? "bg-gray-200 text-gray-900 font-medium"
+                  : "bg-white text-gray-600 border border-gray-300 hover:bg-gray-50"
+              }`}
+            >
+              GCR
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setIsPilPerActive(!isPilPerActive)
+                if (!isPilPerActive) {
+                  setPilPerSubFilter("Both") // Reset to "Both" when activating PIL/PER
+                }
+              }}
+              className={`px-3 py-1.5 text-xs rounded-md transition-colors ${
+                isPilPerActive
+                  ? "bg-gray-200 text-gray-900 font-medium"
+                  : "bg-white text-gray-600 border border-gray-300 hover:bg-gray-50"
+              }`}
+            >
+              PIL/PER
+            </button>
+            
+            {/* PIL/PER Sub-filter dropdown - always visible, only clickable when PIL/PER is sole active toggle */}
+            <select
+              value={pilPerSubFilter}
+              onChange={(e) => setPilPerSubFilter(e.target.value as PilPerSubFilter)}
+              disabled={!isPilPerActive || isGcrActive}
+              className={`px-2 py-1.5 text-xs border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#D71A21] focus:border-transparent transition-colors ${
+                isPilPerActive && !isGcrActive
+                  ? "bg-white cursor-pointer"
+                  : "bg-gray-100 text-gray-400 cursor-not-allowed"
+              }`}
+            >
+              <option value="Both">Both</option>
+              <option value="PIL only">PIL only</option>
+              <option value="PER only">PER only</option>
+            </select>
+          </div>
 
           {/* Shift Filter - Compact */}
           <select
@@ -1072,7 +1173,6 @@ export default function FlightsViewScreen() {
             {filteredLoadPlans.length} of {loadPlans.length} flights
           </div>
         </div>
-
         {/* Active Filters Row */}
         <div className="flex items-center gap-2 mb-4 px-2 flex-wrap">
           {/* Add Filter Dropdown */}

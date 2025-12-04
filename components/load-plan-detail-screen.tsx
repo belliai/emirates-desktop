@@ -17,7 +17,7 @@ import { ULDNumberModal, type ULDEntry } from "./uld-number-modal"
 import { parseULDSection, formatULDSection, formatULDSectionFromEntries, formatULDSectionFromCheckedEntries } from "@/lib/uld-parser"
 import { getULDEntriesFromStorage, saveULDEntriesToStorage } from "@/lib/uld-storage"
 import { AWBQuickActionModal } from "./awb-quick-action-modal"
-import { uldSectionHasPilPerShc, type WorkArea } from "./flights-view-screen"
+import { uldSectionHasPilPerShc, uldSectionHasPilShc, uldSectionHasPerShc, type WorkArea, type PilPerSubFilter } from "./flights-view-screen"
 
 // Re-export types for backward compatibility
 export type { AWBRow, ULDSection, LoadPlanItem, LoadPlanDetail } from "./load-plan-types"
@@ -29,11 +29,12 @@ interface LoadPlanDetailScreenProps {
   onNavigateToBuildupStaff?: (staffName: string) => void
   enableBulkCheckboxes?: boolean // Enable bulk checkbox functionality (default: false, true for Buildup Staff)
   workAreaFilter?: WorkArea // Filter ULD sections based on work area (SHC codes)
+  pilPerSubFilter?: PilPerSubFilter // Sub-filter for PIL/PER work area (PIL only, PER only, or Both)
   isQRTList?: boolean // Show Bay Number and Connection Time columns for QRT List
   onULDUpdate?: () => void // Callback when ULD entries are updated (for progress bar recalculation)
 }
 
-export default function LoadPlanDetailScreen({ loadPlan, onBack, onSave, onNavigateToBuildupStaff, enableBulkCheckboxes = false, workAreaFilter, isQRTList = false, onULDUpdate }: LoadPlanDetailScreenProps) {
+export default function LoadPlanDetailScreen({ loadPlan, onBack, onSave, onNavigateToBuildupStaff, enableBulkCheckboxes = false, workAreaFilter, pilPerSubFilter, isQRTList = false, onULDUpdate }: LoadPlanDetailScreenProps) {
   const [showBCRModal, setShowBCRModal] = useState(false)
   const [showHandoverModal, setShowHandoverModal] = useState(false)
   const [awbComments, setAwbComments] = useState<AWBComment[]>([])
@@ -526,6 +527,7 @@ export default function LoadPlanDetailScreen({ loadPlan, onBack, onSave, onNavig
             onUpdateSectorTotals={updateSectorTotals}
             setEditedPlan={setEditedPlan}
             workAreaFilter={workAreaFilter}
+            pilPerSubFilter={pilPerSubFilter}
           />
 
           {/* Bottom Footer */}
@@ -690,6 +692,7 @@ interface CombinedTableProps {
   onUpdateSectorTotals: (sectorIndex: number, field: string, value: string) => void
   setEditedPlan: (updater: (prev: LoadPlanDetail) => LoadPlanDetail) => void
   workAreaFilter?: WorkArea // Filter ULD sections based on work area (SHC codes)
+  pilPerSubFilter?: PilPerSubFilter // Sub-filter for PIL/PER work area (PIL only, PER only, or Both)
   isQRTList?: boolean // Show Bay Number and Connection Time columns for QRT List
 }
 
@@ -723,6 +726,7 @@ function CombinedTable({
   onUpdateSectorTotals,
   setEditedPlan,
   workAreaFilter,
+  pilPerSubFilter,
   isQRTList = false,
 }: CombinedTableProps) {
   // Group AWBs by sector first, then flatten within each sector
@@ -757,14 +761,30 @@ function CombinedTable({
     const filteredUldSectionsWithIndices = sector.uldSections
       .map((uldSection, originalIndex) => ({ uldSection, originalIndex }))
       .filter(({ uldSection }) => {
-        // If no filter or filter is "All" or "GCR", show all sections
-        if (!workAreaFilter || workAreaFilter === "All" || workAreaFilter === "GCR") {
+        // If no filter or filter is "All", show all sections
+        if (!workAreaFilter || workAreaFilter === "All") {
           return true
         }
         
-        // For "PIL and PER" filter, only show sections that have PIL/PER SHC codes
+        // For "GCR" filter, only show sections that DON'T have PIL/PER SHC codes
+        if (workAreaFilter === "GCR") {
+          return !uldSectionHasPilPerShc(uldSection)
+        }
+        
+        // For "PIL and PER" filter, show sections that have PIL/PER SHC codes
         if (workAreaFilter === "PIL and PER") {
-          return uldSectionHasPilPerShc(uldSection)
+          const hasPilPer = uldSectionHasPilPerShc(uldSection)
+          
+          // Apply PIL/PER sub-filter if specified
+          if (hasPilPer && pilPerSubFilter && pilPerSubFilter !== "Both") {
+            if (pilPerSubFilter === "PIL only") {
+              return uldSectionHasPilShc(uldSection)
+            } else if (pilPerSubFilter === "PER only") {
+              return uldSectionHasPerShc(uldSection)
+            }
+          }
+          
+          return hasPilPer
         }
         
         return true
