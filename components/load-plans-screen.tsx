@@ -517,6 +517,8 @@ export default function LoadPlansScreen({ onLoadPlanSelect }: { onLoadPlanSelect
                 aircraftReg: header.aircraftReg,
                 sector: header.sector,
                 isCritical: header.isCritical,
+                headerWarning: header.headerWarning,
+                headerWarningLength: header.headerWarning?.length,
               })
               console.log('[RTFParser] Parsed shipments:', shipments.length)
             } catch (rtfError) {
@@ -566,22 +568,12 @@ export default function LoadPlansScreen({ onLoadPlanSelect }: { onLoadPlanSelect
             shipments = parseShipments(content, header)
           }
           
-          // Validate that we have shipments
-          // For RTF files, skip silently if no shipments (RTF parsing is still experimental)
-          if (!shipments || shipments.length === 0) {
-            if (isRTF) {
-              skippedFlights.push(f.name)
-              continue
-            } else {
-              failedFiles.push(f.name)
-              continue
-            }
-          }
-
           // Generate reports (required for saveListsDataToSupabase)
-          const specialCargo = generateSpecialCargoReport(header, shipments)
-          const vunList = generateVUNList(header, shipments)
-          const qrtList = generateQRTList(header, shipments)
+          // Use empty array if no shipments to avoid errors
+          const shipmentsForReports = shipments || []
+          const specialCargo = generateSpecialCargoReport(header, shipmentsForReports)
+          const vunList = generateVUNList(header, shipmentsForReports)
+          const qrtList = generateQRTList(header, shipmentsForReports)
 
           const results: ListsResults = { 
             specialCargo, 
@@ -591,13 +583,18 @@ export default function LoadPlansScreen({ onLoadPlanSelect }: { onLoadPlanSelect
             shipments 
           }
 
-          // Save to Supabase
+          // Save to Supabase (will save load plan even if no shipments)
           const saveResult = await saveListsDataToSupabase({
             results,
-            shipments,
+            shipments: shipments || [], // Use empty array if no shipments
             fileName: f.name,
             fileSize: f.size,
           })
+          
+          // Log if no shipments but load plan was saved
+          if ((!shipments || shipments.length === 0) && saveResult.success) {
+            console.log(`[LoadPlansScreen] Load plan saved without shipments: ${header.flightNumber}`)
+          }
 
           if (saveResult.success) {
             // Check if flight already exists in current list

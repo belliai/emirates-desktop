@@ -5,6 +5,7 @@
 
 import type { LoadPlanHeader, Shipment } from "./types"
 import { extractTextFromFile } from "./file-extractors"
+import { addSpacesToJoinedWords } from "./text-helpers"
 
 /**
  * Preprocess RTF content to clean up RTF-specific artifacts
@@ -16,38 +17,29 @@ function preprocessRTFContent(content: string): string {
   // This function just does final normalization
   
   let processed = content
-  console.log('[RTFParser] Preprocessing content:', processed)
   // Normalize line breaks (ensure consistent \n)
   processed = processed.replace(/\r\n/g, "\n").replace(/\r/g, "\n")
   console.log('[RTFParser] Normalized line breaks:', processed)
-  
-  // Log before preprocessing to see what we're working with
-  const hasACFTTYPE = /ACFTTYPE:/i.test(processed)
-  const hasACFTREG = /ACFTREG:/i.test(processed)
-  const hasPREPAREDBY = /PREPAREDBY:/i.test(processed)
-  const hasTTLPLNULD = /TTLPLNULD:/i.test(processed)
-  const hasULDVERSION = /ULDVERSION:/i.test(processed)
-  const hasPREPAREDON = /PREPAREDON:/i.test(processed)
-  
-  if (hasACFTTYPE || hasACFTREG || hasPREPAREDBY || hasTTLPLNULD || hasULDVERSION || hasPREPAREDON) {
-    console.log('[RTFParser] ⚠️ Found patterns without spaces in content:', {
-      hasACFTTYPE,
-      hasACFTREG,
-      hasPREPAREDBY,
-      hasTTLPLNULD,
-      hasULDVERSION,
-      hasPREPAREDON
-    })
-  }
-  
   // Step 1: Fix missing spaces between date/month and field labels
   // Pattern: "01MarACFTTYPE:" -> "01Mar ACFTTYPE:"
   processed = processed.replace(/(\d{1,2}[A-Z]{3})(ACFTTYPE:|ACFTREG:|HEADERVERSION:|PAX:|STD:|PREPAREDBY:|TTLPLNULD:|ULDVERSION:|PREPAREDON:|SECTOR:)/gi, (match, dateMonth, field) => {
     return `${dateMonth} ${field}`
   })
   
-  // Step 2: Fix missing spaces after field values that are joined with next field
+  // Step 2: Fix missing spaces after ACFT TYPE value that is joined with ACFT REG
+  // Pattern: "ACFTTYPE: 388WACFTREG:" -> "ACFTTYPE: 388W ACFTREG:"
   // This must be done BEFORE normalizing field labels
+  processed = processed.replace(/ACFTTYPE:\s*(\d+[A-Z]+)(ACFTREG:)/gi, (match, value, nextField) => {
+    return `ACFTTYPE: ${value} ${nextField}`
+  })
+  
+  // Step 2b: Fix missing spaces after ACFT REG value that is joined with HEADER VERSION
+  // Pattern: "ACFTREG: A6-EUKHEADERVERSION:" -> "ACFTREG: A6-EUK HEADERVERSION:"
+  processed = processed.replace(/ACFTREG:\s*([A-Z0-9-]+)(HEADERVERSION:)/gi, (match, value, nextField) => {
+    return `ACFTREG: ${value} ${nextField}`
+  })
+  
+  // Step 3: Fix missing spaces after field values that are joined with next field
   // Pattern: Value (number+letters) directly followed by field label (e.g., "388WACFTREG:" -> "388W ACFT REG:")
   processed = processed.replace(/(\d+[A-Z]+)(ACFTTYPE:|ACFTREG:)/gi, (match, value, field) => {
     // Normalize field label and add space
@@ -55,24 +47,60 @@ function preprocessRTFContent(content: string): string {
     return `${value} ${normalizedField}`
   })
   
-  // Step 3: Fix missing spaces after TTL PLN ULD values joined with ULD VERSION
+  // Step 4: Fix missing spaces after TTL PLN ULD values joined with ULD VERSION
+  // Pattern: "TTLPLNULD: 02PMC /01PLA/07AKEULDVERSION:" -> "TTLPLNULD: 02PMC /01PLA/07AKE ULDVERSION:"
+  // Also handle: "TTLPLNULD: 03PMC03ALF02AKEULDVERSION:" -> "TTLPLNULD: 03PMC 03ALF 02AKE ULDVERSION:"
+  // This must be done BEFORE normalizing field labels
+  processed = processed.replace(/TTLPLNULD:\s*([A-Z0-9\/\s]+?)(ULDVERSION:)/gi, (match, value, nextField) => {
+    // If value doesn't have spaces, add them between number+letter patterns
+    let processedValue = value.trim()
+    if (!processedValue.includes(' ') && !processedValue.includes('/')) {
+      processedValue = processedValue.replace(/(\d+[A-Z]+)/g, '$1 ').trim()
+    }
+    return `TTLPLNULD: ${processedValue} ${nextField}`
+  })
+  
+  // Step 4b: Fix missing spaces after ULD VERSION values joined with PREPARED ON
+  // Pattern: "ULDVERSION: 03PMC26AKEPREPAREDON:" -> "ULDVERSION: 03PMC 26AKE PREPAREDON:"
+  processed = processed.replace(/ULDVERSION:\s*([A-Z0-9\/]+?)(PREPAREDON:)/gi, (match, value, nextField) => {
+    // If value doesn't have spaces, add them between number+letter patterns
+    let processedValue = value.trim()
+    if (!processedValue.includes(' ') && !processedValue.includes('/')) {
+      processedValue = processedValue.replace(/(\d+[A-Z]+)/g, '$1 ').trim()
+    }
+    return `ULDVERSION: ${processedValue} ${nextField}`
+  })
+  
+  // Step 5: Fix missing spaces after ULD VERSION values joined with PREPARED ON
+  // Pattern: "ULDVERSION: 02PMC/28PREPAREDON:" -> "ULDVERSION: 02PMC/28 PREPAREDON:"
+  // This must be done BEFORE normalizing field labels
+  processed = processed.replace(/ULDVERSION:\s*([A-Z0-9\/]+)(PREPAREDON:)/gi, (match, value, nextField) => {
+    return `ULDVERSION: ${value} ${nextField}`
+  })
+  
+  // Step 6: Fix missing spaces after TTL PLN ULD values joined with ULD VERSION (generic pattern)
   // Pattern: "02PMC /01PLA/07AKEULDVERSION:" -> "02PMC /01PLA/07AKE ULD VERSION:"
   // This pattern can have slashes and spaces in the value
   processed = processed.replace(/([A-Z0-9\/\s]+?)(ULDVERSION:)/gi, (match, value, field) => {
     // Only match if value looks like TTL PLN ULD value (contains numbers and letters, possibly with slashes)
-    if (/[\dA-Z]/.test(value.trim()) && value.trim().length > 3) {
-      return `${value.trim()} ULD VERSION:`
+    // And not already processed (doesn't have space before ULDVERSION)
+    if (/[\dA-Z]/.test(value.trim()) && value.trim().length > 3 && !value.endsWith(' ')) {
+      return `${value.trim()} ${field}`
     }
     return match
   })
   
-  // Step 4: Fix missing spaces after ULD VERSION values joined with PREPARED ON
+  // Step 7: Fix missing spaces after ULD VERSION values joined with PREPARED ON (generic pattern)
   // Pattern: "02PMC/28PREPAREDON:" -> "02PMC/28 PREPARED ON:"
   processed = processed.replace(/([A-Z0-9\/]+)(PREPAREDON:)/gi, (match, value, field) => {
-    return `${value} PREPARED ON:`
+    // Only if not already processed
+    if (!value.endsWith(' ')) {
+      return `${value} ${field}`
+    }
+    return match
   })
   
-  // Step 5: Fix specific known patterns without spaces (field labels)
+  // Step 8: Fix specific known patterns without spaces (field labels)
   processed = processed.replace(/ACFTTYPE:/gi, 'ACFT TYPE:')
   processed = processed.replace(/ACFTREG:/gi, 'ACFT REG:')
   processed = processed.replace(/HEADERVERSION:/gi, 'HEADER VERSION:')
@@ -118,25 +146,6 @@ function preprocessRTFContent(content: string): string {
   // Remove excessive empty lines
   processed = processed.replace(/\n{4,}/g, "\n\n\n")
   
-  // Log after preprocessing to verify changes
-  const afterHasACFTTYPE = /ACFTTYPE:/i.test(processed)
-  const afterHasACFTREG = /ACFTREG:/i.test(processed)
-  const afterHasPREPAREDBY = /PREPAREDBY:/i.test(processed)
-  const afterHasTTLPLNULD = /TTLPLNULD:/i.test(processed)
-  const afterHasULDVERSION = /ULDVERSION:/i.test(processed)
-  const afterHasPREPAREDON = /PREPAREDON:/i.test(processed)
-  
-  if (afterHasACFTTYPE || afterHasACFTREG || afterHasPREPAREDBY || afterHasTTLPLNULD || afterHasULDVERSION || afterHasPREPAREDON) {
-    console.log('[RTFParser] ⚠️ Patterns without spaces still found after preprocessing:', {
-      hasACFTTYPE: afterHasACFTTYPE,
-      hasACFTREG: afterHasACFTREG,
-      hasPREPAREDBY: afterHasPREPAREDBY,
-      hasTTLPLNULD: afterHasTTLPLNULD,
-      hasULDVERSION: afterHasULDVERSION,
-      hasPREPAREDON: afterHasPREPAREDON
-    })
-  }
-  
   return processed
 }
 
@@ -145,23 +154,19 @@ function preprocessRTFContent(content: string): string {
  * Uses the same logic as regular parser but with RTF preprocessing
  */
 export function parseRTFHeader(content: string): LoadPlanHeader {
-  console.log('[RTFParser] ========== Starting Header Parsing ==========')
-  
   // Preprocess RTF content first
   let processedContent = preprocessRTFContent(content)
   
-  // Helper function to try multiple patterns and log results
+  // Helper function to try multiple patterns
   const tryPattern = (name: string, patterns: Array<{ pattern: RegExp; extract: (match: RegExpMatchArray) => string }>, contentToSearch: string = processedContent): string => {
     for (let i = 0; i < patterns.length; i++) {
       const { pattern, extract } = patterns[i]
       const match = contentToSearch.match(pattern)
       if (match) {
         const result = extract(match)
-        console.log(`[RTFParser] ✅ ${name}:`, result)
         return result
       }
     }
-    console.warn(`[RTFParser] ⚠️ ${name} not found`)
     return ""
   }
   
@@ -198,52 +203,36 @@ export function parseRTFHeader(content: string): LoadPlanHeader {
 
   // Parse ACFT TYPE - try multiple patterns
   // Try patterns WITHOUT spaces FIRST (since preprocessing might not work)
-  // Example: "ACFT TYPE: 388Y" or "ACFTTYPE: 388Y" or "388YACFTREG:" (value joined with next field)
+  // Example: "ACFT TYPE: 388W" or "ACFTTYPE: 388W" or "ACFTTYPE: 388WACFTREG:" (value joined with next field)
   const aircraftType = tryPattern('ACFT TYPE', [
     // Try format without space FIRST (most common in RTF)
-    { pattern: /ACFTTYPE:\s*([A-Z0-9]+)/i, extract: (m) => {
-      console.log('[RTFParser] ✅ ACFT TYPE found with ACFTTYPE: pattern, value:', m[1])
-      return m[1].trim()
-    }}, // ACFTTYPE: 388Y (no space in label)
-    // Try value joined with field (before preprocessing) - value before ACFTTYPE
-    { pattern: /(\d+[A-Z]+)ACFTTYPE:/i, extract: (m) => {
-      console.log('[RTFParser] ✅ ACFT TYPE found with value-joined pattern, value:', m[1])
-      return m[1].trim()
-    }}, // 388YACFTTYPE: (value joined with label)
-    // Try value joined with next field (388YACFTREG:) - extract value before ACFTREG
-    { pattern: /(\d+[A-Z]+)ACFTREG:/i, extract: (m) => {
-      console.log('[RTFParser] ✅ ACFT TYPE found from value before ACFTREG, value:', m[1])
-      return m[1].trim()
-    }}, // 388YACFTREG: -> extract 388Y
+    // IMPORTANT: Stop before ACFTREG or ACFT REG to avoid capturing joined value
+    { pattern: /ACFTTYPE:\s*([A-Z0-9]+?)(?=\s*ACFT\s*REG:|\s*ACFTREG:|$)/i, extract: (m) => m[1].trim() }, // ACFTTYPE: 388W or ACFTTYPE: 388WACFTREG: -> extract 388W (stop before ACFTREG)
+    // Try value joined with field (before preprocessing) - extract value before ACFTREG
+    { pattern: /(\d+[A-Z]+)ACFTREG:/i, extract: (m) => m[1].trim() }, // 388WACFTREG: -> extract 388W
     // Try date/month joined with ACFTTYPE (01MarACFTTYPE:)
-    { pattern: /(\d{1,2}[A-Z]{3})ACFTTYPE:\s*([A-Z0-9]+)/i, extract: (m) => {
-      console.log('[RTFParser] ✅ ACFT TYPE found from date-joined pattern, value:', m[2])
-      return m[2].trim()
-    }}, // 01MarACFTTYPE: 388Y -> extract 388Y
+    { pattern: /(\d{1,2}[A-Z]{3})ACFTTYPE:\s*([A-Z0-9]+?)(?=\s*ACFT\s*REG:|\s*ACFTREG:|$)/i, extract: (m) => m[2].trim() }, // 01MarACFTTYPE: 388W or 01MarACFTTYPE: 388WACFTREG: -> extract 388W
     // Now try formats with spaces (after preprocessing)
-    { pattern: /ACFT\s+TYPE:\s*([A-Z0-9]+(?:\s+[A-Z0-9]+)*)/i, extract: (m) => m[1].trim().replace(/\s+/g, "") }, // 388Y or 388 Y -> 388Y
-    { pattern: /(\d+[A-Z]+)\s+ACFT\s*TYPE:/i, extract: (m) => m[1].trim() }, // 388Y ACFT TYPE: (after preprocessing)
-    { pattern: /ACFT\s+TYPE:\s*([A-Z0-9]+)/i, extract: (m) => m[1].trim() }, // 388Y
+    { pattern: /ACFT\s+TYPE:\s*([A-Z0-9]+?)(?=\s+ACFT\s+REG:|$)/i, extract: (m) => m[1].trim().replace(/\s+/g, "") }, // ACFT TYPE: 388W -> 388W (stop before ACFT REG)
+    { pattern: /ACFT\s+TYPE:\s*([A-Z0-9]+(?:\s+[A-Z0-9]+)*)/i, extract: (m) => m[1].trim().replace(/\s+/g, "") }, // 388W or 388 W -> 388W
+    { pattern: /(\d+[A-Z]+)\s+ACFT\s*TYPE:/i, extract: (m) => m[1].trim() }, // 388W ACFT TYPE: (after preprocessing)
+    { pattern: /ACFT\s+TYPE:\s*([A-Z0-9]+)/i, extract: (m) => m[1].trim() }, // 388W
     { pattern: /ACFT\s+TYPE[:\s]+([A-Z0-9]+)/i, extract: (m) => m[1].trim() },
   ])
 
   // Parse ACFT REG - try multiple patterns
   // Try patterns WITHOUT spaces FIRST (since preprocessing might not work)
-  // Example: "ACFT REG: A6-EUK" or "ACFTREG: A6-EUK" or "388WACFTREG: A6-EUK" (value joined with field)
+  // Example: "ACFT REG: A6-EUK" or "ACFTREG: A6-EUK" or "ACFTREG: A6-EUKHEADERVERSION:" (value joined with field)
   const aircraftReg = tryPattern('ACFT REG', [
     // Try format without space FIRST (most common in RTF)
-    { pattern: /ACFTREG:\s*([A-Z0-9-]+)/i, extract: (m) => {
-      console.log('[RTFParser] ✅ ACFT REG found with ACFTREG: pattern, value:', m[1])
-      return m[1].trim()
-    }}, // ACFTREG: A6-EUK (no space in label)
-    // Try value joined with field (before preprocessing)
-    { pattern: /(\d+[A-Z]+)ACFTREG:\s*([A-Z0-9-]+)/i, extract: (m) => {
-      console.log('[RTFParser] ✅ ACFT REG found with value-joined pattern, value:', m[2])
-      return m[2].trim()
-    }}, // 388WACFTREG: A6-EUK (before preprocessing)
+    // IMPORTANT: Stop before HEADERVERSION or HEADER VERSION to avoid capturing joined value
+    { pattern: /ACFTREG:\s*([A-Z0-9-]+?)(?=HEADER\s*VERSION:|HEADERVERSION:|\s+HEADER\s*VERSION:|\s+HEADERVERSION:|$)/i, extract: (m) => m[1].trim() }, // ACFTREG: A6-EUK or ACFTREG: A6-EUKHEADERVERSION: -> extract A6-EUK (stop before HEADERVERSION)
+    // Try value joined with field (before preprocessing) - extract value AFTER ACFTREG:
+    { pattern: /(\d+[A-Z]+)ACFTREG:\s*([A-Z0-9-]+?)(?=HEADER\s*VERSION:|HEADERVERSION:|\s+HEADER\s*VERSION:|\s+HEADERVERSION:|$)/i, extract: (m) => m[2].trim() }, // 388WACFTREG: A6-EUK or 388WACFTREG: A6-EUKHEADERVERSION: -> extract A6-EUK
     // Now try formats with spaces (after preprocessing)
+    { pattern: /ACFT\s+REG:\s*([A-Z0-9-]+?)(?=\s+HEADER\s+VERSION:|$)/i, extract: (m) => m[1].trim() }, // ACFT REG: A6-EUK -> A6-EUK (stop before HEADER VERSION)
     { pattern: /ACFT\s+REG:\s*([A-Z0-9-]+)/i, extract: (m) => m[1].trim() }, // ACFT REG: A6-EUK
-    { pattern: /(\d+[A-Z]+)\s+ACFT\s*REG:\s*([A-Z0-9-]+)/i, extract: (m) => m[2].trim() }, // 388W ACFT REG: A6-EUK (after preprocessing)
+    { pattern: /(\d+[A-Z]+)\s+ACFT\s+REG:\s*([A-Z0-9-]+)/i, extract: (m) => m[2].trim() }, // 388W ACFT REG: A6-EUK (after preprocessing)
     { pattern: /ACFT\s+REG[:\s]+([A-Z0-9-]+)/i, extract: (m) => m[1].trim() },
   ])
 
@@ -264,15 +253,9 @@ export function parseRTFHeader(content: string): LoadPlanHeader {
   // Example: "PREPARED BY: S077486" or "PREPAREDBY: S077486" (no space)
   const preparedBy = tryPattern('PREPARED BY', [
     // Try format without space FIRST (most common in RTF)
-    { pattern: /PREPAREDBY:\s*([A-Z0-9]+)/i, extract: (m) => {
-      console.log('[RTFParser] ✅ PREPARED BY found with PREPAREDBY: pattern, value:', m[1])
-      return m[1]
-    }}, // PREPAREDBY: S077486 (no space)
+    { pattern: /PREPAREDBY:\s*([A-Z0-9]+)/i, extract: (m) => m[1] }, // PREPAREDBY: S077486 (no space)
     // Try to extract from "PREPAREDBY: S077486TTLPLNULD" pattern - stop before next field
-    { pattern: /PREPAREDBY:\s*([A-Z0-9]+)(?=TTL|ULD|PREPARED|$)/i, extract: (m) => {
-      console.log('[RTFParser] ✅ PREPARED BY found with lookahead pattern, value:', m[1])
-      return m[1]
-    }}, // Stop before next field
+    { pattern: /PREPAREDBY:\s*([A-Z0-9]+)(?=TTL|ULD|PREPARED|$)/i, extract: (m) => m[1] }, // Stop before next field
     // Now try formats with spaces (after preprocessing)
     { pattern: /PREPARED\s+BY:\s*(\S+)/i, extract: (m) => m[1] }, // PREPARED BY: S077486
     { pattern: /PREPARED\s+BY[:\s]+([A-Z0-9]+)/i, extract: (m) => m[1] },
@@ -297,67 +280,72 @@ export function parseRTFHeader(content: string): LoadPlanHeader {
   ])
 
   // Parse TTL PLN ULD - try multiple patterns
-  // Example: "TTL PLN ULD: 02PMC /01PLA/07AKE" or "TTLPLNULD: 02PMC /01PLA/07AKE" or "02PMC /01PLA/07AKEULDVERSION" (value joined with next field)
+  // Example: "TTL PLN ULD: 03PMC" or "TTLPLNULD: 03PMC03ALF02AKE" or "TTLPLNULD: 03PMC03ALF02AKEULDVERSION" (value joined with next field)
+  // NOTE: Based on user requirement, we only want the FIRST value (e.g., "03PMC" not "03PMC 03ALF 02AKE")
   const ttlPlnUld = tryPattern('TTL PLN ULD', [
     // Try format without space FIRST
-    { pattern: /TTLPLNULD:\s*([A-Z0-9\/\s]+?)(?:\s*ULD\s*VERSION|\s*PREPARED|$)/i, extract: (m) => {
-      // Handle "TTLPLNULD: 02PMC /01PLA/07AKE" - keep spaces and slashes
-      const value = m[1].trim()
-      // If value doesn't have spaces, add them between number+letter patterns
-      if (!value.includes(' ')) {
-        const spaced = value.replace(/(\d+[A-Z]+)/g, '$1 ').trim()
-        return spaced.replace(/\s{2,}/g, " ").trim()
-      }
-      return value.replace(/\s{2,}/g, " ").trim()
-    }},
-    // Try value joined with ULD VERSION (before preprocessing)
-    { pattern: /([A-Z0-9\/\s]+?)ULD\s*VERSION:/i, extract: (m) => {
-      // Handle "02PMC /01PLA/07AKEULDVERSION:" - value joined with ULD VERSION
-      const value = m[1].trim()
-      // If value doesn't have spaces, add them between number+letter patterns
-      if (!value.includes(' ')) {
-        const spaced = value.replace(/(\d+[A-Z]+)/g, '$1 ').trim()
-        return spaced.replace(/\s{2,}/g, " ").trim()
-      }
-      return value.replace(/\s{2,}/g, " ").trim()
-    }},
-    // Now try formats with spaces (after preprocessing)
+    // IMPORTANT: Extract only the FIRST value (before space or before next field)
+    { pattern: /TTLPLNULD:\s*(\d+[A-Z]+)(?:\s|\d+[A-Z]+|ULD\s*VERSION:|$)/i, extract: (m) => m[1].trim() }, // TTLPLNULD: 03PMC or TTLPLNULD: 03PMC03ALF02AKE -> extract only 03PMC
+    // Try value joined with ULD VERSION (before preprocessing) - extract only first value
+    { pattern: /(\d+[A-Z]+)(?:\d+[A-Z]+)*ULD\s*VERSION:/i, extract: (m) => m[1].trim() }, // 03PMC03ALF02AKEULDVERSION: -> extract only 03PMC
+    // Now try formats with spaces (after preprocessing) - extract only first value
+    { pattern: /TTL\s+PLN\s+ULD:\s*(\d+[A-Z]+)(?:\s|$)/i, extract: (m) => m[1].trim() }, // TTL PLN ULD: 03PMC 03ALF 02AKE -> extract only 03PMC
     { pattern: /TTL\s+PLN\s+ULD:\s*([A-Z0-9\/\s]+?)(?:\s+ULD\s+VERSION|\s+PREPARED|$)/i, extract: (m) => {
-      // Keep spaces for readability: "02PMC /01PLA/07AKE" instead of "02PMC/01PLA/07AKE"
-      return m[1].trim().replace(/\s{2,}/g, " ").trim()
+      // Extract only first value (before space)
+      const value = m[1].trim().split(/\s+/)[0]
+      return value
     }},
-    { pattern: /TTL\s+PLN\s+ULD[:\s]+([A-Z0-9\/\s]+)/i, extract: (m) => m[1].trim().replace(/\s{2,}/g, " ").trim() },
-    { pattern: /TTL\s+PLN\s+ULD:\s*([A-Z0-9\/]+)/i, extract: (m) => m[1].trim() },
+    { pattern: /TTL\s+PLN\s+ULD[:\s]+([A-Z0-9\/\s]+)/i, extract: (m) => m[1].trim().split(/\s+/)[0] },
+    { pattern: /TTL\s+PLN\s+ULD:\s*([A-Z0-9\/]+)/i, extract: (m) => m[1].trim().split(/\s+/)[0] },
   ])
 
   // Parse ULD VERSION - try multiple patterns
-  // Example: "ULD VERSION: 03PMC 26AKE" or "ULDVERSION: 03PMC26AKE" or "03PMC26AKEPREPAREDON" (value joined with next field)
+  // Example: "ULD VERSION: 03PMC" or "ULDVERSION: 03PMC26AKE" or "03PMC26AKEPREPAREDON" (value joined with next field)
+  // NOTE: Based on user requirement, we only want the FIRST value (e.g., "03PMC" not "03PMC 26AKE")
   const uldVersion = tryPattern('ULD VERSION', [
+    // Try format without space FIRST
+    // IMPORTANT: Extract only the FIRST value (before space or before next field)
+    { pattern: /ULDVERSION:\s*(\d+[A-Z]+)(?:\s|\d+[A-Z]+|PREPARED\s*ON:|$)/i, extract: (m) => m[1].trim() }, // ULDVERSION: 03PMC or ULDVERSION: 03PMC26AKE -> extract only 03PMC
+    // Try value joined with PREPARED ON (before preprocessing) - extract only first value
+    { pattern: /(\d+[A-Z]+)(?:\d+[A-Z]+)*PREPARED\s*ON:/i, extract: (m) => m[1].trim() }, // 03PMC26AKEPREPAREDON: -> extract only 03PMC
+    // Now try formats with spaces (after preprocessing) - extract only first value
+    { pattern: /ULD\s+VERSION:\s*(\d+[A-Z]+)(?:\s|$)/i, extract: (m) => m[1].trim() }, // ULD VERSION: 03PMC 26AKE -> extract only 03PMC
     { pattern: /ULD\s+VERSION:\s*([A-Z0-9\/\s]+?)(?:\s+PREPARED|$)/i, extract: (m) => {
-      // Keep spaces for readability: "03PMC 26AKE" instead of "03PMC26AKE"
-      return m[1].trim().replace(/\s{2,}/g, " ").trim()
+      // Extract only first value (before space)
+      const value = m[1].trim().split(/\s+/)[0]
+      return value
     }},
-    { pattern: /ULDVERSION:\s*([A-Z0-9\/]+?)(?:\s*PREPARED|$)/i, extract: (m) => {
-      // Handle "ULDVERSION: 03PMC26AKE" - add spaces between values
-      const value = m[1].trim()
-      // Pattern: number + letters (e.g., "03PMC" -> "03PMC ")
-      const spaced = value.replace(/(\d+[A-Z]+)/g, '$1 ').trim()
-      return spaced.replace(/\s{2,}/g, " ").trim()
-    }},
-    { pattern: /(\d+[A-Z]+\d+[A-Z]+)PREPARED\s*ON:/i, extract: (m) => {
-      // Handle "03PMC26AKEPREPAREDON:" - value joined with PREPARED ON
-      const value = m[1].trim()
-      // Add spaces between values: "03PMC26AKE" -> "03PMC 26AKE"
-      const spaced = value.replace(/(\d+[A-Z]+)/g, '$1 ').trim()
-      return spaced.replace(/\s{2,}/g, " ").trim()
-    }},
-    { pattern: /ULD\s+VERSION[:\s]+([A-Z0-9\/\s]+)/i, extract: (m) => m[1].trim().replace(/\s{2,}/g, " ").trim() },
-    { pattern: /ULD\s+VERSION:\s*([A-Z0-9\/]+)/i, extract: (m) => m[1].trim() },
+    { pattern: /ULD\s+VERSION[:\s]+([A-Z0-9\/\s]+)/i, extract: (m) => m[1].trim().split(/\s+/)[0] },
+    { pattern: /ULD\s+VERSION:\s*([A-Z0-9\/]+)/i, extract: (m) => m[1].trim().split(/\s+/)[0] },
   ])
 
   // Parse header warning - same logic as regular parser
+  // Extract text between underscore separator and first shipment line
   let headerWarning = ""
   const lines = processedContent.split("\n")
+  
+  // Debug: Log first few lines to see structure
+  console.log('[RTFParser] Total lines:', lines.length)
+  console.log('[RTFParser] First 15 lines for header warning parsing:', lines.slice(0, 15).map((l, idx) => `${idx}: ${l.substring(0, 100)}`))
+  
+  // Check if content is mostly in one line (common RTF extraction issue)
+  const hasLongLine = lines.some(l => l.length > 500)
+  if (hasLongLine) {
+    console.log('[RTFParser] ⚠️ Found very long line(s), content might not be properly split')
+    // Try to find long line and split it manually
+    const longLineIdx = lines.findIndex(l => l.length > 500)
+    if (longLineIdx >= 0) {
+      const longLine = lines[longLineIdx]
+      console.log('[RTFParser] Long line at index', longLineIdx, 'length:', longLine.length)
+      // Try to split on patterns that indicate line breaks
+      // Look for patterns like "SECTOR :", "SI:", "001 " (shipment start)
+      const potentialSplits = longLine.match(/(SECTOR\s*:|SI:\s*-|^\d{3}\s+\d{3}-\d{8})/gm)
+      if (potentialSplits) {
+        console.log('[RTFParser] Found potential split points:', potentialSplits.length)
+      }
+    }
+  }
+  
   let foundTableHeader = false
   let foundSeparator = false
   const warningLines: string[] = []
@@ -365,33 +353,166 @@ export function parseRTFHeader(content: string): LoadPlanHeader {
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim()
     
-    if (line.includes("SER.") && line.includes("AWB NO")) {
-      foundTableHeader = true
-      continue
-    }
+    // Check for table header (SER. and AWB NO) - be more flexible
+    // Can be in same line or separate, and AWB can be "AWBNO" (no space)
+    const hasSer = (line.includes("SER") || line.includes("SER.")) && !line.match(/^\d{3}/)
+    const hasAWB = line.includes("AWB") || line.includes("AWB NO") || line.includes("AWBNO")
     
-    if (foundTableHeader && !foundSeparator) {
-      if (line.match(/^[_\-=]+$/)) {
+    // Check if this line has both table header AND separator (common case)
+    if (hasSer && hasAWB) {
+      // Check if separator is also in this line (at the end or in the middle)
+      const underscoreCount = (line.match(/_/g) || []).length
+      const dashCount = (line.match(/-/g) || []).length
+      const equalsCount = (line.match(/=/g) || []).length
+      const totalSeparatorChars = underscoreCount + dashCount + equalsCount
+      const hasSeparatorInSameLine = underscoreCount >= 10 || 
+                                      line.match(/_{10,}/) || 
+                                      line.match(/[_\-=]{10,}/) ||
+                                      (totalSeparatorChars >= 10 && line.length > 0 && totalSeparatorChars / line.length > 0.3)
+      
+      if (hasSeparatorInSameLine) {
+        // Table header and separator are in the same line
+        foundTableHeader = true
         foundSeparator = true
+        console.log('[RTFParser] Found table header + separator in same line', i, ':', line.substring(0, 100))
+        
+        // Extract header warning from the same line (after separator)
+        // Find the separator pattern in the line - look for longest separator pattern
+        const separatorPatterns = [
+          /([_\-=]{20,})/,  // Long separator (20+ chars)
+          /([_\-=]{10,})/,  // Medium separator (10+ chars)
+        ]
+        
+        let separatorMatch: RegExpMatchArray | null = null
+        let separatorIndex = -1
+        
+        for (const pattern of separatorPatterns) {
+          const match = line.match(pattern)
+          if (match) {
+            const idx = line.indexOf(match[0])
+            // Use the last/longest separator found (usually at the end of table header)
+            if (idx > separatorIndex) {
+              separatorMatch = match
+              separatorIndex = idx
+            }
+          }
+        }
+        
+        if (separatorMatch && separatorIndex >= 0) {
+          const afterSeparator = line.substring(separatorIndex + separatorMatch[0].length).trim()
+          
+          // Check if there's content after separator (header warning)
+          if (afterSeparator && afterSeparator.length > 0) {
+            // Check if it's not a shipment line
+            const isShipmentLine = afterSeparator.match(/^\d{3}\s+\d{3}-\d{8}/)
+            if (!isShipmentLine) {
+              // This is header warning content in the same line
+              // Split by common patterns that might indicate multiple warning lines
+              // Look for patterns like "//", "id.", etc. that might separate warning sections
+              const warningParts = afterSeparator.split(/(?=\/\/|id\.)/).filter(p => p.trim().length > 0)
+              
+              for (const part of warningParts) {
+                const trimmedPart = part.trim()
+                // Skip if it looks like RTF artifacts or binary data
+                if (!trimmedPart.match(/^id\./i) && 
+                    !trimmedPart.match(/^[0-9a-f]{20,}$/i) &&
+                    trimmedPart.length > 5) {
+                  console.log('[RTFParser] Adding warning from same line after separator:', trimmedPart.substring(0, 100))
+                  warningLines.push(trimmedPart)
+                }
+              }
+            }
+          }
+        }
+        continue
+      } else {
+        // Just table header, separator should be in next line
+        foundTableHeader = true
+        console.log('[RTFParser] Found table header at line', i, ':', line.substring(0, 100))
         continue
       }
     }
     
+    // Check for separator line (underscore or dash line) - be more flexible
+    // Only if we found table header but not separator yet
+    if (foundTableHeader && !foundSeparator) {
+      // Look for lines with multiple underscores, dashes, or equals (at least 10 chars)
+      // Also check if line is mostly underscores/dashes (at least 80% of line)
+      const underscoreCount = (line.match(/_/g) || []).length
+      const dashCount = (line.match(/-/g) || []).length
+      const equalsCount = (line.match(/=/g) || []).length
+      const totalSeparatorChars = underscoreCount + dashCount + equalsCount
+      
+      if (line.match(/^[_\-=]{10,}$/) || 
+          line.match(/^[_\-=\s]{10,}$/) ||
+          (totalSeparatorChars >= 10 && line.length > 0 && totalSeparatorChars / line.length > 0.8)) {
+        foundSeparator = true
+        console.log('[RTFParser] Found separator at line', i, ':', line.substring(0, 100))
+        continue
+      }
+    }
+    
+    // After separator, collect warning lines until first shipment
     if (foundTableHeader && foundSeparator) {
       const normalizedLine = line.replace(/\s+/g, " ")
-      const isShipmentLine = line.match(/^\d{3}\s+\d{3}-\d{8}/) || normalizedLine.match(/^\d{3}\s+\d{3}-\d{8}/)
-      if (isShipmentLine) {
-        break
+      // Check if this line contains a shipment pattern (3 digits followed by AWB pattern)
+      // Pattern: exactly "001 176-92583061" or similar (3 digits, space, 3 digits, dash, 8 digits)
+      // This can be at the start OR in the middle/end of the line
+      const shipmentPattern = /\d{3}\s+\d{3}-\d{8}/
+      const shipmentMatch = line.match(shipmentPattern) || normalizedLine.match(shipmentPattern)
+      
+      if (shipmentMatch) {
+        // Found shipment pattern in this line
+        const shipmentIndex = line.indexOf(shipmentMatch[0])
+        
+        if (shipmentIndex === 0) {
+          // Shipment is at the start of the line - this is a pure shipment line
+          // Stop immediately, don't add anything to warning
+          console.log('[RTFParser] Found first shipment at start of line', i, ', stopping header warning collection')
+          break
+        } else {
+          // Shipment is in the middle/end of the line - extract ONLY warning part before shipment
+          // Stop at the exact position where shipment pattern starts
+          const warningPart = line.substring(0, shipmentIndex).trim()
+          if (warningPart && warningPart.length > 0) {
+            // Check if warning part is not just RTF artifacts
+            if (!warningPart.match(/^id\./i) && 
+                !warningPart.match(/^[0-9a-f]{20,}$/i) &&
+                warningPart.length > 5) {
+              console.log('[RTFParser] Adding warning part before shipment at line', i, ':', warningPart.substring(0, 100))
+              console.log('[RTFParser] Shipment pattern found at position', shipmentIndex, 'in line', i)
+              warningLines.push(warningPart)
+            }
+          }
+          // Stop collection immediately after this line since we found shipment pattern
+          console.log('[RTFParser] Found shipment pattern in line', i, 'at position', shipmentIndex, ', stopping header warning collection')
+          break
+        }
       }
       
+      // Skip empty lines and separator lines
       if (!line || line.match(/^[_\-=\s]+$/)) {
         continue
       }
       
+      // Skip TOTALS lines (must be checked before other checks)
+      if (line.match(/^TOTALS:/i) || normalizedLine.match(/^TOTALS:/i)) {
+        console.log('[RTFParser] Skipping TOTALS line', i)
+        continue
+      }
+      
+      // Skip lines that look like RTF style definitions (must be checked early)
+      if (line.match(/heading\s+\d+;/i) || normalizedLine.match(/heading\s+\d+;/i)) {
+        console.log('[RTFParser] Skipping RTF style definition line', i)
+        continue
+      }
+      
+      // Skip ULD lines (XX ... XX)
       if (line.match(/xx\s+.*\s+xx/i) || normalizedLine.match(/xx\s+.*\s+xx/i)) {
         continue
       }
       
+      // Skip lines that look like RTF control codes or binary data
       if (line.match(/^List\s+Table/i) || 
           line.match(/^[0f\s]{50,}$/i) || 
           normalizedLine.match(/^List\s+Table/i) ||
@@ -399,12 +520,213 @@ export function parseRTFHeader(content: string): LoadPlanHeader {
         continue
       }
       
+      // Check if line contains shipment pattern in the middle/end (warning + shipment in same line)
+      // This check must be done before adding the whole line to warning
+      // Pattern: exactly "001 176-92583061" or similar (3 digits, space, 3 digits, dash, 8 digits)
+      const shipmentPatternInLine = /\d{3}\s+\d{3}-\d{8}/
+      const shipmentMatchInLine = line.match(shipmentPatternInLine) || normalizedLine.match(shipmentPatternInLine)
+      if (shipmentMatchInLine) {
+        const shipmentIndexInLine = line.indexOf(shipmentMatchInLine[0])
+        if (shipmentIndexInLine > 0) {
+          // Shipment is in the middle/end - extract ONLY warning part before shipment pattern
+          // Stop exactly at the position where shipment pattern starts (before "001")
+          const warningPart = line.substring(0, shipmentIndexInLine).trim()
+          if (warningPart && warningPart.length > 0) {
+            // Check if warning part is not just RTF artifacts
+            if (!warningPart.match(/^id\./i) && 
+                !warningPart.match(/^[0-9a-f]{20,}$/i) &&
+                warningPart.length > 5) {
+              console.log('[RTFParser] Adding warning part before shipment at line', i, ':', warningPart.substring(0, 100))
+              console.log('[RTFParser] Shipment pattern starts at position', shipmentIndexInLine, 'in line', i)
+              warningLines.push(warningPart)
+            }
+          }
+          // Stop collection immediately - shipment pattern found, don't include it in warning
+          console.log('[RTFParser] Found shipment pattern in line', i, 'at position', shipmentIndexInLine, ', stopping header warning collection')
+          break
+        } else if (shipmentIndexInLine === 0) {
+          // Shipment is at the start - this is a pure shipment line, stop immediately
+          // Don't add anything to warning
+          console.log('[RTFParser] Found shipment at start of line', i, ', stopping header warning collection')
+          break
+        }
+      }
+      
+      // Add line to warning lines (will be processed to add spaces)
+      console.log('[RTFParser] Adding warning line', i, ':', line.substring(0, 100))
       warningLines.push(line)
     }
   }
   
+  // Fallback: If warning lines are empty, try alternative approach
+  // Find table header, separator, and shipment lines independently
+  if (warningLines.length === 0) {
+    console.log('[RTFParser] Fallback: Trying alternative approach to find header warning')
+    let serLineIdx = -1
+    let separatorLineIdx = -1
+    let shipmentLineIdx = -1
+    
+    // Find table header line
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim()
+      const hasSer = (line.includes("SER") || line.includes("SER.")) && !line.match(/^\d{3}/)
+      const hasAWB = line.includes("AWB") || line.includes("AWB NO") || line.includes("AWBNO")
+      if (hasSer && hasAWB) {
+        serLineIdx = i
+        console.log('[RTFParser] Fallback: Found table header at line', i)
+        
+        // Check if separator is also in this line (at the end)
+        const underscoreCount = (line.match(/_/g) || []).length
+        const hasSeparatorInSameLine = underscoreCount >= 10 || line.match(/_{10,}$/)
+        
+        if (hasSeparatorInSameLine) {
+          // Separator is in the same line as table header
+          separatorLineIdx = i
+          console.log('[RTFParser] Fallback: Found separator in same line as table header')
+          
+          // Also try to extract header warning from this line
+          const separatorPatterns = [
+            /([_\-=]{20,})/,  // Long separator (20+ chars)
+            /([_\-=]{10,})/,  // Medium separator (10+ chars)
+          ]
+          
+          let separatorMatch: RegExpMatchArray | null = null
+          let separatorIndex = -1
+          
+          for (const pattern of separatorPatterns) {
+            const match = line.match(pattern)
+            if (match) {
+              const idx = line.indexOf(match[0])
+              if (idx > separatorIndex) {
+                separatorMatch = match
+                separatorIndex = idx
+              }
+            }
+          }
+          
+          if (separatorMatch && separatorIndex >= 0) {
+            const afterSeparator = line.substring(separatorIndex + separatorMatch[0].length).trim()
+            if (afterSeparator && afterSeparator.length > 0) {
+              const isShipmentLine = afterSeparator.match(/^\d{3}\s+\d{3}-\d{8}/)
+              if (!isShipmentLine) {
+                const warningParts = afterSeparator.split(/(?=\/\/|id\.)/).filter(p => p.trim().length > 0)
+                for (const part of warningParts) {
+                  const trimmedPart = part.trim()
+                  if (!trimmedPart.match(/^id\./i) && 
+                      !trimmedPart.match(/^[0-9a-f]{20,}$/i) &&
+                      trimmedPart.length > 5) {
+                    console.log('[RTFParser] Fallback: Adding warning from same line:', trimmedPart.substring(0, 100))
+                    warningLines.push(trimmedPart)
+                  }
+                }
+              }
+            }
+          }
+        }
+        break
+      }
+    }
+    
+    // Find separator line (after table header) - only if not found in same line
+    if (serLineIdx >= 0 && separatorLineIdx < 0) {
+      for (let i = serLineIdx + 1; i < lines.length; i++) {
+        const line = lines[i].trim()
+        const underscoreCount = (line.match(/_/g) || []).length
+        if (underscoreCount >= 10 || line.match(/^[_\-=]{10,}$/) || line.match(/^[_\-=\s]{10,}$/)) {
+          separatorLineIdx = i
+          console.log('[RTFParser] Fallback: Found separator at line', i)
+          break
+        }
+      }
+    }
+    
+    // Find first shipment line (after separator)
+    if (separatorLineIdx >= 0) {
+      for (let i = separatorLineIdx + 1; i < lines.length; i++) {
+        const line = lines[i].trim()
+        const normalizedLine = line.replace(/\s+/g, " ")
+        if (line.match(/^\d{3}\s+\d{3}-\d{8}/) || normalizedLine.match(/^\d{3}\s+\d{3}-\d{8}/)) {
+          shipmentLineIdx = i
+          console.log('[RTFParser] Fallback: Found first shipment at line', i)
+          break
+        }
+      }
+    }
+    
+    // Extract lines between separator and shipment
+    if (serLineIdx >= 0 && separatorLineIdx >= 0 && shipmentLineIdx >= 0) {
+      console.log('[RTFParser] Fallback: Extracting lines between', separatorLineIdx + 1, 'and', shipmentLineIdx)
+      
+      // First, check if header warning is in the same line as separator
+      if (serLineIdx === separatorLineIdx) {
+        const headerLine = lines[separatorLineIdx].trim()
+        // Find separator pattern in the line
+        const separatorMatch = headerLine.match(/([_\-=]{10,})/)
+        if (separatorMatch) {
+          const separatorIndex = headerLine.indexOf(separatorMatch[0])
+          const afterSeparator = headerLine.substring(separatorIndex + separatorMatch[0].length).trim()
+          
+          // Check if there's content after separator (header warning)
+          if (afterSeparator && afterSeparator.length > 0) {
+            // Check if it's not a shipment line
+            const isShipmentLine = afterSeparator.match(/^\d{3}\s+\d{3}-\d{8}/)
+            if (!isShipmentLine) {
+              // Split by common patterns that might indicate multiple warning sections
+              // Look for patterns like "//", "id.", etc.
+              const warningParts = afterSeparator.split(/(?=\/\/|id\.)/).filter(p => p.trim().length > 0)
+              
+              for (const part of warningParts) {
+                const trimmedPart = part.trim()
+                // Skip if it looks like RTF artifacts or binary data
+                if (!trimmedPart.match(/^id\./i) && 
+                    !trimmedPart.match(/^[0-9a-f]{20,}$/i) &&
+                    trimmedPart.length > 5) {
+                  console.log('[RTFParser] Fallback: Adding warning from same line after separator:', trimmedPart.substring(0, 100))
+                  warningLines.push(trimmedPart)
+                }
+              }
+            }
+          }
+        }
+      }
+      
+      // Also check lines between separator and shipment (if separator is on different line)
+      if (separatorLineIdx < shipmentLineIdx - 1) {
+        const potentialWarningLines = lines.slice(separatorLineIdx + 1, shipmentLineIdx)
+          .map(l => l.trim())
+          .filter(l => {
+            if (!l || l.match(/^[_\-=\s]+$/)) return false
+            if (l.match(/xx\s+.*\s+xx/i)) return false
+            if (l.match(/^List\s+Table/i)) return false
+            if (l.match(/^[0f\s]{50,}$/i)) return false
+            // Skip RTF artifacts like "id.xxx"
+            if (l.match(/^id\./i)) return false
+            return true
+          })
+        
+        console.log('[RTFParser] Fallback: Found', potentialWarningLines.length, 'potential warning lines between separator and shipment')
+        if (potentialWarningLines.length > 0) {
+          warningLines.push(...potentialWarningLines)
+        }
+      }
+      
+      console.log('[RTFParser] Fallback: Total warning lines found:', warningLines.length)
+    } else {
+      console.log('[RTFParser] Fallback: Could not find all components', {
+        serLineIdx,
+        separatorLineIdx,
+        shipmentLineIdx
+      })
+    }
+  }
+  
+  // Process warning lines: add spaces between joined words
   if (warningLines.length > 0) {
-    headerWarning = warningLines.join("\n").trim()
+    console.log('[RTFParser] Processing', warningLines.length, 'warning lines')
+    const processedWarningLines = warningLines.map(line => addSpacesToJoinedWords(line))
+    headerWarning = processedWarningLines.join("\n").trim()
+  } else {
+    console.log('[RTFParser] No warning lines found. Table header:', foundTableHeader, 'Separator:', foundSeparator)
   }
 
   // Detect CRITICAL stamp - check if "CRITICAL" text appears anywhere in the content
@@ -419,49 +741,15 @@ export function parseRTFHeader(content: string): LoadPlanHeader {
   const hasCriticalStamp = /CRITICAL\s+STAMP/i.test(contentUpper)
   const isCritical = hasCriticalText || hasCriticalSector || hasCriticalStamp || contentUpper.includes("CRITICAL")
   
-  // Log detection for debugging
-  if (isCritical) {
-    console.log('[RTFParser] ✅ CRITICAL detected')
-  }
-
-  // Log parsed header fields for debugging
-  const parsedHeader = {
-    flightNumber,
-    date,
-    aircraftType,
-    aircraftReg,
-    sector,
-    std,
-    preparedBy,
-    preparedOn,
-    pax,
-    ttlPlnUld,
-    uldVersion,
-    hasHeaderWarning: !!headerWarning,
-    isCritical,
-  }
-  
-  console.log('[RTFParser] ========== Parsed Header Fields ==========')
-  console.log('[RTFParser] Flight Number:', parsedHeader.flightNumber || '❌ NOT FOUND')
-  console.log('[RTFParser] Date:', parsedHeader.date || '❌ NOT FOUND')
-  console.log('[RTFParser] ACFT TYPE:', parsedHeader.aircraftType || '❌ NOT FOUND')
-  console.log('[RTFParser] ACFT REG:', parsedHeader.aircraftReg || '❌ NOT FOUND')
-  console.log('[RTFParser] SECTOR:', parsedHeader.sector || '❌ NOT FOUND')
-  console.log('[RTFParser] STD:', parsedHeader.std || '❌ NOT FOUND')
-  console.log('[RTFParser] PREPARED BY:', parsedHeader.preparedBy || '❌ NOT FOUND')
-  console.log('[RTFParser] PREPARED ON:', parsedHeader.preparedOn || '❌ NOT FOUND')
-  console.log('[RTFParser] PAX:', parsedHeader.pax || '❌ NOT FOUND')
-  console.log('[RTFParser] TTL PLN ULD:', parsedHeader.ttlPlnUld || '❌ NOT FOUND')
-  console.log('[RTFParser] ULD VERSION:', parsedHeader.uldVersion || '❌ NOT FOUND')
-  console.log('[RTFParser] Header Warning:', parsedHeader.hasHeaderWarning ? '✅ Found' : '❌ Not found')
-  console.log('[RTFParser] Is Critical:', parsedHeader.isCritical ? '✅ Yes' : '❌ No')
-  console.log('[RTFParser] ==========================================')
-  
-  // If critical fields are missing, log sample content for debugging
-  if (!parsedHeader.aircraftType || !parsedHeader.ttlPlnUld || !parsedHeader.uldVersion) {
-    console.warn('[RTFParser] ⚠️ Some critical header fields are missing')
-    const headerSection = processedContent.split('\n').slice(0, 5).join('\n')
-    console.warn('[RTFParser] First 5 lines:', headerSection)
+  // Log headerWarning for debugging
+  if (headerWarning) {
+    console.log('[RTFParser] Header warning found:', {
+      length: headerWarning.length,
+      preview: headerWarning.substring(0, 200),
+      lineCount: warningLines.length,
+    })
+  } else {
+    console.log('[RTFParser] No header warning found. Table header:', foundTableHeader, 'Separator:', foundSeparator, 'Warning lines:', warningLines.length)
   }
 
   return { 
@@ -475,7 +763,7 @@ export function parseRTFHeader(content: string): LoadPlanHeader {
     preparedOn,
     ttlPlnUld: ttlPlnUld || undefined,
     uldVersion: uldVersion || undefined,
-    headerWarning: headerWarning || undefined,
+    headerWarning: headerWarning && headerWarning.length > 0 ? headerWarning : undefined, // Only set if not empty
     isCritical: isCritical === true ? true : undefined, // Explicitly set to true or undefined
   }
 }
@@ -1812,6 +2100,7 @@ async function extractTextWithStreamParser(file: File): Promise<string> {
  * NO DOCX conversion - direct RTF processing
  */
 export async function parseRTFFileWithStreamParser(file: File): Promise<{ header: LoadPlanHeader; shipments: Shipment[] }> {
+  console.log('[RTFParser] Starting parseRTFFileWithStreamParser for:', file.name)
   let content: string
   let isFromDocxConversion = false // Track if content came from DOCX conversion
   
