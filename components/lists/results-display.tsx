@@ -190,6 +190,7 @@ export function ResultsDisplay({
                         <th className="px-3 py-2 text-left font-medium text-gray-700">Weight</th>
                         <th className="px-3 py-2 text-left font-medium text-gray-700">SHC</th>
                         <th className="px-3 py-2 text-left font-medium text-gray-700">Description</th>
+                        <th className="px-3 py-2 text-left font-medium text-gray-700">Flight In</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -207,11 +208,12 @@ export function ResultsDisplay({
                             <td className="px-3 py-2 text-gray-600">{row.outWt}</td>
                             <td className="px-3 py-2 text-gray-600 text-xs">{row.shc}</td>
                             <td className="px-3 py-2 text-gray-600 text-xs">{row.manifestDesc}</td>
+                            <td className="px-3 py-2 text-gray-900">{row.inCarrier}{row.inFlightNo}</td>
                           </tr>
                         ))
                       ) : (
                         <tr>
-                          <td colSpan={6} className="px-3 py-8 text-center text-gray-500">
+                          <td colSpan={7} className="px-3 py-8 text-center text-gray-500">
                             No data available
                           </td>
                         </tr>
@@ -226,7 +228,6 @@ export function ResultsDisplay({
                   <table className="w-full text-sm">
                     <thead className="bg-gray-50 border-b border-gray-200 sticky top-0">
                       <tr>
-                        <th className="px-3 py-2 text-left font-medium text-gray-700">Carr. Out.Flt. No.</th>
                         <th className="px-3 py-2 text-left font-medium text-gray-700">Doc No.</th>
                         <th className="px-3 py-2 text-left font-medium text-gray-700">In.Brd Pt</th>
                         <th className="px-3 py-2 text-left font-medium text-gray-700">Out.Off Pt</th>
@@ -237,6 +238,7 @@ export function ResultsDisplay({
                         <th className="px-3 py-2 text-left font-medium text-gray-700">SHC</th>
                         <th className="px-3 py-2 text-left font-medium text-gray-700">Manifest Desc.</th>
                         <th className="px-3 py-2 text-left font-medium text-gray-700">Carr. In.Flt. No.</th>
+                        <th className="px-3 py-2 text-left font-medium text-gray-700">Flight In</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -246,7 +248,6 @@ export function ResultsDisplay({
                             key={idx} 
                             className={`border-b border-gray-100 ${row.hasHUM ? 'bg-yellow-50 hover:bg-yellow-100' : ''}`}
                           >
-                            <td className="px-3 py-2 text-gray-900">{row.carrier} {row.outFlightNo}</td>
                             <td className="px-3 py-2 text-gray-900">{row.docNo}</td>
                             <td className="px-3 py-2 text-gray-600">{row.inBrdPt}</td>
                             <td className="px-3 py-2 text-gray-600">{row.outOffPt}</td>
@@ -257,6 +258,7 @@ export function ResultsDisplay({
                             <td className="px-3 py-2 text-gray-600 text-xs">{row.shc}</td>
                             <td className="px-3 py-2 text-gray-600 text-xs">{row.manifestDesc}</td>
                             <td className="px-3 py-2 text-gray-600">{row.inCarrier} {row.inFlightNo}</td>
+                            <td className="px-3 py-2 text-gray-900">{row.inCarrier}{row.inFlightNo}</td>
                           </tr>
                         ))
                       ) : (
@@ -284,6 +286,7 @@ export function ResultsDisplay({
                     <th className="px-3 py-2 text-left font-medium text-gray-700">Pcs</th>
                     <th className="px-3 py-2 text-left font-medium text-gray-700">Weight</th>
                     <th className="px-3 py-2 text-left font-medium text-gray-700">SHC</th>
+                    <th className="px-3 py-2 text-left font-medium text-gray-700">Flight In</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -298,11 +301,12 @@ export function ResultsDisplay({
                         <td className="px-3 py-2 text-gray-600">{row.outPcs}</td>
                         <td className="px-3 py-2 text-gray-600">{row.outWt}</td>
                         <td className="px-3 py-2 text-gray-600 text-xs font-semibold text-[#D71A21]">{row.shc}</td>
+                        <td className="px-3 py-2 text-gray-900">{row.inCarrier}{row.inFlightNo}</td>
                       </tr>
                     ))
                   ) : (
                     <tr>
-                      <td colSpan={6} className="px-3 py-8 text-center text-gray-500">
+                      <td colSpan={7} className="px-3 py-8 text-center text-gray-500">
                         No data available
                       </td>
                     </tr>
