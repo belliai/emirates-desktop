@@ -4,14 +4,14 @@ import { useState, useRef, useEffect, useMemo } from "react"
 import { ChevronRight, Plane, Calendar, Package, Users, Clock, FileText, Upload, Trash2, AlertTriangle, CheckCircle, XCircle, Plus, Search, SlidersHorizontal, Settings2, ArrowUpDown } from "lucide-react"
 import LoadPlanDetailScreen from "./load-plan-detail-screen"
 import type { LoadPlanDetail } from "./load-plan-types"
-import { extractTextFromFile } from "@/lib/lists/file-extractors"
+import { extractTextFromFile, extractTextFromDOCX } from "@/lib/lists/file-extractors"
 import { UploadModal } from "./lists/upload-modal"
 import { Button } from "@/components/ui/button"
 import { useLoadPlans, type LoadPlan, type ShiftType, type PeriodType, type WaveType } from "@/lib/load-plan-context"
 import { getLoadPlansFromSupabase, getLoadPlanDetailFromSupabase, deleteLoadPlanFromSupabase } from "@/lib/load-plans-supabase"
 import { parseHeader, parseShipments, detectCriticalFromFileImages } from "@/lib/lists/parser"
 import { parseRTFHeader, parseRTFShipments, parseRTFFileWithStreamParser } from "@/lib/lists/rtf-parser"
-import { parseRTFWithHtml } from "@/lib/lists/rtf-html-parser"
+import { detectFileFormat } from "@/lib/lists/rtf-html-parser"
 import { saveListsDataToSupabase } from "@/lib/lists/supabase-save"
 import type { ListsResults } from "@/lib/lists/types"
 import { generateSpecialCargoReport, generateVUNList, generateQRTList } from "@/lib/lists/report-generators"
@@ -217,14 +217,11 @@ export default function LoadPlansScreen({ onLoadPlanSelect }: { onLoadPlanSelect
         const supabaseLoadPlans = await getLoadPlansFromSupabase()
         if (supabaseLoadPlans.length > 0) {
           setLoadPlans(supabaseLoadPlans)
-          console.log(`[LoadPlansScreen] Loaded ${supabaseLoadPlans.length} load plans from Supabase`)
         } else {
           // Clear load plans if no data from Supabase
           setLoadPlans([])
-          console.log("[LoadPlansScreen] No load plans from Supabase, clearing load plans")
         }
       } catch (err) {
-        console.error("[LoadPlansScreen] Error fetching load plans:", err)
         // Clear load plans on error too
         setLoadPlans([])
       } finally {
@@ -335,25 +332,17 @@ export default function LoadPlansScreen({ onLoadPlanSelect }: { onLoadPlanSelect
     // Check if we have a saved version first
     const savedDetail = savedDetails.get(loadPlan.flight)
     if (savedDetail) {
-      console.log(`[LoadPlansScreen] Using saved detail for ${loadPlan.flight}`)
       setSelectedLoadPlan(savedDetail)
       return
     }
 
     // Try to fetch from Supabase
     try {
-      console.log(`[LoadPlansScreen] Fetching load plan detail from Supabase for ${loadPlan.flight}`)
       const supabaseDetail = await getLoadPlanDetailFromSupabase(loadPlan.flight)
       if (supabaseDetail) {
-        console.log(`[LoadPlansScreen] Successfully loaded detail from Supabase:`, {
-          flight: supabaseDetail.flight,
-          sectors: supabaseDetail.sectors.length,
-          totalItems: supabaseDetail.sectors.reduce((sum, s) => sum + s.uldSections.reduce((sum2, u) => sum2 + u.awbs.length, 0), 0)
-        })
         setSelectedLoadPlan(supabaseDetail)
         return
       } else {
-        console.log(`[LoadPlansScreen] No data found in Supabase for ${loadPlan.flight}`)
         // Don't show dummy data - just return or show message
         if (onLoadPlanSelect) {
           onLoadPlanSelect(loadPlan)
@@ -361,7 +350,6 @@ export default function LoadPlansScreen({ onLoadPlanSelect }: { onLoadPlanSelect
         return
       }
     } catch (err) {
-      console.error("[LoadPlansScreen] Error fetching load plan detail:", err)
       // Don't show dummy data on error either
       if (onLoadPlanSelect) {
         onLoadPlanSelect(loadPlan)
@@ -408,8 +396,6 @@ export default function LoadPlansScreen({ onLoadPlanSelect }: { onLoadPlanSelect
           setLoadPlans([])
         }
         
-        console.log(`[LoadPlansScreen] Successfully deleted load plan ${pendingDeletePlan.flight}`)
-        
         // Show success message
         setDeleteModal({ isOpen: true, type: "success", flight: pendingDeletePlan.flight })
         
@@ -428,7 +414,6 @@ export default function LoadPlansScreen({ onLoadPlanSelect }: { onLoadPlanSelect
         })
       }
     } catch (err) {
-      console.error("[LoadPlansScreen] Error deleting load plan:", err)
       // Show error message
       setDeleteModal({ 
         isOpen: true, 
@@ -480,20 +465,47 @@ export default function LoadPlansScreen({ onLoadPlanSelect }: { onLoadPlanSelect
         setProgress(fileProgress)
 
         try {
-          // Check if file is RTF
-          const isRTF = f.name.toLowerCase().endsWith('.rtf')
+          // Detect actual file format from magic bytes (not just extension)
+          const actualFormat = await detectFileFormat(f)
+          const isRTFByExtension = f.name.toLowerCase().endsWith('.rtf')
+          const isRTF = actualFormat === 'rtf'
+          
           let header, shipments
           
-          if (isRTF) {
-            // Use RTF to HTML conversion for better parsing
-            console.log('[LoadPlansScreen] Processing RTF file with RTF-to-HTML conversion:', f.name)
+          // If file is actually DOCX (even if extension is .rtf), use DOCX parser
+          if (actualFormat === 'docx') {
+            // Use extractTextFromDOCX directly to avoid RTF extraction based on extension
+            const content = await extractTextFromDOCX(f)
+            
+            header = parseHeader(content)
+            if (!header.flightNumber) {
+              const filenameMatch = f.name.match(/EK\s*[-]?\s*(\d{4})/i)
+              if (filenameMatch) {
+                header.flightNumber = `EK${filenameMatch[1]}`
+              }
+            }
+            
+            // Check for CRITICAL in images
+            try {
+              const isCriticalFromOCR = await detectCriticalFromFileImages(f)
+              if (isCriticalFromOCR) {
+                header.isCritical = true
+              }
+            } catch (ocrError) {
+              // Don't fail the whole process if OCR fails
+            }
+            
+            shipments = parseShipments(content, header)
+          } else if (isRTF) {
+            // Use RTF parser directly (rtf-stream-parser)
+            console.log('[LoadPlansScreen] Processing RTF file with rtf-parser:', f.name)
             
             try {
-              const result = await parseRTFWithHtml(f)
+              const result = await parseRTFFileWithStreamParser(f)
               header = result.header
               shipments = result.shipments
               
-              console.log('[LoadPlansScreen] ✅ Successfully parsed RTF file with RTF-to-HTML')
+              console.log('[LoadPlansScreen] ✅ Successfully parsed RTF file with rtf-parser')
               console.log('[LoadPlansScreen] Parsed header:', {
                 flightNumber: header.flightNumber,
                 date: header.date,
@@ -504,26 +516,13 @@ export default function LoadPlansScreen({ onLoadPlanSelect }: { onLoadPlanSelect
               })
               console.log('[LoadPlansScreen] Parsed shipments:', shipments.length)
             } catch (rtfError) {
-              console.error('[LoadPlansScreen] Error parsing RTF file with RTF-to-HTML:', rtfError)
-              
-              // Fallback to old parser if new one fails
-              console.log('[LoadPlansScreen] Falling back to rtf-stream-parser...')
-              try {
-                const fallbackResult = await parseRTFFileWithStreamParser(f)
-                header = fallbackResult.header
-                shipments = fallbackResult.shipments
-                console.log('[LoadPlansScreen] ✅ Fallback parser succeeded')
-              } catch (fallbackError) {
-                console.error('[LoadPlansScreen] Fallback parser also failed:', fallbackError)
-                failedFiles.push(f.name)
-                continue
-              }
+              console.error('[LoadPlansScreen] Error parsing RTF file with rtf-parser:', rtfError)
+              failedFiles.push(f.name)
+              continue
             }
           } else {
             // Process file normally (DOCX, PDF, etc.)
-            console.log('[LoadPlansScreen] Processing non-RTF file:', f.name)
             const content = await extractTextFromFile(f)
-            console.log('[LoadPlansScreen] Extracted content length:', content.length)
             
             header = parseHeader(content)
             if (!header.flightNumber) {
@@ -531,9 +530,7 @@ export default function LoadPlansScreen({ onLoadPlanSelect }: { onLoadPlanSelect
               const filenameMatch = f.name.match(/EK\s*[-]?\s*(\d{4})/i)
               if (filenameMatch) {
                 header.flightNumber = `EK${filenameMatch[1]}`
-                console.log('[LoadPlansScreen] Extracted flight number from filename:', header.flightNumber)
               } else {
-                console.error('[LoadPlansScreen] Could not parse flight number from file:', f.name)
                 failedFiles.push(f.name)
                 continue
               }
@@ -541,63 +538,28 @@ export default function LoadPlansScreen({ onLoadPlanSelect }: { onLoadPlanSelect
             
             // Always try OCR on images (stamps are usually images, not text)
             // OCR is more reliable for detecting visual stamps even if text detection found something
-            console.log('[LoadPlansScreen] ========================================')
-            console.log('[LoadPlansScreen] Starting OCR detection for CRITICAL stamp...')
-            console.log('[LoadPlansScreen] File name:', f.name)
-            console.log('[LoadPlansScreen] File type:', f.type)
-            console.log('[LoadPlansScreen] File size:', f.size, 'bytes')
-            console.log('[LoadPlansScreen] ========================================')
             try {
               const isCriticalFromOCR = await detectCriticalFromFileImages(f)
               if (isCriticalFromOCR) {
                 header.isCritical = true
-                console.log('[LoadPlansScreen] ✅ CRITICAL detected via OCR!')
-              } else {
-                console.log('[LoadPlansScreen] ⚠️ CRITICAL not detected via OCR')
-                if (!header.isCritical) {
-                  console.log('[LoadPlansScreen] ⚠️ CRITICAL not detected in text or images')
-                } else {
-                  console.log('[LoadPlansScreen] ✅ CRITICAL was detected in text (but not in images)')
-                }
               }
             } catch (ocrError) {
-              console.error('[LoadPlansScreen] Error during OCR detection:', ocrError)
               // Don't fail the whole process if OCR fails
             }
             
             shipments = parseShipments(content, header)
           }
           
-          const processingNote = isRTF ? '(RTF processed directly with rtf-stream-parser)' : ''
-          console.log('[LoadPlansScreen] Parsed shipments from', f.name, processingNote, ':', shipments.length)
-          
           // Validate that we have shipments
           // For RTF files, skip silently if no shipments (RTF parsing is still experimental)
           if (!shipments || shipments.length === 0) {
             if (isRTF) {
-              console.warn('[LoadPlansScreen] ⚠️ No shipments parsed from RTF file (skipping):', f.name)
               skippedFlights.push(f.name)
               continue
             } else {
-              console.error('[LoadPlansScreen] No shipments parsed from file:', f.name)
               failedFiles.push(f.name)
               continue
             }
-          }
-          
-          // Log ramp transfer detection
-          const rampTransferShipments = shipments.filter(s => s.isRampTransfer)
-          const regularShipments = shipments.filter(s => !s.isRampTransfer)
-          console.log('[LoadPlansScreen] Ramp transfer shipments:', rampTransferShipments.length)
-          console.log('[LoadPlansScreen] Regular shipments:', regularShipments.length)
-          if (rampTransferShipments.length > 0) {
-            console.log('[LoadPlansScreen] Sample ramp transfer shipments:', 
-              rampTransferShipments.slice(0, 3).map(s => ({
-                serialNo: s.serialNo,
-                awbNo: s.awbNo,
-                isRampTransfer: s.isRampTransfer
-              }))
-            )
           }
 
           // Generate reports (required for saveListsDataToSupabase)
@@ -613,18 +575,6 @@ export default function LoadPlansScreen({ onLoadPlanSelect }: { onLoadPlanSelect
             shipments 
           }
 
-          // Validate shipments before saving
-          console.log('[LoadPlansScreen] About to save to Supabase:', {
-            flightNumber: header.flightNumber,
-            shipmentsCount: shipments.length,
-            fileName: f.name,
-            isCritical: header.isCritical,
-          })
-          console.log('[LoadPlansScreen] Header object before save:', {
-            ...header,
-            isCritical: header.isCritical,
-          })
-          
           // Save to Supabase
           const saveResult = await saveListsDataToSupabase({
             results,
@@ -634,9 +584,6 @@ export default function LoadPlansScreen({ onLoadPlanSelect }: { onLoadPlanSelect
           })
 
           if (saveResult.success) {
-            console.log('[LoadPlansScreen] ✅ Data saved to Supabase successfully for', f.name, isRTF ? '(converted from RTF)' : '', ', load_plan_id:', saveResult.loadPlanId)
-            console.log('[LoadPlansScreen] Saved', shipments.length, 'shipments to load_plan_items')
-            
             // Check if flight already exists in current list
             const exists = loadPlans.some((lp) => lp.flight === header.flightNumber)
             if (exists) {
@@ -646,12 +593,9 @@ export default function LoadPlansScreen({ onLoadPlanSelect }: { onLoadPlanSelect
               totalAddedCount++
             }
           } else {
-            console.error('[LoadPlansScreen] ❌ Failed to save to Supabase:', saveResult.error)
-            console.error('[LoadPlansScreen] Failed to save data to Supabase for', f.name, ':', saveResult.error)
             failedFiles.push(f.name)
           }
         } catch (fileError) {
-          console.error(`[LoadPlansScreen] Error processing file ${f.name}:`, fileError)
           failedFiles.push(f.name)
         }
       }
@@ -665,7 +609,7 @@ export default function LoadPlansScreen({ onLoadPlanSelect }: { onLoadPlanSelect
           setLoadPlans(supabaseLoadPlans)
         }
       } catch (refreshError) {
-        console.error("[LoadPlansScreen] Error refreshing load plans:", refreshError)
+        // Error refreshing load plans
       }
 
       setProgress(100)
@@ -693,7 +637,6 @@ export default function LoadPlansScreen({ onLoadPlanSelect }: { onLoadPlanSelect
 
       setShowUploadModal(false)
     } catch (err) {
-      console.error("[LoadPlansScreen] File upload error:", err)
       setError(err instanceof Error ? err.message : "An error occurred while processing the file")
       setProgress(0)
     } finally {

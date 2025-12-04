@@ -77,7 +77,6 @@ export function parseHeader(content: string): LoadPlanHeader {
       // Check both original and normalized line
       const isShipmentLine = line.match(/^\d{3}\s+\d{3}-\d{8}/) || normalizedLine.match(/^\d{3}\s+\d{3}-\d{8}/)
       if (isShipmentLine) {
-        console.log("[v0] ✅ Found first shipment line, stopping warning collection:", line.substring(0, 80))
         break
       }
       
@@ -126,18 +125,6 @@ export function parseHeader(content: string): LoadPlanHeader {
   const hasCriticalStamp = /CRITICAL\s+STAMP/i.test(contentUpper)
   const isCritical = hasCriticalText || hasCriticalSector || hasCriticalStamp || contentUpper.includes("CRITICAL")
   
-  // Log detection for debugging
-  if (isCritical) {
-    console.log('[Parser] ✅ CRITICAL detected:', {
-      hasCriticalText,
-      hasCriticalSector,
-      hasCriticalStamp,
-      sample: content.substring(0, 500).replace(/\n/g, ' ')
-    })
-  } else {
-    // Log first 1000 chars to help debug why CRITICAL wasn't detected
-    console.log('[Parser] ⚠️ CRITICAL not detected. First 1000 chars:', content.substring(0, 1000))
-  }
 
   return { 
     flightNumber, 
@@ -163,32 +150,23 @@ export function parseHeader(content: string): LoadPlanHeader {
  */
 export async function detectCriticalFromFileImages(file: File): Promise<boolean> {
   const fileName = file.name.toLowerCase()
-  console.log('[Parser] detectCriticalFromFileImages called for file:', file.name)
-  console.log('[Parser] File name (lowercase):', fileName)
-  console.log('[Parser] Ends with .docx?', fileName.endsWith('.docx'))
-  console.log('[Parser] Ends with .doc?', fileName.endsWith('.doc'))
   
   // Only check DOCX files for now (RTF image extraction is more complex)
   if (!fileName.endsWith('.docx') && !fileName.endsWith('.doc')) {
-    console.log('[Parser] ⚠️ File is not DOCX/DOC, skipping OCR detection')
     return false
   }
   
   try {
-    console.log('[Parser] ✅ File is DOCX/DOC, extracting images for OCR detection...')
     const images = await extractImagesFromDOCX(file)
     
     if (images.length === 0) {
-      console.log('[Parser] No images found in DOCX file')
       return false
     }
     
-    console.log(`[Parser] Found ${images.length} image(s), running OCR...`)
     const isCritical = await detectCriticalFromImages(images)
     
     return isCritical
   } catch (error) {
-    console.error('[Parser] Error detecting CRITICAL from images:', error)
     return false
   }
 }
