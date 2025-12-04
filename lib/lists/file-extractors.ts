@@ -246,9 +246,7 @@ async function extractTextFromRTF(file: File): Promise<string> {
  */
 export async function extractImagesFromDOCX(file: File): Promise<Array<{ buffer: ArrayBuffer; type: string }>> {
   try {
-    console.log('[v0] Starting image extraction from DOCX:', file.name)
     const arrayBuffer = await file.arrayBuffer()
-    console.log('[v0] DOCX file size:', arrayBuffer.byteLength, 'bytes')
     
     // DOCX files are ZIP archives
     // Images are stored in word/media/ folder
@@ -256,7 +254,6 @@ export async function extractImagesFromDOCX(file: File): Promise<Array<{ buffer:
     try {
       const JSZip = await import('jszip')
       const zip = await JSZip.default.loadAsync(arrayBuffer)
-      console.log('[v0] DOCX ZIP loaded, searching for images...')
       
       const images: Array<{ buffer: ArrayBuffer; type: string }> = []
       
@@ -266,8 +263,6 @@ export async function extractImagesFromDOCX(file: File): Promise<Array<{ buffer:
         !name.endsWith('/') &&
         /\.(png|jpg|jpeg|gif|bmp|webp)$/i.test(name)
       )
-      
-      console.log(`[v0] Found ${mediaFiles.length} image file(s) in DOCX`)
       
       // Extract each image
       for (const fileName of mediaFiles) {
@@ -294,24 +289,19 @@ export async function extractImagesFromDOCX(file: File): Promise<Array<{ buffer:
               buffer: imageBuffer,
               type: contentType
             })
-            console.log(`[v0] ✅ Extracted image: ${fileName}, size: ${imageBuffer.byteLength} bytes, type: ${contentType}`)
           }
         } catch (imgError) {
-          console.error(`[v0] Error extracting image ${fileName}:`, imgError)
+          // Error extracting image
         }
       }
       
       if (images.length > 0) {
-        console.log(`[v0] ✅ Successfully extracted ${images.length} image(s) from DOCX`)
         return images
       } else {
-        console.log('[v0] ⚠️ No images found in DOCX file')
         return []
       }
     } catch (zipError) {
-      console.error('[v0] Error extracting images with JSZip:', zipError)
       // Fallback: try mammoth convertToHtml to extract base64 images
-      console.log('[v0] Trying fallback method: mammoth convertToHtml...')
       try {
         const mammoth = await import('mammoth')
         const htmlResult = await mammoth.convertToHtml({ arrayBuffer })
@@ -335,18 +325,16 @@ export async function extractImagesFromDOCX(file: File): Promise<Array<{ buffer:
               buffer: bytes.buffer,
               type: `image/${imageType}`
             })
-            console.log(`[v0] ✅ Extracted base64 image from HTML, type: image/${imageType}`)
           } catch (base64Error) {
-            console.error('[v0] Error processing base64 image:', base64Error)
+            // Error processing base64 image
           }
         }
         
         if (base64Images.length > 0) {
-          console.log(`[v0] ✅ Extracted ${base64Images.length} image(s) from HTML`)
           return base64Images
         }
       } catch (htmlError) {
-        console.error('[v0] convertToHtml also failed:', htmlError)
+        // convertToHtml also failed
       }
       
       return []
@@ -357,36 +345,24 @@ export async function extractImagesFromDOCX(file: File): Promise<Array<{ buffer:
     for (let i = 0; i < imagesResult.length; i++) {
       const image = imagesResult[i]
       try {
-        console.log(`[v0] Processing image ${i + 1}/${imagesResult.length}:`, {
-          contentType: image.contentType,
-          srcType: typeof image.src,
-          srcIsArrayBuffer: image.src instanceof ArrayBuffer,
-          srcIsBuffer: Buffer.isBuffer ? Buffer.isBuffer(image.src) : false,
-          srcIsUint8Array: image.src instanceof Uint8Array,
-        })
-        
         // image.src can be Buffer (Node.js) or ArrayBuffer (browser)
         let buffer: ArrayBuffer
         
         if (image.src instanceof ArrayBuffer) {
           buffer = image.src
-          console.log(`[v0] Image ${i + 1}: Using ArrayBuffer directly, size:`, buffer.byteLength)
         } else if (typeof Buffer !== 'undefined' && Buffer.isBuffer(image.src)) {
           // Convert Node.js Buffer to ArrayBuffer
           buffer = image.src.buffer.slice(
             image.src.byteOffset,
             image.src.byteOffset + image.src.byteLength
           )
-          console.log(`[v0] Image ${i + 1}: Converted Buffer to ArrayBuffer, size:`, buffer.byteLength)
         } else if (image.src instanceof Uint8Array) {
           buffer = image.src.buffer
-          console.log(`[v0] Image ${i + 1}: Using Uint8Array.buffer, size:`, buffer.byteLength)
         } else if (image.src && typeof image.src === 'object' && 'buffer' in image.src) {
           // Handle case where src might be a Buffer-like object
           const src = image.src as any
           if (src.buffer instanceof ArrayBuffer) {
             buffer = src.buffer.slice(src.byteOffset || 0, (src.byteOffset || 0) + (src.byteLength || src.length || 0))
-            console.log(`[v0] Image ${i + 1}: Extracted from Buffer-like object, size:`, buffer.byteLength)
           } else {
             // Try to convert to Uint8Array first
             const length = src.length || src.byteLength || 0
@@ -399,11 +375,9 @@ export async function extractImagesFromDOCX(file: File): Promise<Array<{ buffer:
               }
             }
             buffer = uint8Array.buffer
-            console.log(`[v0] Image ${i + 1}: Converted from Buffer-like to ArrayBuffer, size:`, buffer.byteLength)
           }
         } else {
           // Try to convert to ArrayBuffer
-          console.log(`[v0] Image ${i + 1}: Attempting conversion, src type:`, typeof image.src, 'constructor:', image.src?.constructor?.name)
           try {
             // Try different conversion methods
             if (Array.isArray(image.src)) {
@@ -420,9 +394,7 @@ export async function extractImagesFromDOCX(file: File): Promise<Array<{ buffer:
               const uint8Array = new Uint8Array(image.src as any)
               buffer = uint8Array.buffer
             }
-            console.log(`[v0] Image ${i + 1}: Converted to ArrayBuffer, size:`, buffer.byteLength)
           } catch (convError) {
-            console.error(`[v0] Failed to convert image ${i + 1} src:`, convError)
             continue
           }
         }
@@ -435,26 +407,14 @@ export async function extractImagesFromDOCX(file: File): Promise<Array<{ buffer:
             buffer,
             type: contentType
           })
-          console.log(`[v0] ✅ Successfully added image ${i + 1}, size:`, buffer.byteLength, 'bytes, type:', contentType)
-        } else {
-          console.warn(`[v0] ⚠️ Image ${i + 1} has empty or invalid buffer`)
         }
       } catch (imgError) {
-        console.error(`[v0] ❌ Error processing image ${i + 1}:`, imgError)
-        if (imgError instanceof Error) {
-          console.error(`[v0] Error message:`, imgError.message)
-        }
+        // Error processing image
       }
     }
     
-    console.log(`[v0] ✅ Extracted ${images.length} image(s) from DOCX (out of ${imagesResult.length} found)`)
     return images
   } catch (error) {
-    console.error('[v0] ❌ Error extracting images from DOCX:', error)
-    if (error instanceof Error) {
-      console.error('[v0] Error message:', error.message)
-      console.error('[v0] Error stack:', error.stack)
-    }
     return []
   }
 }
@@ -462,17 +422,15 @@ export async function extractImagesFromDOCX(file: File): Promise<Array<{ buffer:
 /**
  * Extract text from DOCX file using mammoth
  */
-async function extractTextFromDOCX(file: File): Promise<string> {
+export async function extractTextFromDOCX(file: File): Promise<string> {
   try {
     // Dynamic import mammoth library
     const mammoth = await import('mammoth')
     const arrayBuffer = await file.arrayBuffer()
     
     const result = await mammoth.extractRawText({ arrayBuffer })
-    console.log('[v0] DOCX extraction successful, length:', result.value.length)
     return result.value
   } catch (error) {
-    console.error('[v0] Error extracting DOCX with mammoth:', error)
     // Fallback: try to read as text
     return await file.text()
   }
@@ -505,10 +463,8 @@ async function extractTextFromPDF(file: File): Promise<string> {
       fullText += pageText + '\n'
     }
     
-    console.log('[v0] PDF extraction successful, length:', fullText.length)
     return fullText
   } catch (error) {
-    console.error('[v0] Error extracting PDF with pdf.js:', error)
     // Fallback: try to read as text
     return await file.text()
   }
@@ -520,12 +476,9 @@ async function extractTextFromPDF(file: File): Promise<string> {
 export async function extractTextFromFile(file: File): Promise<string> {
   const fileName = file.name.toLowerCase()
   
-  console.log('[v0] Extracting text from file:', fileName)
-  
   // For markdown and text files, read as text
   if (fileName.endsWith('.md') || fileName.endsWith('.txt')) {
     const text = await file.text()
-    console.log('[v0] Text file extracted, length:', text.length)
     return text
   }
   
@@ -546,6 +499,5 @@ export async function extractTextFromFile(file: File): Promise<string> {
   
   // Fallback to text reading
   const text = await file.text()
-  console.log('[v0] Fallback text extraction, length:', text.length)
   return text
 }

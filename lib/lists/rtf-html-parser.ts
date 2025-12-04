@@ -7,9 +7,87 @@
 
 import type { LoadPlanHeader, Shipment } from "./types"
 
-// rtf2html is a CommonJS module
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const rtf2html = require("rtf2html")
+// Dynamic import for rtf2html to handle browser compatibility
+let rtf2htmlModule: any = null
+
+/**
+ * Detect file format from magic bytes (file signature)
+ * Exported for use in other modules
+ */
+export async function detectFileFormat(file: File): Promise<'rtf' | 'docx' | 'unknown'> {
+  const arrayBuffer = await file.arrayBuffer()
+  const uint8Array = new Uint8Array(arrayBuffer.slice(0, 8))
+  
+  // RTF files start with {\rtf
+  if (uint8Array[0] === 0x7B && uint8Array[1] === 0x5C && uint8Array[2] === 0x72 && uint8Array[3] === 0x74 && uint8Array[4] === 0x66) {
+    return 'rtf'
+  }
+  
+  // DOCX/ZIP files start with PK\x03\x04 (ZIP signature)
+  if (uint8Array[0] === 0x50 && uint8Array[1] === 0x4B && uint8Array[2] === 0x03 && uint8Array[3] === 0x04) {
+    return 'docx'
+  }
+  
+  return 'unknown'
+}
+
+async function getRtf2Html(): Promise<any> {
+  if (rtf2htmlModule) {
+    return rtf2htmlModule
+  }
+  
+  try {
+    // Try dynamic import first (works in both browser and Node.js)
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    rtf2htmlModule = await import("rtf2html" as any)
+    
+    // rtf2html can export in different ways:
+    // 1. As default export (ES module)
+    // 2. As named export (CommonJS)
+    // 3. As object with convert/parse methods
+    let rtf2html = rtf2htmlModule.default || rtf2htmlModule
+    
+    // If it's an object, try to find the actual function
+    if (typeof rtf2html === 'object' && rtf2html !== null) {
+      // Try common property names
+      if (typeof rtf2html.convert === 'function') {
+        rtf2html = rtf2html.convert
+      } else if (typeof rtf2html.parse === 'function') {
+        rtf2html = rtf2html.parse
+      } else if (typeof rtf2html.rtf2html === 'function') {
+        rtf2html = rtf2html.rtf2html
+      }
+    }
+    
+    return rtf2html
+  } catch (importError) {
+    // Fallback to require for Node.js environments
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      rtf2htmlModule = require("rtf2html")
+      let rtf2html = rtf2htmlModule.default || rtf2htmlModule
+      
+      // If it's an object, try to find the actual function
+      if (typeof rtf2html === 'object' && rtf2html !== null) {
+        if (typeof rtf2html.convert === 'function') {
+          rtf2html = rtf2html.convert
+        } else if (typeof rtf2html.parse === 'function') {
+          rtf2html = rtf2html.parse
+        } else if (typeof rtf2html.rtf2html === 'function') {
+          rtf2html = rtf2html.rtf2html
+        }
+      }
+      
+      return rtf2html
+    } catch (requireError) {
+      console.error("[RTF-HTML] Failed to load rtf2html library:", {
+        importError: importError instanceof Error ? importError.message : String(importError),
+        requireError: requireError instanceof Error ? requireError.message : String(requireError)
+      })
+      throw new Error("rtf2html library could not be loaded. It may not be compatible with this environment.")
+    }
+  }
+}
 
 /**
  * Parse RTF content to HTML, then extract load plan data
@@ -17,24 +95,98 @@ const rtf2html = require("rtf2html")
 export async function parseRTFWithHtml(file: File): Promise<{ header: LoadPlanHeader; shipments: Shipment[] }> {
   console.log("[RTF-HTML] Starting RTF to HTML conversion for:", file.name)
   
+  // Detect actual file format from magic bytes
+  const actualFormat = await detectFileFormat(file)
+  console.log("[RTF-HTML] Detected file format:", actualFormat)
+  
+  // If file is actually DOCX, throw error to trigger fallback to DOCX parser
+  if (actualFormat === 'docx') {
+    throw new Error("File is actually a DOCX file (detected by magic bytes), not RTF. Please use DOCX parser instead.")
+  }
+  
+  // If format is unknown or not RTF, warn but continue
+  if (actualFormat !== 'rtf') {
+    console.warn("[RTF-HTML] File format detection returned:", actualFormat, "- proceeding with RTF parsing anyway")
+  }
+  
   // Read file as text
   const rtfContent = await file.text()
-  console.log("[RTF-HTML] RTF content length:", rtfContent.length)
+  console.log("[RTF-HTML] RTF content length:", rtfContent?.length || 0)
+  
+  // Validate RTF content
+  if (!rtfContent || typeof rtfContent !== 'string') {
+    throw new Error("RTF content is empty or invalid")
+  }
+  
+  if (rtfContent.length === 0) {
+    throw new Error("RTF file is empty")
+  }
+  
+  // Basic RTF format validation - should start with RTF control sequence
+  if (!rtfContent.trim().startsWith('{\\rtf')) {
+    console.warn("[RTF-HTML] File may not be a valid RTF file (doesn't start with {\\rtf)")
+    // If magic bytes also don't match, this is definitely not RTF
+    if (actualFormat !== 'rtf') {
+      throw new Error("File does not appear to be a valid RTF file. Detected format: " + actualFormat)
+    }
+  }
   
   // Convert RTF to HTML
   let html: string
   try {
-    html = rtf2html(rtfContent, "", null, 2)
+    // Load rtf2html library dynamically
+    const rtf2html = await getRtf2Html()
+    
+    // Validate that rtf2html is available and is a function
+    if (!rtf2html) {
+      throw new Error("rtf2html library is not available")
+    }
+    
+    if (typeof rtf2html !== 'function') {
+      throw new Error(`rtf2html is not a function (type: ${typeof rtf2html}) - library may not be loaded correctly`)
+    }
+    
+    // Ensure rtfContent is a valid string before calling
+    if (!rtfContent || typeof rtfContent !== 'string') {
+      throw new Error("Invalid RTF content: must be a non-empty string")
+    }
+    
+    // Call rtf2html with proper error handling
+    // Parameters: (rtfContent, encoding, options, indent)
+    // Wrap in try-catch to handle internal library errors
+    let result: any
+    try {
+      result = rtf2html(rtfContent, "", null, 2)
+    } catch (libError) {
+      // Library threw an error internally - this is the actual error we're seeing
+      console.error("[RTF-HTML] rtf2html library internal error:", libError)
+      console.error("[RTF-HTML] RTF content preview (first 500 chars):", rtfContent.substring(0, 500))
+      throw new Error(`rtf2html library error: ${libError instanceof Error ? libError.message : String(libError)}`)
+    }
+    
+    // Validate result
+    if (result === undefined || result === null) {
+      throw new Error("rtf2html returned undefined or null - the RTF file may be corrupted or in an unsupported format")
+    }
+    
+    html = typeof result === 'string' ? result : String(result)
     console.log("[RTF-HTML] HTML output length:", html?.length || 0)
     
     if (!html || html.length === 0) {
-      throw new Error("rtf2html returned empty HTML")
+      throw new Error("rtf2html returned empty HTML - the RTF file may be empty or corrupted")
     }
     
     // Log sample of HTML for debugging
     console.log("[RTF-HTML] First 2000 chars of HTML:", html.substring(0, 2000))
   } catch (error) {
     console.error("[RTF-HTML] Error converting RTF to HTML:", error)
+    console.error("[RTF-HTML] Error details:", {
+      message: error instanceof Error ? error.message : "Unknown error",
+      stack: error instanceof Error ? error.stack : undefined,
+      rtfContentLength: rtfContent?.length || 0,
+      rtfContentPreview: rtfContent?.substring(0, 200) || "N/A",
+      fileName: file.name
+    })
     throw new Error(`Failed to convert RTF to HTML: ${error instanceof Error ? error.message : "Unknown error"}`)
   }
   
