@@ -2,7 +2,8 @@
 
 import { createContext, useContext, useState, ReactNode } from "react"
 import { useNotifications } from "./notification-context"
-import { getSupervisors, findStaffByName } from "./buildup-staff"
+import { getSupervisors, findStaffByName, generateMobileNumber } from "./buildup-staff"
+import { createClient } from "./supabase/client"
 
 export type LoadPlan = {
   flight: string
@@ -129,6 +130,82 @@ function parseOriginDestination(pax: string | undefined): string {
   return destination ? `${origin}-${destination}` : `${origin}-???`
 }
 
+/**
+ * Sync flight assignment to Supabase bup_allocations table
+ * This allows mobile apps to see assignments made on desktop
+ */
+async function syncAssignmentToSupabase(flight: string, staffName: string): Promise<void> {
+  try {
+    // Check if Supabase is configured
+    if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+      console.log("[LoadPlan] Supabase not configured, skipping sync")
+      return
+    }
+
+    const supabase = createClient()
+    
+    // Extract flight number without EK prefix
+    const flightNo = flight.replace(/^EK/, "")
+    
+    // Get staff details to find staff_no for mobile number generation
+    const staff = await findStaffByName(staffName)
+    const mobile = staff ? generateMobileNumber(staff.staff_no) : ""
+    
+    // Format staff name for consistency - capitalize first letter
+    const formattedStaffName = staffName.charAt(0).toUpperCase() + staffName.slice(1).toLowerCase()
+    
+    // Check if assignment already exists
+    const { data: existing, error: checkError } = await supabase
+      .from("bup_allocations")
+      .select("id")
+      .eq("flight_no", flightNo)
+      .limit(1)
+    
+    if (checkError && checkError.code !== 'PGRST116') {
+      console.error("[LoadPlan] Error checking existing assignment:", checkError)
+      return
+    }
+    
+    const assignmentData = {
+      flight_no: flightNo,
+      staff: formattedStaffName,
+      mobile: mobile,
+      carrier: "EK",
+      updated_at: new Date().toISOString()
+    }
+    
+    if (existing && existing.length > 0) {
+      // Update existing assignment
+      const { error: updateError } = await supabase
+        .from("bup_allocations")
+        .update(assignmentData)
+        .eq("flight_no", flightNo)
+      
+      if (updateError) {
+        console.error("[LoadPlan] Error updating assignment in Supabase:", updateError)
+      } else {
+        console.log(`[LoadPlan] Updated assignment for ${flight} to ${formattedStaffName} in Supabase`)
+      }
+    } else {
+      // Insert new assignment
+      const { error: insertError } = await supabase
+        .from("bup_allocations")
+        .insert([{
+          ...assignmentData,
+          created_at: new Date().toISOString()
+        }])
+      
+      if (insertError) {
+        console.error("[LoadPlan] Error inserting assignment in Supabase:", insertError)
+      } else {
+        console.log(`[LoadPlan] Created assignment for ${flight} to ${formattedStaffName} in Supabase`)
+      }
+    }
+  } catch (error) {
+    console.error("[LoadPlan] Error syncing assignment to Supabase:", error)
+  }
+}
+
 export function LoadPlanProvider({ children }: { children: ReactNode }) {
   const [loadPlans, setLoadPlans] = useState<LoadPlan[]>(defaultLoadPlans)
   const [flightAssignments, setFlightAssignments] = useState<FlightAssignment[]>([])
@@ -223,6 +300,15 @@ export function LoadPlanProvider({ children }: { children: ReactNode }) {
         },
       ]
     })
+
+    // Sync assignment to Supabase for mobile app
+    if (name) {
+      try {
+        await syncAssignmentToSupabase(flight, name)
+      } catch (error) {
+        console.error("[LoadPlan] Error syncing assignment to Supabase:", error)
+      }
+    }
 
     // Notify staff member when load plan is assigned to them
     if (isNewAssignment && name) {
@@ -367,16 +453,56 @@ export function LoadPlanProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  const updateBupAllocationStaff = (flightNo: string, staff: string, mobile: string) => {
+  const updateBupAllocationStaff = async (flightNo: string, staff: string, mobile: string) => {
     setBupAllocations((prev) =>
       prev.map((a) =>
         a.flightNo === flightNo ? { ...a, staff, mobile } : a
       )
     )
     
+    // Sync to Supabase
+    try {
+      await syncBupAllocationStaffToSupabase(flightNo, staff, mobile)
+    } catch (error) {
+      console.error("[LoadPlan] Error syncing BUP allocation staff to Supabase:", error)
+    }
+    
     // Also update flight assignment
     const flightNumber = `EK${flightNo}`
     updateFlightAssignment(flightNumber, staff.toLowerCase())
+  }
+  
+  /**
+   * Sync BUP allocation staff update to Supabase
+   */
+  async function syncBupAllocationStaffToSupabase(flightNo: string, staff: string, mobile: string): Promise<void> {
+    try {
+      // Check if Supabase is configured
+      if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+        console.log("[LoadPlan] Supabase not configured, skipping sync")
+        return
+      }
+
+      const supabase = createClient()
+      
+      // Update the staff and mobile fields
+      const { error } = await supabase
+        .from("bup_allocations")
+        .update({
+          staff,
+          mobile,
+          updated_at: new Date().toISOString()
+        })
+        .eq("flight_no", flightNo)
+      
+      if (error) {
+        console.error("[LoadPlan] Error updating BUP allocation staff in Supabase:", error)
+      } else {
+        console.log(`[LoadPlan] Updated BUP allocation staff for flight ${flightNo} to ${staff} in Supabase`)
+      }
+    } catch (error) {
+      console.error("[LoadPlan] Error syncing BUP allocation staff to Supabase:", error)
+    }
   }
 
   return (
