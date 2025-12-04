@@ -22,6 +22,35 @@ import { uldSectionHasPilPerShc, uldSectionHasPilShc, uldSectionHasPerShc, type 
 // Re-export types for backward compatibility
 export type { AWBRow, ULDSection, LoadPlanItem, LoadPlanDetail } from "./load-plan-types"
 
+// Bay info types for QRT List
+type BayInfoData = {
+  sta?: string
+  flightNo?: string
+  orig?: string
+  via?: string
+  eta?: string
+  ata?: string
+  acType?: string
+  regn?: string
+  pos?: string
+  term?: string
+  belt?: string
+} | null
+
+type DepartureBayInfoData = {
+  std?: string
+  flightNo?: string
+  dest?: string
+  via?: string
+  etd?: string
+  atd?: string
+  acType?: string
+  regn?: string
+  pos?: string
+  term?: string
+  gate?: string
+} | null
+
 interface LoadPlanDetailScreenProps {
   loadPlan: LoadPlanDetail
   onBack: () => void
@@ -32,9 +61,11 @@ interface LoadPlanDetailScreenProps {
   pilPerSubFilter?: PilPerSubFilter // Sub-filter for PIL/PER work area (PIL only, PER only, or Both)
   isQRTList?: boolean // Show Bay Number and Connection Time columns for QRT List
   onULDUpdate?: () => void // Callback when ULD entries are updated (for progress bar recalculation)
+  arrivalBayInfo?: BayInfoData // Bay info for QRT List arrival
+  departureBayInfo?: DepartureBayInfoData // Bay info for QRT List departure
 }
 
-export default function LoadPlanDetailScreen({ loadPlan, onBack, onSave, onNavigateToBuildupStaff, enableBulkCheckboxes = false, workAreaFilter, pilPerSubFilter, isQRTList = false, onULDUpdate }: LoadPlanDetailScreenProps) {
+export default function LoadPlanDetailScreen({ loadPlan, onBack, onSave, onNavigateToBuildupStaff, enableBulkCheckboxes = false, workAreaFilter, pilPerSubFilter, isQRTList = false, onULDUpdate, arrivalBayInfo, departureBayInfo }: LoadPlanDetailScreenProps) {
   const [showBCRModal, setShowBCRModal] = useState(false)
   const [showHandoverModal, setShowHandoverModal] = useState(false)
   const [awbComments, setAwbComments] = useState<AWBComment[]>([])
@@ -427,8 +458,64 @@ export default function LoadPlanDetailScreen({ loadPlan, onBack, onSave, onNavig
           isReadOnly={isReadOnly}
         />
 
-        {/* Header Warning Display - Same format as original document */}
-        {editedPlan.headerWarning && (
+        {/* Bay Numbers Table - Only for QRT List, shown after flight header */}
+        {isQRTList && (arrivalBayInfo || departureBayInfo) && (
+          <div className="bg-white border-b border-gray-200">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-gray-100 border-b border-gray-200">
+                  <th className="px-3 py-2 text-left font-semibold text-gray-600 w-16"></th>
+                  <th className="px-3 py-2 text-left font-semibold text-gray-600">STA/STD</th>
+                  <th className="px-3 py-2 text-left font-semibold text-gray-600">FLIGHTNO</th>
+                  <th className="px-3 py-2 text-left font-semibold text-gray-600">ORIG/DEST</th>
+                  <th className="px-3 py-2 text-left font-semibold text-gray-600">VIA</th>
+                  <th className="px-3 py-2 text-left font-semibold text-gray-600">ETA/ETD</th>
+                  <th className="px-3 py-2 text-left font-semibold text-gray-600">ATA/ATD</th>
+                  <th className="px-3 py-2 text-left font-semibold text-gray-600">A/T</th>
+                  <th className="px-3 py-2 text-left font-semibold text-gray-600">REGN</th>
+                  <th className="px-3 py-2 text-left font-semibold text-gray-600">POS</th>
+                  <th className="px-3 py-2 text-left font-semibold text-gray-600">TERM</th>
+                  <th className="px-3 py-2 text-left font-semibold text-gray-600">BELT/GATE</th>
+                </tr>
+              </thead>
+              <tbody>
+                {/* ARRIVAL Row */}
+                <tr className="border-b border-gray-100">
+                  <td className="px-3 py-2 text-xs font-semibold text-[#D71A21]">ARR</td>
+                  <td className="px-3 py-2 text-gray-900">{arrivalBayInfo?.sta || '-'}</td>
+                  <td className="px-3 py-2 text-gray-900">{arrivalBayInfo?.flightNo || '-'}</td>
+                  <td className="px-3 py-2 text-gray-900">{arrivalBayInfo?.orig || '-'}</td>
+                  <td className="px-3 py-2 text-gray-900">{arrivalBayInfo?.via || '-'}</td>
+                  <td className="px-3 py-2 text-gray-900">{arrivalBayInfo?.eta || '-'}</td>
+                  <td className="px-3 py-2 text-gray-900">{arrivalBayInfo?.ata || '-'}</td>
+                  <td className="px-3 py-2 text-gray-900">{arrivalBayInfo?.acType || '-'}</td>
+                  <td className="px-3 py-2 text-gray-900">{arrivalBayInfo?.regn || '-'}</td>
+                  <td className="px-3 py-2 text-gray-900">{arrivalBayInfo?.pos || '-'}</td>
+                  <td className="px-3 py-2 text-gray-900">{arrivalBayInfo?.term || '-'}</td>
+                  <td className="px-3 py-2 text-gray-900">{arrivalBayInfo?.belt || '-'}</td>
+                </tr>
+                {/* DEPARTURE Row */}
+                <tr>
+                  <td className="px-3 py-2 text-xs font-semibold text-[#D71A21]">DEP</td>
+                  <td className="px-3 py-2 text-gray-900">{departureBayInfo?.std || '-'}</td>
+                  <td className="px-3 py-2 text-gray-900">{departureBayInfo?.flightNo || '-'}</td>
+                  <td className="px-3 py-2 text-gray-900">{departureBayInfo?.dest || '-'}</td>
+                  <td className="px-3 py-2 text-gray-900">{departureBayInfo?.via || '-'}</td>
+                  <td className="px-3 py-2 text-gray-900">{departureBayInfo?.etd || '-'}</td>
+                  <td className="px-3 py-2 text-gray-900">{departureBayInfo?.atd || '-'}</td>
+                  <td className="px-3 py-2 text-gray-900">{departureBayInfo?.acType || '-'}</td>
+                  <td className="px-3 py-2 text-gray-900">{departureBayInfo?.regn || '-'}</td>
+                  <td className="px-3 py-2 text-gray-900">{departureBayInfo?.pos || '-'}</td>
+                  <td className="px-3 py-2 text-gray-900">{departureBayInfo?.term || '-'}</td>
+                  <td className="px-3 py-2 text-gray-900">{departureBayInfo?.gate || '-'}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {/* Header Warning Display - Same format as original document (NOT shown inline for QRT List - moved to bottom) */}
+        {!isQRTList && editedPlan.headerWarning && (
           <div className="mx-4 mt-4 mb-2 relative">
             {/* CRITICAL Stamp Indicator - Top Right of Header Warning */}
             {editedPlan.isCritical && (
@@ -655,6 +742,60 @@ export default function LoadPlanDetailScreen({ loadPlan, onBack, onSave, onNavig
             <CheckCircle className="w-5 h-5" />
             <span>Mark {selectedAWBKeys.size} Selected as Fully Loaded</span>
           </button>
+        </div>
+      )}
+
+      {/* Header Warning (SI:) - At bottom for QRT List */}
+      {isQRTList && editedPlan.headerWarning && (
+        <div className="bg-white border-t border-gray-200 p-4 mt-4">
+          <div className="bg-white border border-gray-200 rounded-lg p-4">
+            <div className="text-center space-y-2">
+              {editedPlan.headerWarning.split("\n").map((warningLine, index) => {
+                const isNoPartShipment = /xx\s+no\s+part\s+shipment\s+xx/i.test(warningLine)
+                const isStationRequirement = warningLine.toLowerCase().includes("station requirement") || 
+                                             warningLine.toLowerCase().includes("do not use")
+                
+                return (
+                  <p
+                    key={index}
+                    className={`text-sm font-mono ${
+                      isNoPartShipment 
+                        ? "font-bold text-gray-900" 
+                        : isStationRequirement
+                        ? "text-gray-700 underline"
+                        : "text-gray-700"
+                    }`}
+                  >
+                    {warningLine}
+                  </p>
+                )
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Special Instructions (remarks) - At bottom for QRT List */}
+      {isQRTList && editedPlan.remarks && editedPlan.remarks.length > 0 && (
+        <div className="bg-white border-t border-gray-200 p-4">
+          <h4 className="text-sm font-semibold text-gray-700 mb-2">SPECIAL INSTRUCTIONS</h4>
+          <div className="space-y-1">
+            {editedPlan.remarks.map((remark, index) => (
+              <EditableField
+                key={index}
+                value={remark}
+                onChange={(value) => {
+                  setEditedPlan((prev) => {
+                    const updatedRemarks = [...(prev.remarks || [])]
+                    updatedRemarks[index] = value
+                    return { ...prev, remarks: updatedRemarks }
+                  })
+                }}
+                className="text-xs text-gray-900 block w-full"
+                multiline
+              />
+            ))}
+          </div>
         </div>
       )}
     </div>
@@ -884,8 +1025,8 @@ function CombinedTable({
               </tr>
             </thead>
             <tbody>
-              {/* Special Instructions - Note: Remarks update needs setEditedPlan, keeping simple for now */}
-              {editedPlan.remarks && editedPlan.remarks.length > 0 && (
+              {/* Special Instructions - Show inline only when NOT QRT List (for QRT List, show at bottom) */}
+              {!isQRTList && editedPlan.remarks && editedPlan.remarks.length > 0 && (
                 <tr>
                   <td colSpan={enableBulkCheckboxes ? (isQRTList ? 22 : 21) : (isQRTList ? 21 : 20)} className="px-2 py-2 bg-gray-100 border-b border-gray-200">
                     <div className="space-y-1">

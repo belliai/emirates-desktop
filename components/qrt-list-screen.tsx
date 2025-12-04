@@ -11,7 +11,7 @@ import { UploadModal } from './lists/upload-modal'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { ClipboardPasteModal } from './clipboard-paste-modal'
 
-// Type for bay info data from pasted CSV
+// Type for bay info data from pasted CSV (Arrival)
 export type BayInfo = {
   sta: string        // STA - Scheduled Time of Arrival
   flightNo: string   // FLIGHTNO - e.g., "EK 0206"
@@ -24,6 +24,22 @@ export type BayInfo = {
   pos: string        // POS - Position/Bay Number
   term: string       // TERM - Terminal
   belt: string       // BELT
+  remarks: string    // REMARKS
+}
+
+// Type for departure bay info data from pasted CSV
+export type DepartureBayInfo = {
+  std: string        // STD - Scheduled Time of Departure
+  flightNo: string   // FLIGHTNO - e.g., "EK 0206"
+  dest: string       // DEST - Destination
+  via: string        // VIA
+  etd: string        // ETD - Estimated Time of Departure
+  atd: string        // ATD - Actual Time of Departure
+  acType: string     // A/T - Aircraft Type
+  regn: string       // REGN - Registration
+  pos: string        // POS - Position/Bay Number
+  term: string       // TERM - Terminal
+  gate: string       // GATE
   remarks: string    // REMARKS
 }
 
@@ -67,7 +83,7 @@ function normalizeFlightNo(flightNo: string): string {
   return flightNo.replace(/\s+/g, '').toUpperCase()
 }
 
-// Parse bay data row into BayInfo object
+// Parse bay data row into BayInfo object (Arrival)
 function parseBayInfoRow(headers: string[], row: string[]): BayInfo {
   const getCol = (name: string) => {
     const idx = headers.findIndex(h => h.toUpperCase() === name.toUpperCase())
@@ -90,6 +106,29 @@ function parseBayInfoRow(headers: string[], row: string[]): BayInfo {
   }
 }
 
+// Parse departure bay data row into DepartureBayInfo object
+function parseDepartureBayInfoRow(headers: string[], row: string[]): DepartureBayInfo {
+  const getCol = (name: string) => {
+    const idx = headers.findIndex(h => h.toUpperCase() === name.toUpperCase())
+    return idx >= 0 ? row[idx] || '' : ''
+  }
+  
+  return {
+    std: getCol('STD'),
+    flightNo: getCol('FLIGHTNO'),
+    dest: getCol('DEST'),
+    via: getCol('VIA'),
+    etd: getCol('ETD'),
+    atd: getCol('ATD'),
+    acType: getCol('A/T'),
+    regn: getCol('REGN'),
+    pos: getCol('POS'),
+    term: getCol('TERM'),
+    gate: getCol('GATE'),
+    remarks: getCol('REMARKS'),
+  }
+}
+
 interface QRTListScreenProps {
   onBack?: () => void
 }
@@ -98,12 +137,16 @@ export default function QRTListScreen({ onBack }: QRTListScreenProps) {
   const { loadPlans, setLoadPlans } = useLoadPlans()
   const [selectedLoadPlan, setSelectedLoadPlan] = useState<LoadPlanDetail | null>(null)
   const [selectedBayInfo, setSelectedBayInfo] = useState<BayInfo | null>(null)
+  const [selectedDepartureBayInfo, setSelectedDepartureBayInfo] = useState<DepartureBayInfo | null>(null)
   const [savedDetails, setSavedDetails] = useState<Map<string, LoadPlanDetail>>(new Map())
   const [isLoading, setIsLoading] = useState(true)
   const [showUploadModal, setShowUploadModal] = useState(false)
-  const [showPasteModal, setShowPasteModal] = useState(false)
-  const [isBayNumbersOpen, setIsBayNumbersOpen] = useState(false)
-  const [bayNumberData, setBayNumberData] = useState<{ headers: string[]; rows: string[][] } | null>(null)
+  const [showPasteArrivalModal, setShowPasteModal] = useState(false)
+  const [showPasteDepartureModal, setShowPasteDepartureModal] = useState(false)
+  const [isArrivalBayNumbersOpen, setIsBayNumbersOpen] = useState(false)
+  const [isDepartureBayNumbersOpen, setIsDepartureNumbersOpen] = useState(false)
+  const [bayArrivalData, setBayNumberData] = useState<{ headers: string[]; rows: string[][] } | null>(null)
+  const [bayDepartureData, setBayDepartureData] = useState<{ headers: string[]; rows: string[][] } | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const [showAddFilterDropdown, setShowAddFilterDropdown] = useState(false)
   const [showViewOptions, setShowViewOptions] = useState(false)
@@ -114,12 +157,12 @@ export default function QRTListScreen({ onBack }: QRTListScreenProps) {
   const addFilterRef = useRef<HTMLDivElement>(null)
   const viewOptionsRef = useRef<HTMLDivElement>(null)
 
-  // Create a lookup map from bay data by normalized flight number
-  const bayInfoLookup = useMemo(() => {
+  // Create a lookup map from arrival bay data by normalized flight number
+  const bayArrivalLookup = useMemo(() => {
     const lookup = new Map<string, BayInfo>()
-    if (bayNumberData) {
-      bayNumberData.rows.forEach(row => {
-        const bayInfo = parseBayInfoRow(bayNumberData.headers, row)
+    if (bayArrivalData) {
+      bayArrivalData.rows.forEach(row => {
+        const bayInfo = parseBayInfoRow(bayArrivalData.headers, row)
         const normalizedFlightNo = normalizeFlightNo(bayInfo.flightNo)
         if (normalizedFlightNo) {
           lookup.set(normalizedFlightNo, bayInfo)
@@ -127,7 +170,22 @@ export default function QRTListScreen({ onBack }: QRTListScreenProps) {
       })
     }
     return lookup
-  }, [bayNumberData])
+  }, [bayArrivalData])
+
+  // Create a lookup map from departure bay data by normalized flight number
+  const bayDepartureLookup = useMemo(() => {
+    const lookup = new Map<string, DepartureBayInfo>()
+    if (bayDepartureData) {
+      bayDepartureData.rows.forEach(row => {
+        const bayInfo = parseDepartureBayInfoRow(bayDepartureData.headers, row)
+        const normalizedFlightNo = normalizeFlightNo(bayInfo.flightNo)
+        if (normalizedFlightNo) {
+          lookup.set(normalizedFlightNo, bayInfo)
+        }
+      })
+    }
+    return lookup
+  }, [bayDepartureData])
 
   // Fetch load plans from Supabase on mount
   useEffect(() => {
@@ -249,30 +307,20 @@ export default function QRTListScreen({ onBack }: QRTListScreenProps) {
   // Determine if wave filter should be shown
   const showWaveFilter = periodFilter === "late-morning" || periodFilter === "afternoon"
 
-  // Sample bay info for demo when no data is pasted
-  const sampleBayInfo: BayInfo = {
-    sta: '11/27/25 23:00',
-    flightNo: 'EK 0206',
-    orig: 'JFK/MXP',
-    via: 'MXP',
-    eta: '2:12',
-    ata: '',
-    acType: 'A380',
-    regn: 'A6EEX',
-    pos: 'D08/A15',
-    term: 'T3',
-    belt: '',
-    remarks: '',
-  }
-
-  const handleRowClick = async (loadPlan: LoadPlan) => {
-    // Pick a random bay info row to display, or use sample if no data pasted
-    let bayInfo: BayInfo = sampleBayInfo
-    if (bayNumberData && bayNumberData.rows.length > 0) {
-      const randomIndex = Math.floor(Math.random() * bayNumberData.rows.length)
-      bayInfo = parseBayInfoRow(bayNumberData.headers, bayNumberData.rows[randomIndex])
+  const handleRowClick = async (loadPlan: LoadPlan, flightIndex: number) => {
+    // DEPARTURE: Lazy flight matching by normalized flight number
+    const normalizedFlight = normalizeFlightNo(loadPlan.flight)
+    const departureInfo = bayDepartureLookup.get(normalizedFlight) || null
+    setSelectedDepartureBayInfo(departureInfo)
+    
+    // ARRIVAL: Index-based matching - row N from arrival data for Nth flight in list
+    let arrivalInfo: BayInfo | null = null
+    if (bayArrivalData && bayArrivalData.rows.length > 0) {
+      // Use modulo to wrap around if we have more flights than arrival rows
+      const arrivalIndex = flightIndex % bayArrivalData.rows.length
+      arrivalInfo = parseBayInfoRow(bayArrivalData.headers, bayArrivalData.rows[arrivalIndex])
     }
-    setSelectedBayInfo(bayInfo)
+    setSelectedBayInfo(arrivalInfo)
     
     // Check if we have a saved version first
     const savedDetail = savedDetails.get(loadPlan.flight)
@@ -339,58 +387,20 @@ export default function QRTListScreen({ onBack }: QRTListScreenProps) {
 
   if (selectedLoadPlan) {
     const filteredPlan = filterToRampTransferOnly(selectedLoadPlan)
+    
     return (
-      <div className="min-h-screen bg-gray-50">
-        {/* Bay Info Table */}
-        {selectedBayInfo && (
-          <div className="bg-white border-b border-gray-200">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="bg-gray-100 border-b border-gray-200">
-                  <th className="px-4 py-2 text-left font-semibold text-gray-600">STA</th>
-                  <th className="px-4 py-2 text-left font-semibold text-gray-600">FLIGHTNO</th>
-                  <th className="px-4 py-2 text-left font-semibold text-gray-600">ORIG</th>
-                  <th className="px-4 py-2 text-left font-semibold text-gray-600">VIA</th>
-                  <th className="px-4 py-2 text-left font-semibold text-gray-600">ETA</th>
-                  <th className="px-4 py-2 text-left font-semibold text-gray-600">ATA</th>
-                  <th className="px-4 py-2 text-left font-semibold text-gray-600">A/T</th>
-                  <th className="px-4 py-2 text-left font-semibold text-gray-600">REGN</th>
-                  <th className="px-4 py-2 text-left font-semibold text-gray-600">POS</th>
-                  <th className="px-4 py-2 text-left font-semibold text-gray-600">TERM</th>
-                  <th className="px-4 py-2 text-left font-semibold text-gray-600">BELT</th>
-                  <th className="px-4 py-2 text-left font-semibold text-gray-600">REMARKS</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td className="px-4 py-2 text-gray-900">{selectedBayInfo.sta}</td>
-                  <td className="px-4 py-2 text-gray-900">{selectedBayInfo.flightNo}</td>
-                  <td className="px-4 py-2 text-gray-900">{selectedBayInfo.orig}</td>
-                  <td className="px-4 py-2 text-gray-900">{selectedBayInfo.via}</td>
-                  <td className="px-4 py-2 text-gray-900">{selectedBayInfo.eta}</td>
-                  <td className="px-4 py-2 text-gray-900">{selectedBayInfo.ata}</td>
-                  <td className="px-4 py-2 text-gray-900">{selectedBayInfo.acType}</td>
-                  <td className="px-4 py-2 text-gray-900">{selectedBayInfo.regn}</td>
-                  <td className="px-4 py-2 text-gray-900">{selectedBayInfo.pos}</td>
-                  <td className="px-4 py-2 text-gray-900">{selectedBayInfo.term}</td>
-                  <td className="px-4 py-2 text-gray-900">{selectedBayInfo.belt}</td>
-                  <td className="px-4 py-2 text-gray-900">{selectedBayInfo.remarks}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        )}
-        
-        <LoadPlanDetailScreen
-          loadPlan={filteredPlan}
-          onBack={() => {
-            setSelectedLoadPlan(null)
-            setSelectedBayInfo(null)
-          }}
-          onSave={handleSave}
-          isQRTList={true}
-        />
-      </div>
+      <LoadPlanDetailScreen
+        loadPlan={filteredPlan}
+        onBack={() => {
+          setSelectedLoadPlan(null)
+          setSelectedBayInfo(null)
+          setSelectedDepartureBayInfo(null)
+        }}
+        onSave={handleSave}
+        isQRTList={true}
+        arrivalBayInfo={selectedBayInfo}
+        departureBayInfo={selectedDepartureBayInfo}
+      />
     )
   }
 
@@ -403,7 +413,11 @@ export default function QRTListScreen({ onBack }: QRTListScreenProps) {
           <div className="flex gap-2">
             <Button onClick={() => setShowPasteModal(true)} variant="outline" className="border-[#D71A21] text-[#D71A21] hover:bg-[#D71A21] hover:text-white">
               <ClipboardPaste className="w-4 h-4 mr-2" />
-              Paste Bay Data
+              Paste Arrival
+            </Button>
+            <Button onClick={() => setShowPasteDepartureModal(true)} variant="outline" className="border-[#D71A21] text-[#D71A21] hover:bg-[#D71A21] hover:text-white">
+              <ClipboardPaste className="w-4 h-4 mr-2" />
+              Paste Departure
             </Button>
             <Button onClick={() => setShowUploadModal(true)} className="bg-[#D71A21] hover:bg-[#B01419] text-white">
               <Upload className="w-4 h-4 mr-2" />
@@ -414,18 +428,18 @@ export default function QRTListScreen({ onBack }: QRTListScreenProps) {
 
         {/* Bay Numbers Section Toggle */}
         <div className="mx-2 mb-4">
-          <Collapsible open={isBayNumbersOpen} onOpenChange={setIsBayNumbersOpen}>
+          <Collapsible open={isArrivalBayNumbersOpen} onOpenChange={setIsBayNumbersOpen}>
             <CollapsibleTrigger className="w-full">
               <div className="bg-white rounded-lg border border-gray-200 p-4 flex items-center justify-between hover:bg-gray-50 transition-colors">
                 <div className="flex items-center gap-3">
-                  <h3 className="text-lg font-semibold text-gray-900">Bay Numbers</h3>
-                  {bayNumberData && (
+                  <h3 className="text-lg font-semibold text-gray-900">Bay Numbers (Arrival)</h3>
+                  {bayArrivalData && (
                     <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">
-                      {bayNumberData.rows.length} flights loaded
+                      {bayArrivalData.rows.length} flights loaded
                     </span>
                   )}
                 </div>
-                {isBayNumbersOpen ? (
+                {isArrivalBayNumbersOpen ? (
                   <ChevronDown className="w-5 h-5 text-gray-600" />
                 ) : (
                   <ChevronRight className="w-5 h-5 text-gray-600" />
@@ -434,12 +448,12 @@ export default function QRTListScreen({ onBack }: QRTListScreenProps) {
             </CollapsibleTrigger>
             <CollapsibleContent>
               <div className="bg-white rounded-lg border border-gray-200 border-t-0 overflow-hidden">
-                {bayNumberData ? (
+                {bayArrivalData ? (
                   <div className="max-h-[400px] overflow-auto">
                     <table className="w-full text-sm">
                       <thead className="bg-gray-100 sticky top-0">
                         <tr>
-                          {bayNumberData.headers.map((header, i) => (
+                          {bayArrivalData.headers.map((header, i) => (
                             <th
                               key={i}
                               className="px-3 py-2 text-left font-semibold text-gray-700 border-b whitespace-nowrap text-xs"
@@ -450,12 +464,12 @@ export default function QRTListScreen({ onBack }: QRTListScreenProps) {
                         </tr>
                       </thead>
                       <tbody>
-                        {bayNumberData.rows.map((row, rowIndex) => (
+                        {bayArrivalData.rows.map((row, rowIndex) => (
                           <tr
                             key={rowIndex}
                             className={rowIndex % 2 === 0 ? "bg-white" : "bg-gray-50"}
                           >
-                            {bayNumberData.headers.map((_, colIndex) => (
+                            {bayArrivalData.headers.map((_, colIndex) => (
                               <td
                                 key={colIndex}
                                 className="px-3 py-1.5 border-b border-gray-100 whitespace-nowrap text-xs"
@@ -471,7 +485,75 @@ export default function QRTListScreen({ onBack }: QRTListScreenProps) {
                 ) : (
                   <div className="p-4">
                     <p className="text-sm text-gray-500">
-                      No bay data loaded. Click "Paste Bay Data" to import from the legacy system.
+                      No arrival bay data loaded. Click "Paste Arrival" to import from the legacy system.
+                    </p>
+                  </div>
+                )}
+              </div>
+            </CollapsibleContent>
+          </Collapsible>
+        </div>
+
+        {/* Departure Numbers Section Toggle */}
+        <div className="mx-2 mb-4">
+          <Collapsible open={isDepartureBayNumbersOpen} onOpenChange={setIsDepartureNumbersOpen}>
+            <CollapsibleTrigger className="w-full">
+              <div className="bg-white rounded-lg border border-gray-200 p-4 flex items-center justify-between hover:bg-gray-50 transition-colors">
+                <div className="flex items-center gap-3">
+                  <h3 className="text-lg font-semibold text-gray-900">Bay Numbers (Departure)</h3>
+                  {bayDepartureData && (
+                    <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">
+                      {bayDepartureData.rows.length} flights loaded
+                    </span>
+                  )}
+                </div>
+                {isDepartureBayNumbersOpen ? (
+                  <ChevronDown className="w-5 h-5 text-gray-600" />
+                ) : (
+                  <ChevronRight className="w-5 h-5 text-gray-600" />
+                )}
+              </div>
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <div className="bg-white rounded-lg border border-gray-200 border-t-0 overflow-hidden">
+                {bayDepartureData ? (
+                  <div className="max-h-[400px] overflow-auto">
+                    <table className="w-full text-sm">
+                      <thead className="bg-gray-100 sticky top-0">
+                        <tr>
+                          {bayDepartureData.headers.map((header, i) => (
+                            <th
+                              key={i}
+                              className="px-3 py-2 text-left font-semibold text-gray-700 border-b whitespace-nowrap text-xs"
+                            >
+                              {header}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {bayDepartureData.rows.map((row, rowIndex) => (
+                          <tr
+                            key={rowIndex}
+                            className={rowIndex % 2 === 0 ? "bg-white" : "bg-gray-50"}
+                          >
+                            {bayDepartureData.headers.map((_, colIndex) => (
+                              <td
+                                key={colIndex}
+                                className="px-3 py-1.5 border-b border-gray-100 whitespace-nowrap text-xs"
+                              >
+                                {row[colIndex] || ""}
+                              </td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="p-4">
+                    <p className="text-sm text-gray-500">
+                      No departure data loaded. Click "Paste Departure" to import from the legacy system.
                     </p>
                   </div>
                 )}
@@ -551,7 +633,7 @@ export default function QRTListScreen({ onBack }: QRTListScreenProps) {
                   </tr>
                 ) : (
                   filteredLoadPlans.map((loadPlan, index) => (
-                    <LoadPlanRow key={index} loadPlan={loadPlan} onClick={handleRowClick} />
+                    <LoadPlanRow key={index} loadPlan={loadPlan} flightIndex={index} onClick={handleRowClick} />
                   ))
                 )}
               </tbody>
@@ -578,13 +660,23 @@ export default function QRTListScreen({ onBack }: QRTListScreenProps) {
 
       {/* Clipboard Paste Modal for Bay Data */}
       <ClipboardPasteModal
-        isOpen={showPasteModal}
+        isOpen={showPasteArrivalModal}
         onClose={() => setShowPasteModal(false)}
-        title="Paste Bay Data"
-        description="Copy the bay/flight table from the legacy system and paste below"
+        title="Paste Arrival Data"
+        description="Copy the arrival bay/flight table from the legacy system and paste below"
         onConfirm={(data) => {
           setBayNumberData(data)
-          setIsBayNumbersOpen(true)
+        }}
+      />
+
+      {/* Clipboard Paste Modal for Departure Data */}
+      <ClipboardPasteModal
+        isOpen={showPasteDepartureModal}
+        onClose={() => setShowPasteDepartureModal(false)}
+        title="Paste Departure Data"
+        description="Copy the departure table from the legacy system and paste below"
+        onConfirm={(data) => {
+          setBayDepartureData(data)
         }}
       />
     </div>
@@ -593,13 +685,14 @@ export default function QRTListScreen({ onBack }: QRTListScreenProps) {
 
 interface LoadPlanRowProps {
   loadPlan: LoadPlan
-  onClick: (loadPlan: LoadPlan) => void
+  flightIndex: number
+  onClick: (loadPlan: LoadPlan, flightIndex: number) => void
 }
 
-function LoadPlanRow({ loadPlan, onClick }: LoadPlanRowProps) {
+function LoadPlanRow({ loadPlan, flightIndex, onClick }: LoadPlanRowProps) {
   return (
     <tr
-      onClick={() => onClick(loadPlan)}
+      onClick={() => onClick(loadPlan, flightIndex)}
       className="border-b border-gray-100 last:border-b-0 hover:bg-gray-50 cursor-pointer"
     >
       <td className="px-2 py-1 font-semibold text-gray-900 text-xs whitespace-nowrap truncate">
