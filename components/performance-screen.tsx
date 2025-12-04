@@ -3,9 +3,9 @@
 import { useState, useEffect, useMemo, useRef } from "react"
 import { Download, Plus, Search, Clock, X, Settings2, ArrowUpDown, SlidersHorizontal } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { useWorkAreaFilter, WorkAreaFilterControls } from "./work-area-filter-controls"
 
 // Filter types
-type WorkArea = "All" | "GCR" | "PIL and PER"
 type Shift = "All" | "9am to 9pm" | "9pm to 9am"
 type Module = "All" | "PAX & PF build-up EUR (1st floor, E)" | "PAX & PF build-up AFR (1st floor, F)" | "PAX & PF build-up ME, SubCon, Asia (1st floor, G)" | "Build-up AUS (1st floor, H)" | "US Screening Flights (1st floor, I)" | "Freighter & PAX Breakdown & build-up (Ground floor, F)" | "IND/PAK Build-up (Ground floor, G)" | "PER (Ground floor, H)" | "PIL (Ground floor, I)"
 
@@ -149,7 +149,8 @@ const HARDCODED_STAFF: StaffPerformance[] = [
 ]
 
 export default function PerformanceScreen() {
-  const [selectedWorkArea, setSelectedWorkArea] = useState<WorkArea>("All")
+  // Work area filter hook
+  const { selectedWorkArea, pilPerSubFilter } = useWorkAreaFilter()
   const [selectedShift, setSelectedShift] = useState<Shift>("All" as Shift)
   const [selectedModule, setSelectedModule] = useState<Module>("All")
   const [customTimeRange, setCustomTimeRange] = useState<{ start: string; end: string } | null>(null)
@@ -301,17 +302,8 @@ export default function PerformanceScreen() {
 
           <div className="w-px h-6 bg-gray-200" />
 
-          {/* Work Area Filter - Compact */}
-          <select
-            id="work-area-filter"
-            value={selectedWorkArea}
-            onChange={(e) => setSelectedWorkArea(e.target.value as WorkArea)}
-            className="px-2 py-1.5 text-xs border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-[#D71A21] focus:border-transparent"
-          >
-            <option value="All">Work Area: All</option>
-            <option value="GCR">Work Area: GCR</option>
-            <option value="PIL and PER">Work Area: PIL/PER</option>
-          </select>
+          {/* Work Area Filter */}
+          <WorkAreaFilterControls />
 
           {/* Shift Filter - Compact */}
           <select

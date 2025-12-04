@@ -5,7 +5,8 @@ import { Plane, Clock, MapPin, Package, Plus, Search, SlidersHorizontal, Setting
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell, TooltipProps } from "recharts"
 import { useLoadPlans, type LoadPlan, type ShiftType, type PeriodType, type WaveType } from "@/lib/load-plan-context"
 import { BUP_ALLOCATION_DATA } from "@/lib/bup-allocation-data"
-import type { WorkArea } from "./flights-view-screen"
+import type { WorkArea } from "@/lib/work-area-filter-utils"
+import { useWorkAreaFilter, WorkAreaFilterControls } from "./work-area-filter-controls"
 
 // Parse ULD count from ttlPlnUld string (e.g., "06PMC/07AKE" -> {pmc: 6, ake: 7, total: 13})
 function parseULDCount(ttlPlnUld: string): { pmc: number; ake: number; total: number } {
@@ -306,7 +307,8 @@ export default function IncomingWorkloadScreen() {
   const [shiftFilter, setShiftFilter] = useState<ShiftType>("current")
   const [periodFilter, setPeriodFilter] = useState<PeriodType>("all")
   const [waveFilter, setWaveFilter] = useState<WaveType>("all")
-  const [selectedWorkArea, setSelectedWorkArea] = useState<WorkArea>("GCR")
+  // Work area filter hook (defaults to GCR initially, but hook defaults to All)
+  const { selectedWorkArea, pilPerSubFilter } = useWorkAreaFilter()
   const addFilterRef = useRef<HTMLDivElement>(null)
   const viewOptionsRef = useRef<HTMLDivElement>(null)
 
@@ -613,15 +615,7 @@ export default function IncomingWorkloadScreen() {
           <div className="w-px h-6 bg-gray-200" />
 
           {/* Work Area Filter */}
-          <select
-            id="work-area-filter"
-            value={selectedWorkArea}
-            onChange={(e) => setSelectedWorkArea(e.target.value as WorkArea)}
-            className="px-2 py-1.5 text-xs border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-[#D71A21] focus:border-transparent"
-          >
-            <option value="GCR">Work Area: GCR</option>
-            <option value="PIL and PER">Work Area: PIL/PER</option>
-          </select>
+          <WorkAreaFilterControls />
 
           <div className="w-px h-6 bg-gray-200" />
 

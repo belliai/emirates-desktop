@@ -4,15 +4,17 @@ import { useState, useEffect, useMemo, useRef } from "react"
 import { ChevronRight, Plane, Calendar, Package, Users, Clock, FileText, Phone, User, Filter, X, Plus, Settings2, ChevronDown, Search, ArrowUpDown, SlidersHorizontal } from "lucide-react"
 import LoadPlanDetailScreen from "./load-plan-detail-screen"
 import type { LoadPlanDetail, AWBRow, ULDSection } from "./load-plan-types"
+import type { ULDEntry } from "./uld-number-modal"
 import { useLoadPlans, type LoadPlan } from "@/lib/load-plan-context"
 import { getLoadPlansFromSupabase, getLoadPlanDetailFromSupabase } from "@/lib/load-plans-supabase"
 import { parseULDSection } from "@/lib/uld-parser"
 import { getULDEntriesFromStorage } from "@/lib/uld-storage"
+import { useWorkAreaFilter, WorkAreaFilterControls } from "./work-area-filter-controls"
+import type { WorkArea, PilPerSubFilter } from "@/lib/work-area-filter-utils"
+import { shouldIncludeULDSection } from "@/lib/work-area-filter-utils"
 
 // Types for completion tracking
 type CompletionStatus = "green" | "amber" | "red"
-type WorkArea = "All" | "GCR" | "PIL and PER"
-type PilPerSubFilter = "Both" | "PIL only" | "PER only"
 type Shift = "All" | "9am to 9pm" | "9pm to 9am"
 type Module = "All" | "PAX & PF build-up EUR (1st floor, E)" | "PAX & PF build-up AFR (1st floor, F)" | "PAX & PF build-up ME, SubCon, Asia (1st floor, G)" | "Build-up AUS (1st floor, H)" | "US Screening Flights (1st floor, I)" | "Freighter & PAX Breakdown & build-up (Ground floor, F)" | "IND/PAK Build-up (Ground floor, G)" | "PER (Ground floor, H)" | "PIL (Ground floor, I)"
 
@@ -30,66 +32,6 @@ type ActiveFilter = {
 type SortColumn = "Flight" | "Date" | "STD" | "Completion" | null
 type SortDirection = "asc" | "desc"
 
-// PIL/PER SHC codes that identify PIL and PER work areas
-const PIL_PER_SHC_CODES = ["FRO", "FRI", "ACT", "CRT", "COL", "ERT", "PIL-ACT", "PIL-COL", "PEF-COL", "PER-COL"]
-
-/**
- * Check if an AWB has any PIL/PER SHC code
- * Case-insensitive matching, exact match required
- */
-export function hasPilPerShcCode(awb: AWBRow): boolean {
-  if (!awb.shc || awb.shc.trim() === "") {
-    return false
-  }
-  
-  const shcUpper = awb.shc.trim().toUpperCase()
-  return PIL_PER_SHC_CODES.some(code => shcUpper === code.toUpperCase())
-}
-
-/**
- * Check if an AWB has PIL SHC code (contains "PIL" in the SHC)
- * Used to distinguish between PIL and PER work areas
- */
-export function hasPilShcCode(awb: AWBRow): boolean {
-  if (!awb.shc || awb.shc.trim() === "") {
-    return false
-  }
-  
-  const shcUpper = awb.shc.trim().toUpperCase()
-  return shcUpper.includes("PIL")
-}
-
-/**
- * Check if an AWB has PER SHC code (has PIL/PER codes but NOT "PIL")
- * Used to distinguish between PIL and PER work areas
- */
-export function hasPerShcCode(awb: AWBRow): boolean {
-  return hasPilPerShcCode(awb) && !hasPilShcCode(awb)
-}
-
-/**
- * Check if a ULD section contains any AWB with PIL/PER SHC codes
- */
-export function uldSectionHasPilPerShc(uldSection: ULDSection): boolean {
-  return uldSection.awbs.some(awb => hasPilPerShcCode(awb))
-}
-
-/**
- * Check if a ULD section contains any AWB with PIL SHC codes
- */
-export function uldSectionHasPilShc(uldSection: ULDSection): boolean {
-  return uldSection.awbs.some(awb => hasPilShcCode(awb))
-}
-
-/**
- * Check if a ULD section contains any AWB with PER SHC codes
- */
-export function uldSectionHasPerShc(uldSection: ULDSection): boolean {
-  return uldSection.awbs.some(awb => hasPerShcCode(awb))
-}
-
-// Export WorkArea and PilPerSubFilter types for use in other components
-export type { WorkArea, PilPerSubFilter }
 
 // Two 9-9 shifts
 const SHIFTS: Shift[] = ["All", "9am to 9pm", "9pm to 9am"]
@@ -245,24 +187,8 @@ function calculateTotalPlannedULDs(loadPlanDetail: LoadPlanDetail, workAreaFilte
   let total = 0
   loadPlanDetail.sectors.forEach((sector, sectorIndex) => {
     sector.uldSections.forEach((uldSection, uldSectionIndex) => {
-      // Apply filter logic
-      let shouldInclude = true
-      if (workAreaFilter === "PIL and PER") {
-        shouldInclude = uldSectionHasPilPerShc(uldSection)
-        
-        // Apply PIL/PER sub-filter
-        if (shouldInclude && pilPerSubFilter && pilPerSubFilter !== "Both") {
-          if (pilPerSubFilter === "PIL only") {
-            shouldInclude = uldSectionHasPilShc(uldSection)
-          } else if (pilPerSubFilter === "PER only") {
-            shouldInclude = uldSectionHasPerShc(uldSection)
-          }
-        }
-      } else if (workAreaFilter === "GCR") {
-        // GCR = everything that's NOT PIL/PER
-        shouldInclude = !uldSectionHasPilPerShc(uldSection)
-      }
-      // "All" or undefined = include everything
+      // Apply filter logic using centralized utility
+      const shouldInclude = shouldIncludeULDSection(uldSection, workAreaFilter || "All", pilPerSubFilter)
       
       if (shouldInclude && uldSection.uld) {
         const key = `${sectorIndex}-${uldSectionIndex}`
@@ -320,24 +246,8 @@ function calculateTotalMarkedULDs(flightNumber: string, loadPlanDetail: LoadPlan
       if (sector && sector.uldSections[uldSectionIndex]) {
         const uldSection = sector.uldSections[uldSectionIndex]
         
-        // Apply filter logic
-        let shouldInclude = true
-        if (workAreaFilter === "PIL and PER") {
-          shouldInclude = uldSectionHasPilPerShc(uldSection)
-          
-          // Apply PIL/PER sub-filter
-          if (shouldInclude && pilPerSubFilter && pilPerSubFilter !== "Both") {
-            if (pilPerSubFilter === "PIL only") {
-              shouldInclude = uldSectionHasPilShc(uldSection)
-            } else if (pilPerSubFilter === "PER only") {
-              shouldInclude = uldSectionHasPerShc(uldSection)
-            }
-          }
-        } else if (workAreaFilter === "GCR") {
-          // GCR = everything that's NOT PIL/PER
-          shouldInclude = !uldSectionHasPilPerShc(uldSection)
-        }
-        // "All" or undefined = include everything
+        // Apply filter logic using centralized utility
+        const shouldInclude = shouldIncludeULDSection(uldSection, workAreaFilter || "All", pilPerSubFilter)
         
         if (shouldInclude) {
           // Count only checked entries
@@ -393,10 +303,8 @@ export default function FlightsViewScreen() {
   const [isLoading, setIsLoading] = useState(true)
   const [flightCompletions, setFlightCompletions] = useState<Map<string, FlightCompletion>>(new Map())
   const [loadPlanDetailsCache, setLoadPlanDetailsCache] = useState<Map<string, LoadPlanDetail>>(new Map())
-  // Independent toggles for work areas
-  const [isGcrActive, setIsGcrActive] = useState(true)
-  const [isPilPerActive, setIsPilPerActive] = useState(true)
-  const [pilPerSubFilter, setPilPerSubFilter] = useState<PilPerSubFilter>("Both")
+  // Work area filter hook
+  const { selectedWorkArea, pilPerSubFilter } = useWorkAreaFilter()
   const [selectedShift, setSelectedShift] = useState<Shift>("All" as Shift)
   const [selectedModule, setSelectedModule] = useState<Module>("All")
   const [customTimeRange, setCustomTimeRange] = useState<{ start: string; end: string } | null>(null)
@@ -411,12 +319,6 @@ export default function FlightsViewScreen() {
   const [editingFilterId, setEditingFilterId] = useState<string | null>(null)
   const [sortColumn, setSortColumn] = useState<SortColumn>(null)
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc")
-  
-  // Derive selectedWorkArea from toggle states
-  const selectedWorkArea: WorkArea = (isGcrActive && isPilPerActive) ? "All" 
-    : isGcrActive ? "GCR" 
-    : isPilPerActive ? "PIL and PER" 
-    : "All" // Default to "All" when neither is active
 
   // Fetch load plans from Supabase on mount
   useEffect(() => {
@@ -971,52 +873,8 @@ export default function FlightsViewScreen() {
 
           <div className="w-px h-6 bg-gray-200" />
 
-          {/* Work Area Filter - Independent Toggle Buttons */}
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setIsGcrActive(!isGcrActive)}
-              className={`px-3 py-1.5 text-xs rounded-md transition-colors ${
-                isGcrActive
-                  ? "bg-gray-200 text-gray-900 font-medium"
-                  : "bg-white text-gray-600 border border-gray-300 hover:bg-gray-50"
-              }`}
-            >
-              GCR
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setIsPilPerActive(!isPilPerActive)
-                if (!isPilPerActive) {
-                  setPilPerSubFilter("Both") // Reset to "Both" when activating PIL/PER
-                }
-              }}
-              className={`px-3 py-1.5 text-xs rounded-md transition-colors ${
-                isPilPerActive
-                  ? "bg-gray-200 text-gray-900 font-medium"
-                  : "bg-white text-gray-600 border border-gray-300 hover:bg-gray-50"
-              }`}
-            >
-              PIL/PER
-            </button>
-            
-            {/* PIL/PER Sub-filter dropdown - always visible, only clickable when PIL/PER is sole active toggle */}
-            <select
-              value={pilPerSubFilter}
-              onChange={(e) => setPilPerSubFilter(e.target.value as PilPerSubFilter)}
-              disabled={!isPilPerActive || isGcrActive}
-              className={`px-2 py-1.5 text-xs border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#D71A21] focus:border-transparent transition-colors ${
-                isPilPerActive && !isGcrActive
-                  ? "bg-white cursor-pointer"
-                  : "bg-gray-100 text-gray-400 cursor-not-allowed"
-              }`}
-            >
-              <option value="Both">Both</option>
-              <option value="PIL only">PIL only</option>
-              <option value="PER only">PER only</option>
-            </select>
-          </div>
+          {/* Work Area Filter */}
+          <WorkAreaFilterControls />
 
           {/* Shift Filter - Compact */}
           <select

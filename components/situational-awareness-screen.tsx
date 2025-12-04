@@ -4,11 +4,14 @@ import { useState, useEffect, useMemo, useRef } from "react"
 import { ChevronRight, ChevronDown, Plane, Calendar, Package, Users, Clock, FileText, Phone, User, Filter, X, Plus, Search, SlidersHorizontal, Settings2, ArrowUpDown } from "lucide-react"
 import LoadPlanDetailScreen from "./load-plan-detail-screen"
 import type { LoadPlanDetail, AWBRow, ULDSection } from "./load-plan-types"
+import type { ULDEntry } from "./uld-number-modal"
 import { useLoadPlans, type LoadPlan, type SentBCR, type ShiftType, type PeriodType, type WaveType } from "@/lib/load-plan-context"
 import { getLoadPlansFromSupabase, getLoadPlanDetailFromSupabase } from "@/lib/load-plans-supabase"
 import { parseULDSection } from "@/lib/uld-parser"
 import { getULDEntriesFromStorage } from "@/lib/uld-storage"
-import { uldSectionHasPilPerShc, type WorkArea } from "./flights-view-screen"
+import type { WorkArea, PilPerSubFilter } from "@/lib/work-area-filter-utils"
+import { shouldIncludeULDSection } from "@/lib/work-area-filter-utils"
+import { useWorkAreaFilter, WorkAreaFilterControls } from "./work-area-filter-controls"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from "recharts"
@@ -155,7 +158,7 @@ function parseTTLPlnUld(ttlPlnUld: string): number {
   return total || 1
 }
 
-function calculateTotalPlannedULDs(loadPlanDetail: LoadPlanDetail, workAreaFilter?: WorkArea): number {
+function calculateTotalPlannedULDs(loadPlanDetail: LoadPlanDetail, workAreaFilter?: WorkArea, pilPerSubFilter?: PilPerSubFilter): number {
   // Get entries from localStorage if they exist
   let entriesMap: Map<string, ULDEntry[]> = new Map()
   if (typeof window !== 'undefined') {
@@ -171,15 +174,8 @@ function calculateTotalPlannedULDs(loadPlanDetail: LoadPlanDetail, workAreaFilte
   let total = 0
   loadPlanDetail.sectors.forEach((sector, sectorIndex) => {
     sector.uldSections.forEach((uldSection, uldSectionIndex) => {
-      // Apply filter logic
-      let shouldInclude = true
-      if (workAreaFilter === "PIL and PER") {
-        shouldInclude = uldSectionHasPilPerShc(uldSection)
-      } else if (workAreaFilter === "GCR") {
-        // GCR = everything that's NOT PIL/PER
-        shouldInclude = !uldSectionHasPilPerShc(uldSection)
-      }
-      // "All" or undefined = include everything
+      // Apply filter logic using centralized utility
+      const shouldInclude = shouldIncludeULDSection(uldSection, workAreaFilter || "All", pilPerSubFilter)
       
       if (shouldInclude && uldSection.uld) {
         const key = `${sectorIndex}-${uldSectionIndex}`
@@ -208,7 +204,7 @@ function calculateTotalPlannedULDs(loadPlanDetail: LoadPlanDetail, workAreaFilte
   return total || 1 // Return at least 1 to avoid division by zero
 }
 
-function calculateTotalMarkedULDs(flightNumber: string, loadPlanDetail: LoadPlanDetail, workAreaFilter?: WorkArea): number {
+function calculateTotalMarkedULDs(flightNumber: string, loadPlanDetail: LoadPlanDetail, workAreaFilter?: WorkArea, pilPerSubFilter?: PilPerSubFilter): number {
   if (typeof window === 'undefined') return 0
   
   try {
@@ -225,12 +221,8 @@ function calculateTotalMarkedULDs(flightNumber: string, loadPlanDetail: LoadPlan
       if (sector && sector.uldSections[uldSectionIndex]) {
         const uldSection = sector.uldSections[uldSectionIndex]
         
-        let shouldInclude = true
-        if (workAreaFilter === "PIL and PER") {
-          shouldInclude = uldSectionHasPilPerShc(uldSection)
-        } else if (workAreaFilter === "GCR") {
-          shouldInclude = !uldSectionHasPilPerShc(uldSection)
-        }
+        // Apply filter logic using centralized utility
+        const shouldInclude = shouldIncludeULDSection(uldSection, workAreaFilter || "All", pilPerSubFilter)
         
         if (shouldInclude) {
           entries.forEach((entry) => {
@@ -320,7 +312,8 @@ export default function SituationalAwarenessScreen() {
   const [isLoading, setIsLoading] = useState(true)
   const [flightCompletions, setFlightCompletions] = useState<Map<string, FlightCompletion>>(new Map())
   const [loadPlanDetailsCache, setLoadPlanDetailsCache] = useState<Map<string, LoadPlanDetail>>(new Map())
-  const [selectedWorkArea, setSelectedWorkArea] = useState<WorkArea>("All")
+  // Work area filter hook
+  const { selectedWorkArea, pilPerSubFilter } = useWorkAreaFilter()
   const [selectedShift, setSelectedShift] = useState<Shift>("All" as Shift)
   const [customTimeRange, setCustomTimeRange] = useState<{ start: string; end: string } | null>(null)
   const [showTimeRangePicker, setShowTimeRangePicker] = useState(false)
@@ -393,8 +386,8 @@ export default function SituationalAwarenessScreen() {
       const cachedDetail = loadPlanDetailsCache.get(plan.flight)
       
       if (cachedDetail && selectedWorkArea !== "All") {
-        const totalPlannedULDs = calculateTotalPlannedULDs(cachedDetail, selectedWorkArea)
-        const totalMarkedULDs = calculateTotalMarkedULDs(plan.flight, cachedDetail, selectedWorkArea)
+        const totalPlannedULDs = calculateTotalPlannedULDs(cachedDetail, selectedWorkArea, pilPerSubFilter)
+        const totalMarkedULDs = calculateTotalMarkedULDs(plan.flight, cachedDetail, selectedWorkArea, pilPerSubFilter)
         const completionPercentage = totalPlannedULDs > 0 
           ? Math.round((totalMarkedULDs / totalPlannedULDs) * 100) 
           : 0
@@ -420,7 +413,7 @@ export default function SituationalAwarenessScreen() {
     })
     
     setFlightCompletions(recalculatedCompletions)
-  }, [loadPlans, loadPlanDetailsCache, selectedWorkArea, uldUpdateTrigger])
+  }, [loadPlans, loadPlanDetailsCache, selectedWorkArea, pilPerSubFilter, uldUpdateTrigger])
 
   const timeOptions = useMemo(() => {
     const options: string[] = []
@@ -668,8 +661,8 @@ export default function SituationalAwarenessScreen() {
       // Recalculate progress when ULD entries are updated (uldUpdateTrigger changes)
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const _ = uldUpdateTrigger // Force recalculation when this changes
-      const totalPlannedULDs = calculateTotalPlannedULDs(selectedLoadPlan, selectedWorkArea)
-      const totalMarkedULDs = calculateTotalMarkedULDs(selectedLoadPlan.flight, selectedLoadPlan, selectedWorkArea)
+      const totalPlannedULDs = calculateTotalPlannedULDs(selectedLoadPlan, selectedWorkArea, pilPerSubFilter)
+      const totalMarkedULDs = calculateTotalMarkedULDs(selectedLoadPlan.flight, selectedLoadPlan, selectedWorkArea, pilPerSubFilter)
       const completionPercentage = totalPlannedULDs > 0 
         ? Math.round((totalMarkedULDs / totalPlannedULDs) * 100) 
         : 0
@@ -714,6 +707,7 @@ export default function SituationalAwarenessScreen() {
             }}
             enableBulkCheckboxes={true}
             workAreaFilter={selectedWorkArea}
+            pilPerSubFilter={pilPerSubFilter}
             onULDUpdate={() => {
               // Trigger re-render to recalculate progress bar
               setUldUpdateTrigger(prev => prev + 1)
@@ -838,17 +832,8 @@ export default function SituationalAwarenessScreen() {
 
             <div className="w-px h-6 bg-gray-200" />
 
-            {/* Work Area Filter - Compact */}
-            <select
-              id="work-area-filter"
-              value={selectedWorkArea}
-              onChange={(e) => setSelectedWorkArea(e.target.value as WorkArea)}
-              className="px-2 py-1.5 text-xs border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-[#D71A21] focus:border-transparent"
-            >
-              <option value="All">Work Area: All</option>
-              <option value="GCR">Work Area: GCR</option>
-              <option value="PIL and PER">Work Area: PIL/PER</option>
-            </select>
+            {/* Work Area Filter */}
+            <WorkAreaFilterControls />
 
             {/* Shift Filter - Compact */}
             <select

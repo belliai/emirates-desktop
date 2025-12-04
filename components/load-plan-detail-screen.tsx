@@ -17,7 +17,8 @@ import { ULDNumberModal, type ULDEntry } from "./uld-number-modal"
 import { parseULDSection, formatULDSection, formatULDSectionFromEntries, formatULDSectionFromCheckedEntries } from "@/lib/uld-parser"
 import { getULDEntriesFromStorage, saveULDEntriesToStorage } from "@/lib/uld-storage"
 import { AWBQuickActionModal } from "./awb-quick-action-modal"
-import { uldSectionHasPilPerShc, uldSectionHasPilShc, uldSectionHasPerShc, type WorkArea, type PilPerSubFilter } from "./flights-view-screen"
+import type { WorkArea, PilPerSubFilter } from "@/lib/work-area-filter-utils"
+import { shouldIncludeULDSection } from "@/lib/work-area-filter-utils"
 
 // Re-export types for backward compatibility
 export type { AWBRow, ULDSection, LoadPlanItem, LoadPlanDetail } from "./load-plan-types"
@@ -902,33 +903,7 @@ function CombinedTable({
     const filteredUldSectionsWithIndices = sector.uldSections
       .map((uldSection, originalIndex) => ({ uldSection, originalIndex }))
       .filter(({ uldSection }) => {
-        // If no filter or filter is "All", show all sections
-        if (!workAreaFilter || workAreaFilter === "All") {
-          return true
-        }
-        
-        // For "GCR" filter, only show sections that DON'T have PIL/PER SHC codes
-        if (workAreaFilter === "GCR") {
-          return !uldSectionHasPilPerShc(uldSection)
-        }
-        
-        // For "PIL and PER" filter, show sections that have PIL/PER SHC codes
-        if (workAreaFilter === "PIL and PER") {
-          const hasPilPer = uldSectionHasPilPerShc(uldSection)
-          
-          // Apply PIL/PER sub-filter if specified
-          if (hasPilPer && pilPerSubFilter && pilPerSubFilter !== "Both") {
-            if (pilPerSubFilter === "PIL only") {
-              return uldSectionHasPilShc(uldSection)
-            } else if (pilPerSubFilter === "PER only") {
-              return uldSectionHasPerShc(uldSection)
-            }
-          }
-          
-          return hasPilPer
-        }
-        
-        return true
+        return shouldIncludeULDSection(uldSection, workAreaFilter || "All", pilPerSubFilter)
       })
     
     filteredUldSectionsWithIndices.forEach(({ uldSection, originalIndex }) => {
