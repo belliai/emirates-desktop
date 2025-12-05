@@ -19,27 +19,31 @@ export function WorkAreaFilterControls({ className = "" }: WorkAreaFilterControl
     setPilPerSubFilter,
   } = useWorkAreaFilter()
 
+  // Prevent toggling off if it's the only active chip
+  const canToggleGcr = !isGcrActive || isPilPerActive
+  const canTogglePilPer = !isPilPerActive || isGcrActive
+
   return (
     <div className={`flex items-center gap-2 ${className}`}>
       <button
         type="button"
-        onClick={toggleGcr}
+        onClick={() => canToggleGcr && toggleGcr()}
         className={`px-3 py-1.5 text-xs rounded-md transition-colors ${
           isGcrActive
             ? "bg-gray-200 text-gray-900 font-medium"
             : "bg-white text-gray-600 border border-gray-300 hover:bg-gray-50"
-        }`}
+        } ${!canToggleGcr ? "cursor-not-allowed opacity-70" : "cursor-pointer"}`}
       >
         GCR
       </button>
       <button
         type="button"
-        onClick={togglePilPer}
+        onClick={() => canTogglePilPer && togglePilPer()}
         className={`px-3 py-1.5 text-xs rounded-md transition-colors ${
           isPilPerActive
             ? "bg-gray-200 text-gray-900 font-medium"
             : "bg-white text-gray-600 border border-gray-300 hover:bg-gray-50"
-        }`}
+        } ${!canTogglePilPer ? "cursor-not-allowed opacity-70" : "cursor-pointer"}`}
       >
         PIL/PER
       </button>
