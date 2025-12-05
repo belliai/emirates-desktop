@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect, useMemo } from "react"
 import { ChevronRight, Plane, Calendar, Package, Users, Clock, FileText, Upload, Trash2, AlertTriangle, CheckCircle, XCircle, Plus, Search, SlidersHorizontal, Settings2, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react"
+import Swal from "sweetalert2"
 import LoadPlanDetailScreen from "./load-plan-detail-screen"
 import type { LoadPlanDetail } from "./load-plan-types"
 import { extractTextFromFile, extractTextFromDOCX } from "@/lib/lists/file-extractors"
@@ -659,30 +660,167 @@ export default function LoadPlansScreen({ onLoadPlanSelect }: { onLoadPlanSelect
       setProgress(100)
 
       if (totalAddedCount > 0 || totalSkippedCount > 0) {
-        let message = `Processed ${fileArray.length} file${fileArray.length > 1 ? "s" : ""}. `
+        // Build success message with improved UI
+        let title = "Upload Successful!"
+        let html = `<div style="text-align: left; padding: 8px 0;">`
+        
+        // Summary section
+        html += `<div style="background: #f3f4f6; padding: 12px; border-radius: 8px; margin-bottom: 16px;">
+          <p style="margin: 0; font-size: 15px; color: #374151; font-weight: 500;">
+            Processed <span style="color: #D71A21; font-weight: 600;">${fileArray.length}</span> file${fileArray.length > 1 ? "s" : ""}
+          </p>
+        </div>`
+        
+        // Results section
+        html += `<div style="display: flex; flex-direction: column; gap: 12px;">`
+        
         if (totalAddedCount > 0) {
-          message += `Successfully added ${totalAddedCount} load plan${totalAddedCount > 1 ? "s" : ""}. `
+          html += `<div style="display: flex; align-items: flex-start; gap: 12px; padding: 12px; background: #ecfdf5; border-left: 4px solid #10b981; border-radius: 6px;">
+            <div style="flex-shrink: 0; width: 24px; height: 24px; background: #10b981; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; font-size: 14px;">✓</div>
+            <div style="flex: 1;">
+              <p style="margin: 0; font-size: 14px; color: #065f46; font-weight: 500;">
+                Successfully added <strong style="color: #047857;">${totalAddedCount}</strong> load plan${totalAddedCount > 1 ? "s" : ""}
+              </p>
+            </div>
+          </div>`
         }
+        
         if (totalSkippedCount > 0) {
-          message += `${totalSkippedCount} flight${totalSkippedCount > 1 ? "s" : ""} already exist${totalSkippedCount > 1 ? "" : "s"} (${skippedFlights.slice(0, 5).join(", ")}${skippedFlights.length > 5 ? `, and ${skippedFlights.length - 5} more` : ""}) and ${totalSkippedCount > 1 ? "were" : "was"} updated with revision incremented. `
+          html += `<div style="display: flex; align-items: flex-start; gap: 12px; padding: 12px; background: #eff6ff; border-left: 4px solid #3b82f6; border-radius: 6px;">
+            <div style="flex-shrink: 0; width: 24px; height: 24px; background: #3b82f6; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; font-size: 14px;">↻</div>
+            <div style="flex: 1;">
+              <p style="margin: 0; font-size: 14px; color: #1e40af; font-weight: 500; margin-bottom: 4px;">
+                <strong style="color: #1d4ed8;">${totalSkippedCount}</strong> flight${totalSkippedCount > 1 ? "s" : ""} updated with revision incremented
+              </p>
+              <p style="margin: 0; font-size: 12px; color: #3b82f6; font-weight: 400;">
+                ${skippedFlights.slice(0, 5).join(", ")}${skippedFlights.length > 5 ? `, and ${skippedFlights.length - 5} more` : ""}
+              </p>
+            </div>
+          </div>`
         }
+        
         if (failedFiles.length > 0) {
-          message += `${failedFiles.length} file${failedFiles.length > 1 ? "s" : ""} could not be processed (${failedFiles.slice(0, 3).join(", ")}${failedFiles.length > 3 ? "..." : ""}).`
+          html += `<div style="display: flex; align-items: flex-start; gap: 12px; padding: 12px; background: #fef2f2; border-left: 4px solid #ef4444; border-radius: 6px;">
+            <div style="flex-shrink: 0; width: 24px; height: 24px; background: #ef4444; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; font-size: 14px;">✗</div>
+            <div style="flex: 1;">
+              <p style="margin: 0; font-size: 14px; color: #991b1b; font-weight: 500; margin-bottom: 4px;">
+                <strong style="color: #dc2626;">${failedFiles.length}</strong> file${failedFiles.length > 1 ? "s" : ""} could not be processed
+              </p>
+              <p style="margin: 0; font-size: 12px; color: #ef4444; font-weight: 400;">
+                ${failedFiles.slice(0, 3).join(", ")}${failedFiles.length > 3 ? "..." : ""}
+              </p>
+            </div>
+          </div>`
+        }
+        
+        html += `</div></div>`
+
+        // Determine icon and color based on results
+        let icon: "success" | "warning" | "error" = "success"
+        if (failedFiles.length > 0 && totalAddedCount === 0 && totalSkippedCount === 0) {
+          icon = "error"
+          title = "Upload Failed"
+        } else if (failedFiles.length > 0) {
+          icon = "warning"
+          title = "Upload Completed with Errors"
         }
 
         setTimeout(() => {
-          alert(message)
+          Swal.fire({
+            title: title,
+            html: html,
+            icon: icon,
+            confirmButtonText: "Got it",
+            confirmButtonColor: "#D71A21",
+            width: "520px",
+            padding: "24px",
+            showCloseButton: true,
+            customClass: {
+              popup: "rounded-xl shadow-2xl border border-gray-200",
+              title: "text-2xl font-bold text-gray-900 mb-2",
+              confirmButton: "px-8 py-3 rounded-lg font-semibold text-base shadow-md hover:shadow-lg transition-shadow",
+              closeButton: "text-gray-400 hover:text-gray-600",
+              icon: "!mb-4"
+            },
+            buttonsStyling: true,
+            backdrop: true,
+            allowOutsideClick: true,
+            allowEscapeKey: true
+          })
         }, 100)
       } else if (failedFiles.length === fileArray.length && skippedFlights.length === 0) {
         // Only throw error if all files failed AND none were skipped
         // If files were skipped (e.g., RTF with no shipments), that's okay
+        setTimeout(() => {
+          Swal.fire({
+            title: "Upload Failed",
+            html: `<div style="text-align: left; padding: 8px 0;">
+              <div style="background: #fef2f2; padding: 16px; border-radius: 8px; border-left: 4px solid #ef4444;">
+                <p style="margin: 0; font-size: 15px; color: #991b1b; font-weight: 500;">
+                  Could not process any files. Please check the file format${fileArray.length > 1 ? "s" : ""}.
+                </p>
+              </div>
+            </div>`,
+            icon: "error",
+            confirmButtonText: "Got it",
+            confirmButtonColor: "#D71A21",
+            width: "520px",
+            padding: "24px",
+            showCloseButton: true,
+            customClass: {
+              popup: "rounded-xl shadow-2xl border border-gray-200",
+              title: "text-2xl font-bold text-gray-900 mb-2",
+              confirmButton: "px-8 py-3 rounded-lg font-semibold text-base shadow-md hover:shadow-lg transition-shadow",
+              closeButton: "text-gray-400 hover:text-gray-600",
+              icon: "!mb-4"
+            },
+            buttonsStyling: true,
+            backdrop: true,
+            allowOutsideClick: true,
+            allowEscapeKey: true
+          })
+        }, 100)
+        
+        // Still throw error for error handling flow
         throw new Error(`Could not process any files. Please check the file format${fileArray.length > 1 ? "s" : ""}.`)
       }
 
       setShowUploadModal(false)
     } catch (err) {
-      setError(err instanceof Error ? err.message : "An error occurred while processing the file")
+      const errorMessage = err instanceof Error ? err.message : "An error occurred while processing the file"
+      setError(errorMessage)
       setProgress(0)
+      
+      // Show error with SweetAlert
+      setTimeout(() => {
+        Swal.fire({
+          title: "Upload Error",
+          html: `<div style="text-align: left; padding: 8px 0;">
+            <div style="background: #fef2f2; padding: 16px; border-radius: 8px; border-left: 4px solid #ef4444;">
+              <p style="margin: 0; font-size: 15px; color: #991b1b; font-weight: 500; line-height: 1.5;">
+                ${errorMessage}
+              </p>
+            </div>
+          </div>`,
+          icon: "error",
+          confirmButtonText: "Got it",
+          confirmButtonColor: "#D71A21",
+          width: "520px",
+          padding: "24px",
+          showCloseButton: true,
+          customClass: {
+            popup: "rounded-xl shadow-2xl border border-gray-200",
+            title: "text-2xl font-bold text-gray-900 mb-2",
+            confirmButton: "px-8 py-3 rounded-lg font-semibold text-base shadow-md hover:shadow-lg transition-shadow",
+            closeButton: "text-gray-400 hover:text-gray-600",
+            icon: "!mb-4"
+          },
+          buttonsStyling: true,
+          backdrop: true,
+          allowOutsideClick: true,
+          allowEscapeKey: true
+        })
+      }, 100)
     } finally {
       setIsProcessing(false)
       if (fileInputRef.current) {

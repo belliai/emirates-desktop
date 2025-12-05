@@ -10,13 +10,25 @@ COMMENT ON COLUMN load_plans.revision IS 'Revision number for the load plan. Inc
 -- Create index on flight_number and revision for better query performance
 CREATE INDEX IF NOT EXISTS idx_load_plans_flight_revision ON load_plans(flight_number, revision);
 
--- Grant permissions to anon and authenticated roles
-GRANT SELECT, INSERT, UPDATE ON load_plans TO anon;
-GRANT SELECT, INSERT, UPDATE ON load_plans TO authenticated;
+-- Grant permissions to anon and authenticated roles for load_plans table
+GRANT SELECT, INSERT, UPDATE, DELETE ON load_plans TO anon;
+GRANT SELECT, INSERT, UPDATE, DELETE ON load_plans TO authenticated;
 
--- Refresh PostgREST schema cache
--- Note: This needs to be run in Supabase SQL Editor or via API
--- The schema cache will be refreshed automatically, but you can also:
+-- Grant usage on sequence if exists (for auto-increment columns)
+GRANT USAGE ON SCHEMA public TO anon;
+GRANT USAGE ON SCHEMA public TO authenticated;
+
+-- Ensure all columns are accessible
+ALTER TABLE load_plans ENABLE ROW LEVEL SECURITY;
+
+-- Grant permissions on load_plan_items as well (in case needed)
+GRANT SELECT, INSERT, UPDATE, DELETE ON load_plan_items TO anon;
+GRANT SELECT, INSERT, UPDATE, DELETE ON load_plan_items TO authenticated;
+
+-- Refresh PostgREST schema cache immediately
+-- This forces PostgREST to reload the schema and recognize the new column
+NOTIFY pgrst, 'reload schema';
+
+-- Note: If NOTIFY doesn't work, you can also:
 -- 1. Go to Supabase Dashboard > Settings > API > Restart PostgREST
--- 2. Or wait a few minutes for automatic refresh
--- 3. Or run: NOTIFY pgrst, 'reload schema';
+-- 2. Or wait 5-10 minutes for automatic schema refresh

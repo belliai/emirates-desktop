@@ -245,9 +245,10 @@ export async function saveListsDataToSupabase({
     })
 
     // Check if load plan with this flight_number already exists
+    // Fetch full data to compare changes
     const { data: existingLoadPlan, error: checkError } = await supabase
       .from("load_plans")
-      .select("id, revision")
+      .select("*")
       .eq("flight_number", flightNumber)
       .order("revision", { ascending: false })
       .limit(1)
@@ -261,20 +262,51 @@ export async function saveListsDataToSupabase({
       }
     }
 
-    // Determine revision number
+    // Determine revision number and check for changes
     let newRevision = 1
     let existingLoadPlanId: string | null = null
+    let hasChanges = false
     
     if (existingLoadPlan) {
       existingLoadPlanId = existingLoadPlan.id
       newRevision = (existingLoadPlan.revision || 1) + 1
-      console.log("[v0] Found existing load plan for flight", flightNumber, "with revision", existingLoadPlan.revision, "- updating to revision", newRevision)
+      
+      // Compare key fields to detect changes
+      const newTotalPlannedUld = results.header.ttlPlnUld || null
+      const newUldVersion = results.header.uldVersion || null
+      const newAircraftType = results.header.aircraftType || null
+      const newAircraftReg = results.header.aircraftReg || null
+      const newSector = results.header.sector || null
+      const newStdTime = stdTime
+      const newPreparedBy = results.header.preparedBy || null
+      const newPreparedOn = preparedOn
+      const newHeaderWarning = results.header.headerWarning || null
+      const newIsCritical = results.header.isCritical === true
+      
+      // Check if any key fields have changed
+      hasChanges = 
+        (existingLoadPlan.total_planned_uld !== newTotalPlannedUld) ||
+        (existingLoadPlan.uld_version !== newUldVersion) ||
+        (existingLoadPlan.aircraft_type !== newAircraftType) ||
+        (existingLoadPlan.aircraft_registration !== newAircraftReg) ||
+        (existingLoadPlan.sector !== newSector) ||
+        (existingLoadPlan.std_time !== newStdTime) ||
+        (existingLoadPlan.prepared_by !== newPreparedBy) ||
+        (existingLoadPlan.prepared_on !== newPreparedOn) ||
+        (existingLoadPlan.header_warning !== newHeaderWarning) ||
+        (existingLoadPlan.is_critical !== newIsCritical)
+      
+      if (hasChanges) {
+        console.log("[v0] Found existing load plan for flight", flightNumber, "with revision", existingLoadPlan.revision, "- changes detected, updating to revision", newRevision)
+      } else {
+        console.log("[v0] Found existing load plan for flight", flightNumber, "with revision", existingLoadPlan.revision, "- no changes detected, skipping update")
+      }
     } else {
       console.log("[v0] No existing load plan found for flight", flightNumber, "- creating new with revision", newRevision)
+      hasChanges = true // New load plan, so we need to insert
     }
 
-    // 1. Insert or Update load_plan
-    // Prepare insert/update data
+    // 1. Prepare insert/update data
     const loadPlanData: any = {
       flight_number: flightNumber,
       flight_date: flightDateStr,
@@ -332,26 +364,42 @@ export async function saveListsDataToSupabase({
       loadPlanData.is_critical = false
     }
     
-    console.log("[v0] " + (existingLoadPlanId ? "Updating" : "Inserting") + " load_plan with data:", {
-      ...loadPlanData,
-      is_critical: loadPlanData.is_critical,
-    })
+    // Only proceed with insert/update if there are changes or it's a new load plan
+    if (existingLoadPlanId && !hasChanges) {
+      console.log("[v0] No changes detected in load_plan data, skipping update. Checking items...")
+      // Still need to check items, so continue but skip load_plan update
+      // We'll use existingLoadPlanId for items check
+    } else {
+      console.log("[v0] " + (existingLoadPlanId ? "Updating" : "Inserting") + " load_plan with data:", {
+        ...loadPlanData,
+        is_critical: loadPlanData.is_critical,
+      })
+    }
     
-    let { data: loadPlan, error: loadPlanError } = existingLoadPlanId
-      ? await supabase
-          .from("load_plans")
-          .update({
-            ...loadPlanData,
-            revision: newRevision, // Update revision
-          })
-          .eq("id", existingLoadPlanId)
-          .select()
-          .single()
-      : await supabase
-          .from("load_plans")
-          .insert(loadPlanData)
-          .select()
-          .single()
+    let loadPlan = existingLoadPlanId && !hasChanges ? existingLoadPlan : null
+    let loadPlanError = null
+    
+    if (!loadPlan) {
+      // Only insert/update if there are changes or it's new
+      const result = existingLoadPlanId
+        ? await supabase
+            .from("load_plans")
+            .update({
+              ...loadPlanData,
+              revision: newRevision, // Update revision
+            })
+            .eq("id", existingLoadPlanId)
+            .select()
+            .single()
+        : await supabase
+            .from("load_plans")
+            .insert(loadPlanData)
+            .select()
+            .single()
+      
+      loadPlan = result.data
+      loadPlanError = result.error
+    }
 
     // If error is about is_critical column, retry without it
     if (loadPlanError) {
@@ -416,11 +464,45 @@ export async function saveListsDataToSupabase({
       return { success: false, error: "Failed to " + (existingLoadPlanId ? "update" : "create") + " load plan" }
     }
 
-    const loadPlanId = loadPlan.id
+    const loadPlanId = loadPlan.id || existingLoadPlanId
 
-    // 2. If updating existing load plan, delete old items first
-    if (existingLoadPlanId) {
-      console.log("[v0] Deleting old load_plan_items for load_plan_id:", loadPlanId)
+    // 2. Check if load_plan_items have changed (only if updating existing load plan)
+    let itemsHaveChanges = true
+    if (existingLoadPlanId && shipments && shipments.length > 0) {
+      // Fetch existing items to compare
+      const { data: existingItems, error: itemsCheckError } = await supabase
+        .from("load_plan_items")
+        .select("*")
+        .eq("load_plan_id", loadPlanId)
+        .order("serial_number", { ascending: true })
+      
+      if (!itemsCheckError && existingItems && existingItems.length > 0) {
+        // Compare items count and key fields
+        if (existingItems.length === shipments.length) {
+          // Check if items are the same
+          const itemsMatch = shipments.every((shipment, index) => {
+            const existingItem = existingItems[index]
+            return (
+              existingItem.awb_number === (shipment.awbNo || "").replace(/\s+/g, "") &&
+              existingItem.pieces === shipment.pieces &&
+              existingItem.weight === shipment.weight &&
+              existingItem.volume === shipment.volume &&
+              existingItem.special_handling_code === shipment.shc &&
+              existingItem.uld_allocation === shipment.uld
+            )
+          })
+          
+          if (itemsMatch) {
+            itemsHaveChanges = false
+            console.log("[v0] No changes detected in load_plan_items, skipping update")
+          }
+        }
+      }
+    }
+
+    // 3. If updating existing load plan and items have changes, delete old items first
+    if (existingLoadPlanId && itemsHaveChanges) {
+      console.log("[v0] Changes detected in load_plan_items, deleting old items for load_plan_id:", loadPlanId)
       const { error: deleteItemsError } = await supabase
         .from("load_plan_items")
         .delete()
@@ -434,8 +516,8 @@ export async function saveListsDataToSupabase({
       }
     }
 
-    // 3. Insert load_plan_items from shipments
-    if (shipments && shipments.length > 0) {
+    // 4. Insert load_plan_items from shipments (only if there are changes or new load plan)
+    if (shipments && shipments.length > 0 && (itemsHaveChanges || !existingLoadPlanId)) {
       // Check for VUN shipments before saving
       const vunShipments = shipments.filter(s => s.shc && s.shc.includes('VUN'))
       if (vunShipments.length > 0) {
@@ -611,8 +693,13 @@ export async function saveListsDataToSupabase({
       }
     }
 
-    console.log("[v0] Successfully saved lists data to Supabase, load_plan_id:", loadPlanId)
-    return { success: true, loadPlanId }
+    if (hasChanges || itemsHaveChanges || !existingLoadPlanId) {
+      console.log("[v0] Successfully saved lists data to Supabase, load_plan_id:", loadPlanId)
+      return { success: true, loadPlanId }
+    } else {
+      console.log("[v0] No changes detected, data not updated, load_plan_id:", loadPlanId)
+      return { success: true, loadPlanId, message: "No changes detected, update skipped" }
+    }
   } catch (error) {
     console.error("[v0] Error saving lists data to Supabase:", error)
     return {
