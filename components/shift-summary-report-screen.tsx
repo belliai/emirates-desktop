@@ -1024,10 +1024,14 @@ TOTAL\t${totalPending.pmcAmf}\t${totalPending.alfPla}\t${totalPending.akeRke}\t$
             <option value="PIL and PER">Work Area: PIL/PER</option>
           </select>
           
-          {/* PIL/PER Sub-filter - Dummy (always disabled) */}
+          {/* PIL/PER Sub-filter - Dummy (enabled when PIL/PER selected) */}
           <select
-            disabled
-            className="px-2 py-1.5 text-xs border border-gray-300 rounded-md bg-gray-100 text-gray-400 cursor-not-allowed focus:outline-none"
+            disabled={selectedWorkArea !== "PIL and PER"}
+            className={`px-2 py-1.5 text-xs border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#D71A21] focus:border-transparent transition-colors ${
+              selectedWorkArea === "PIL and PER"
+                ? "bg-white cursor-pointer"
+                : "bg-gray-100 text-gray-400 cursor-not-allowed"
+            }`}
           >
             <option value="Both">Both</option>
             <option value="PIL only">PIL only</option>
