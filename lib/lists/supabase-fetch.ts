@@ -24,6 +24,7 @@ type LoadPlanRow = {
   sector: string | null
   header_warning: string | null
   is_critical: boolean | null
+  revision: number | null
 }
 
 type LoadPlanItemRow = {

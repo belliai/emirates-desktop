@@ -8,9 +8,10 @@ interface LoadPlanHeaderProps {
   onGenerateBCR?: () => void
   onHandover?: () => void
   onSave?: () => void
+  revision?: number
 }
 
-export function LoadPlanHeader({ onBack, isReadOnly, onGenerateBCR, onHandover, onSave }: LoadPlanHeaderProps) {
+export function LoadPlanHeader({ onBack, isReadOnly, onGenerateBCR, onHandover, onSave, revision }: LoadPlanHeaderProps) {
   return (
     <header className="sticky top-0 z-50 border-b border-gray-200 bg-white">
       <div className="flex items-center justify-between px-4 py-3">
@@ -21,6 +22,11 @@ export function LoadPlanHeader({ onBack, isReadOnly, onGenerateBCR, onHandover, 
           <h1 className="text-lg font-semibold text-gray-900">Load Plan Detail</h1>
         </div>
         <div className="flex items-center gap-3">
+          {revision !== undefined && (
+            <span className="text-sm text-gray-600 font-medium">
+              Revision: <span className="text-gray-900">{revision}</span>
+            </span>
+          )}
           {isReadOnly && onHandover && (
             <button
               onClick={onHandover}

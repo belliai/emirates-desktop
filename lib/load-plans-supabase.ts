@@ -463,6 +463,7 @@ export async function getLoadPlanDetailFromSupabase(flightNumber: string): Promi
       preparedOn: formatDateTime(loadPlan.prepared_on),
       headerWarning: loadPlan.header_warning || undefined,
       isCritical: loadPlan.is_critical || undefined,
+      revision: loadPlan.revision || 1,
       sectors,
     }
 
