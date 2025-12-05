@@ -52,6 +52,7 @@ type LoadPlanItemRow = {
   special_notes: string | null
   sector: string | null
   is_ramp_transfer: boolean | null
+  revision: number | null
 }
 
 /**

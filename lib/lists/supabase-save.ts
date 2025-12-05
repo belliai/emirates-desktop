@@ -266,12 +266,12 @@ export async function saveListsDataToSupabase({
     let newRevision = 1
     let existingLoadPlanId: string | null = null
     let hasChanges = false
+    let hasAdditionalData = false // Flag to check if there are additional items
     
     if (existingLoadPlan) {
       existingLoadPlanId = existingLoadPlan.id
-      newRevision = (existingLoadPlan.revision || 1) + 1
       
-      // Compare key fields to detect changes
+      // Compare key fields to detect changes in load_plan
       const newTotalPlannedUld = results.header.ttlPlnUld || null
       const newUldVersion = results.header.uldVersion || null
       const newAircraftType = results.header.aircraftType || null
@@ -283,7 +283,7 @@ export async function saveListsDataToSupabase({
       const newHeaderWarning = results.header.headerWarning || null
       const newIsCritical = results.header.isCritical === true
       
-      // Check if any key fields have changed
+      // Check if any key fields have changed in load_plan
       hasChanges = 
         (existingLoadPlan.total_planned_uld !== newTotalPlannedUld) ||
         (existingLoadPlan.uld_version !== newUldVersion) ||
@@ -296,14 +296,62 @@ export async function saveListsDataToSupabase({
         (existingLoadPlan.header_warning !== newHeaderWarning) ||
         (existingLoadPlan.is_critical !== newIsCritical)
       
-      if (hasChanges) {
-        console.log("[v0] Found existing load plan for flight", flightNumber, "with revision", existingLoadPlan.revision, "- changes detected, updating to revision", newRevision)
+      // Check if there are additional items (new items that don't exist based on serial_number)
+      // Only increment revision if there are NEW items (additional data)
+      if (shipments && shipments.length > 0) {
+        // Fetch ALL existing items (from all revisions) to check by serial_number
+        const { data: allExistingItems } = await supabase
+          .from("load_plan_items")
+          .select("serial_number")
+          .eq("load_plan_id", existingLoadPlanId)
+        
+        if (allExistingItems && allExistingItems.length > 0) {
+          // Create Set of existing serial numbers for fast lookup
+          const existingSerialNumbers = new Set(
+            allExistingItems
+              .map(item => item.serial_number)
+              .filter(num => num !== null && num !== undefined)
+          )
+          
+          // Check if there are new serial numbers that don't exist yet
+          const newSerialNumbers = shipments
+            .map(s => s.serialNo ? parseInt(s.serialNo, 10) : null)
+            .filter(serialNo => serialNo !== null && !existingSerialNumbers.has(serialNo))
+          
+          // Only consider it additional data if there are NEW serial numbers
+          hasAdditionalData = newSerialNumbers.length > 0
+          
+          if (hasAdditionalData) {
+            console.log("[v0] Found additional items:", newSerialNumbers.length, "new serial number(s) not in database:", newSerialNumbers.slice(0, 10))
+          } else {
+            console.log("[v0] No additional items found - all serial numbers already exist in database")
+          }
+        } else {
+          // No existing items, so all new items are considered additional
+          hasAdditionalData = shipments.length > 0
+          if (hasAdditionalData) {
+            console.log("[v0] No existing items in database, all", shipments.length, "items are considered additional")
+          }
+        }
+      }
+      
+      // For now, keep revision = 1 even if there is additional data
+      // We'll implement revision logic later
+      // Focus on additional_data flag first
+      newRevision = 1
+      if (hasAdditionalData) {
+        console.log("[v0] Found existing load plan for flight", flightNumber, "- additional data detected, setting additional_data = true for new items, revision remains 1")
       } else {
-        console.log("[v0] Found existing load plan for flight", flightNumber, "with revision", existingLoadPlan.revision, "- no changes detected, skipping update")
+        if (hasChanges) {
+          console.log("[v0] Found existing load plan for flight", flightNumber, "with revision", existingLoadPlan.revision, "- header changes detected but no additional items, keeping revision", newRevision, "(items belong to original)")
+        } else {
+          console.log("[v0] Found existing load plan for flight", flightNumber, "with revision", existingLoadPlan.revision, "- no changes detected, keeping revision", newRevision)
+        }
       }
     } else {
       console.log("[v0] No existing load plan found for flight", flightNumber, "- creating new with revision", newRevision)
       hasChanges = true // New load plan, so we need to insert
+      hasAdditionalData = true // New load plan means all data is "additional"
     }
 
     // 1. Prepare insert/update data
@@ -467,13 +515,15 @@ export async function saveListsDataToSupabase({
     const loadPlanId = loadPlan.id || existingLoadPlanId
 
     // 2. Check if load_plan_items have changed (only if updating existing load plan)
+    // Note: This check happens before loadPlanId is available, so we use existingLoadPlanId
     let itemsHaveChanges = true
     if (existingLoadPlanId && shipments && shipments.length > 0) {
-      // Fetch existing items to compare
+      // Fetch existing items from current revision to compare
       const { data: existingItems, error: itemsCheckError } = await supabase
         .from("load_plan_items")
         .select("*")
-        .eq("load_plan_id", loadPlanId)
+        .eq("load_plan_id", existingLoadPlanId)
+        .eq("revision", existingLoadPlan.revision || 1) // Only compare with current revision
         .order("serial_number", { ascending: true })
       
       if (!itemsCheckError && existingItems && existingItems.length > 0) {
@@ -500,24 +550,56 @@ export async function saveListsDataToSupabase({
       }
     }
 
-    // 3. If updating existing load plan and items have changes, delete old items first
+    // 3. If updating existing load plan and items have changes, keep old items with their revision
+    // Don't delete - we keep history. New items will be inserted with new revision number
     if (existingLoadPlanId && itemsHaveChanges) {
-      console.log("[v0] Changes detected in load_plan_items, deleting old items for load_plan_id:", loadPlanId)
-      const { error: deleteItemsError } = await supabase
-        .from("load_plan_items")
-        .delete()
-        .eq("load_plan_id", loadPlanId)
-      
-      if (deleteItemsError) {
-        console.error("[v0] Error deleting old load_plan_items:", deleteItemsError)
-        // Continue anyway - we'll try to insert new items
-      } else {
-        console.log("[v0] Successfully deleted old load_plan_items")
-      }
+      console.log("[v0] Changes detected in load_plan_items, keeping old items with revision", existingLoadPlan.revision, "and inserting new items with revision", newRevision)
+      // Old items remain in database with their original revision
+      // New items will be inserted with the new revision number
     }
 
-    // 4. Insert load_plan_items from shipments (only if there are changes or new load plan)
-    if (shipments && shipments.length > 0 && (itemsHaveChanges || !existingLoadPlanId)) {
+    // 4. Insert load_plan_items from shipments
+    // Logic:
+    // - New load plan (no existing): Always insert all items with revision 1 (original)
+    // - Existing load plan: Only insert NEW items (not already exist based on serial_number)
+    //   - Check existing items by serial_number
+    //   - Filter shipments to only include items that don't exist yet
+    //   - Insert only new items with new revision
+    let itemsToInsert = shipments || []
+    
+    if (existingLoadPlanId && shipments && shipments.length > 0) {
+      // Fetch all existing items for this load plan (from all revisions) to check by serial_number
+      const { data: allExistingItems, error: allItemsError } = await supabase
+        .from("load_plan_items")
+        .select("serial_number")
+        .eq("load_plan_id", existingLoadPlanId)
+      
+      if (allItemsError) {
+        console.error("[v0] Error fetching existing items for duplicate check:", allItemsError)
+      } else {
+        // Create a Set of existing serial numbers for fast lookup
+        const existingSerialNumbers = new Set(
+          (allExistingItems || [])
+            .map(item => item.serial_number)
+            .filter(num => num !== null && num !== undefined)
+        )
+        
+        // Filter shipments to only include items with serial_number that don't exist yet
+        itemsToInsert = shipments.filter(shipment => {
+          const serialNo = shipment.serialNo ? parseInt(shipment.serialNo, 10) : null
+          if (serialNo === null) {
+            // If no serial number, include it (might be new)
+            return true
+          }
+          // Only include if serial_number doesn't exist yet
+          return !existingSerialNumbers.has(serialNo)
+        })
+        
+        console.log(`[v0] Filtered items: ${shipments.length} total, ${itemsToInsert.length} new items to insert, ${shipments.length - itemsToInsert.length} already exist`)
+      }
+    }
+    
+    if (itemsToInsert && itemsToInsert.length > 0 && (!existingLoadPlanId || itemsToInsert.length > 0)) {
       // Check for VUN shipments before saving
       const vunShipments = shipments.filter(s => s.shc && s.shc.includes('VUN'))
       if (vunShipments.length > 0) {
@@ -538,7 +620,20 @@ export async function saveListsDataToSupabase({
         return str.length > maxLength ? str.substring(0, maxLength) : str
       }
 
-      const loadPlanItems = shipments.map((shipment) => {
+      const loadPlanItems = itemsToInsert.map((shipment) => {
+        // Determine if this item is additional data (new item added in subsequent upload)
+        // additional_data = true if:
+        //   - Existing load plan AND hasAdditionalData is true (new items detected)
+        //   - This means it's additional data that triggered revision increment
+        // additional_data = false if:
+        //   - New load plan (first upload, all items are original)
+        //   - Or no additional data detected (all items already exist)
+        // IMPORTANT: Always set a boolean value (never null) to satisfy NOT NULL constraint
+        // For original upload (no existing load plan): additional_data = false
+        // For subsequent upload with new items: additional_data = true
+        // Explicitly convert to boolean to ensure never null/undefined
+        const isAdditionalData: boolean = !!(existingLoadPlanId && hasAdditionalData)
+        
         const item = {
           load_plan_id: loadPlanId,
           serial_number: shipment.serialNo ? parseInt(shipment.serialNo, 10) : null,
@@ -576,6 +671,13 @@ export async function saveListsDataToSupabase({
           // Sector information for grouping items by sector
           sector: truncate(shipment.sector, 50),
           is_ramp_transfer: shipment.isRampTransfer === true,
+          // Revision number - tracks which revision of the load plan this item belongs to
+          // revision = 1 means original data, revision > 1 means updated/new data
+          revision: newRevision,
+          // Additional data flag - true if this item is new data added in subsequent upload
+          // This flag helps identify which items triggered the revision increment
+          // IMPORTANT: Always boolean (true or false), never null
+          additional_data: Boolean(isAdditionalData),
         }
         
         // Log if ULD is being saved to special_notes (this should NOT happen)
@@ -645,47 +747,62 @@ export async function saveListsDataToSupabase({
       // Try to insert with is_ramp_transfer field first
       let { error: itemsError } = await supabase.from("load_plan_items").insert(loadPlanItems)
 
-      // If error occurs, it might be because is_ramp_transfer field doesn't exist yet
-      // Try without is_ramp_transfer field as fallback
+      // If error occurs, it might be because additional_data or is_ramp_transfer field doesn't exist yet
+      // Try without these fields as fallback
       if (itemsError) {
-        console.error("[v0] Error inserting load_plan_items with is_ramp_transfer:", {
-          message: itemsError.message,
-          details: itemsError.details,
-          hint: itemsError.hint,
-          code: itemsError.code,
+        const errorMessage = itemsError.message || ""
+        const errorDetails = itemsError.details || ""
+        const errorHint = itemsError.hint || ""
+        const errorCode = itemsError.code || ""
+        
+        console.error("[v0] Error inserting load_plan_items:", {
+          message: errorMessage,
+          details: errorDetails,
+          hint: errorHint,
+          code: errorCode,
+          fullError: itemsError ? JSON.stringify(itemsError) : "Error object is empty or undefined"
         })
         
-        // Check if error is related to is_ramp_transfer field
-        const errorMessage = itemsError.message || JSON.stringify(itemsError)
-        if (errorMessage.includes('is_ramp_transfer') || errorMessage.includes('column') || errorMessage.includes('does not exist')) {
-          console.warn("[v0] is_ramp_transfer field may not exist. Retrying without is_ramp_transfer field...")
+        // Check if error is related to missing column (additional_data or is_ramp_transfer)
+        const errorStr = `${errorMessage} ${errorDetails} ${errorHint}`.toLowerCase()
+        const isColumnError = errorStr.includes('column') || 
+                             errorStr.includes('does not exist') || 
+                             errorStr.includes('additional_data') ||
+                             errorStr.includes('is_ramp_transfer') ||
+                             errorCode === 'PGRST204' // PostgREST schema cache error
+        
+        if (isColumnError || !errorMessage) {
+          console.warn("[v0] Column may not exist or schema cache issue. Retrying without additional_data and is_ramp_transfer fields...")
           
-          // Remove is_ramp_transfer field and try again
-          const loadPlanItemsWithoutRampTransfer = loadPlanItems.map(({ is_ramp_transfer, ...item }) => item)
+          // Remove additional_data and is_ramp_transfer from all items and retry
+          const loadPlanItemsWithoutNewFields = loadPlanItems.map(({ additional_data, is_ramp_transfer, ...item }) => item)
           
-          const { error: retryError } = await supabase.from("load_plan_items").insert(loadPlanItemsWithoutRampTransfer)
+          const { error: retryError } = await supabase.from("load_plan_items").insert(loadPlanItemsWithoutNewFields)
           
           if (retryError) {
-            console.error("[v0] Error inserting load_plan_items (retry without is_ramp_transfer):", {
-              message: retryError.message,
-              details: retryError.details,
+            const retryMessage = retryError.message || ""
+            const retryDetails = retryError.details || ""
+            console.error("[v0] Error inserting load_plan_items (retry without new fields):", {
+              message: retryMessage,
+              details: retryDetails,
               hint: retryError.hint,
               code: retryError.code,
+              fullError: retryError ? JSON.stringify(retryError) : "Error object is empty"
             })
             // Return error instead of continuing silently
             return { 
               success: false, 
-              error: `Failed to insert load_plan_items: ${retryError.message || JSON.stringify(retryError)}. Please run migration script 003_add_ramp_transfer_flag.sql to add is_ramp_transfer field.` 
+              error: `Failed to insert load_plan_items: ${retryMessage || JSON.stringify(retryError)}. Please run migration scripts 017_add_additional_data_flag.sql and 003_add_ramp_transfer_flag.sql to add missing fields.` 
             }
           } else {
-            console.log(`[v0] Successfully inserted ${loadPlanItems.length} load_plan_items (without is_ramp_transfer field)`)
-            console.warn("[v0] ⚠️ is_ramp_transfer field is missing. Please run migration script 003_add_ramp_transfer_flag.sql")
+            console.log(`[v0] Successfully inserted ${loadPlanItems.length} load_plan_items (without additional_data and is_ramp_transfer fields)`)
+            console.warn("[v0] ⚠️ additional_data or is_ramp_transfer fields are missing. Please run migration scripts to add these fields.")
           }
         } else {
           // Different error, return it
           return { 
             success: false, 
-            error: `Failed to insert load_plan_items: ${itemsError.message || JSON.stringify(itemsError)}` 
+            error: `Failed to insert load_plan_items: ${errorMessage || JSON.stringify(itemsError)}` 
           }
         }
       } else {

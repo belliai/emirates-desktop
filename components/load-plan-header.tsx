@@ -24,7 +24,7 @@ export function LoadPlanHeader({ onBack, isReadOnly, onGenerateBCR, onHandover, 
         <div className="flex items-center gap-3">
           {revision !== undefined && (
             <span className="text-sm text-gray-600 font-medium">
-              Revision: <span className="text-gray-900">{revision}</span>
+              Revision: <span className={revision > 1 ? "text-red-600 font-semibold" : "text-gray-900"}>{revision}</span>
             </span>
           )}
           {isReadOnly && onHandover && (
