@@ -22,6 +22,8 @@ export type AWBRow = {
   whs: string
   si: string
   remarks?: string
+  revision?: number // Revision number of the load plan item
+  additional_data?: boolean // Flag indicating if this item is additional data (new item added in subsequent upload)
 }
 
 export type ULDSection = {

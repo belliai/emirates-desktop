@@ -926,27 +926,61 @@ function CombinedTable({
     })
   })
 
-  // Sort AWBs within each sector by serial number ascending
+  // Sort AWBs within each sector by additional_data DESC (red on top), then by serial number
   sectorGroups.forEach((group) => {
+    // Sort regular items by additional_data DESC (red on top), then by serial number
     group.regular.sort((a, b) => {
+      const aAdditional = a.awb?.additional_data === true
+      const bAdditional = b.awb?.additional_data === true
+      if (aAdditional !== bAdditional) {
+        return bAdditional ? 1 : -1 // DESC: additional_data = true first (red on top)
+      }
+      // If same additional_data, sort by serial number
       const aSer = parseInt(a.awb.ser) || 0
       const bSer = parseInt(b.awb.ser) || 0
       return aSer - bSer
     })
     
     group.rampTransfer.sort((a, b) => {
+      const aAdditional = a.awb?.additional_data === true
+      const bAdditional = b.awb?.additional_data === true
+      if (aAdditional !== bAdditional) {
+        return bAdditional ? 1 : -1 // DESC: additional_data = true first (red on top)
+      }
+      // If same additional_data, sort by serial number
       const aSer = parseInt(a.awb.ser) || 0
       const bSer = parseInt(b.awb.ser) || 0
       return aSer - bSer
     })
   })
   
-  // Convert to array for rendering - preserve sector order from editedPlan.sectors
+  // Convert to array for rendering
+  // IMPORTANT: Sort sectors by additional_data first (sectors with red items on top)
+  // This ensures all red items (additional_data = true) appear at the top, regardless of which sector they're in
   const sectorOrder = editedPlan.sectors.map(s => s.sector || "UNKNOWN")
   const sortedSectors = Array.from(sectorGroups.entries()).sort((a, b) => {
+    // Check if sectors have items with additional_data = true
+    const aAllItems = [...a[1].regular, ...a[1].rampTransfer]
+    const bAllItems = [...b[1].regular, ...b[1].rampTransfer]
+    
+    const aHasAdditional = aAllItems.some(item => item.awb?.additional_data === true)
+    const bHasAdditional = bAllItems.some(item => item.awb?.additional_data === true)
+    
+    // Sort by additional_data DESC first (sectors with additional_data = true/red items on top)
+    if (aHasAdditional !== bHasAdditional) {
+      return bHasAdditional ? 1 : -1
+    }
+    
+    // If both have or don't have additional_data, check count of items with additional_data = true
+    const aRedCount = aAllItems.filter(item => item.awb?.additional_data === true).length
+    const bRedCount = bAllItems.filter(item => item.awb?.additional_data === true).length
+    if (aRedCount !== bRedCount) {
+      return bRedCount - aRedCount // More red items first
+    }
+    
+    // If same additional_data status and red count, preserve original sector order
     const aIndex = sectorOrder.indexOf(a[0])
     const bIndex = sectorOrder.indexOf(b[0])
-    // If sector not found in order, put at end
     if (aIndex === -1 && bIndex === -1) return 0
     if (aIndex === -1) return 1
     if (bIndex === -1) return -1
@@ -1055,6 +1089,10 @@ function CombinedTable({
                       const isHovered = !!(hoveredUld && assignmentUld && hoveredUld === assignmentUld)
                       const splitGroups = assignment?.assignmentData.type === "split" ? assignment.assignmentData.splitGroups : []
                       
+                      // Get additional_data flag from awb item (from database)
+                      // Use additional_data for styling (red if true, black if false)
+                      const isAdditionalData = awb.additional_data === true
+                      
                       // Check if we need to show ULD row after this AWB
                       // Show ULD row only if:
                       // 1. Current item has a ULD
@@ -1066,7 +1104,7 @@ function CombinedTable({
                       )
                       
                       return (
-                        <React.Fragment key={`${awb.ser}-${awb.awbNo}-${sectorIndex}-${uldSectionIndex}-${awbIndex}`}>
+                        <React.Fragment key={`${awb.ser}-${awb.awbNo}-${sectorIndex}-${uldSectionIndex}-${awbIndex}-${awb.additional_data ? 'add' : 'orig'}`}>
                           <AWBRow
                             awb={awb}
                             sectorIndex={sectorIndex}
@@ -1092,6 +1130,7 @@ function CombinedTable({
                             onDeleteRow={() => onDeleteAWBRow(sectorIndex, uldSectionIndex, awbIndex)}
                             hoveredUld={hoveredUld}
                             isQRTList={isQRTList}
+                            additional_data={isAdditionalData}
                           />
                           {shouldShowULD && (
                             <ULDRow
@@ -1129,6 +1168,10 @@ function CombinedTable({
                           const assignmentKey = `${awb.awbNo}-${sectorIndex}-${uldSectionIndex}-${awbIndex}`
                           const assignment = awbAssignments.get(assignmentKey)
                           
+                          // Get revision from awb item (from database)
+                          // If awb.revision is undefined/null, it means revision = 1 (original)
+                          const itemRevision = (awb.revision !== undefined && awb.revision !== null && !isNaN(Number(awb.revision))) ? Number(awb.revision) : 1
+                          
                           // Check if we need to show ULD row after this AWB
                           const nextItem = group.rampTransfer[index + 1]
                           const shouldShowULD = uld && uld.trim() !== "" && (
@@ -1136,8 +1179,11 @@ function CombinedTable({
                             nextItem.uld !== uld
                           )
                           
+                          // Get additional_data flag from awb item (from database)
+                          const isRampAdditionalData = awb.additional_data === true
+                          
                           return (
-                            <React.Fragment key={`${awb.ser}-${awb.awbNo}-${sectorIndex}-${uldSectionIndex}-${awbIndex}`}>
+                            <React.Fragment key={`${awb.ser}-${awb.awbNo}-${sectorIndex}-${uldSectionIndex}-${awbIndex}-${awb.additional_data ? 'add' : 'orig'}`}>
                               <AWBRow
                                 awb={awb}
                                 sectorIndex={sectorIndex}
@@ -1158,6 +1204,7 @@ function CombinedTable({
                                 isRampTransfer
                                 hoveredUld={hoveredUld}
                                 isQRTList={isQRTList}
+                                additional_data={isRampAdditionalData}
                               />
                               {shouldShowULD && (
                                 <ULDRow
@@ -1300,6 +1347,8 @@ interface AWBRowProps {
   isRampTransfer?: boolean
   hoveredUld?: string | null
   isQRTList?: boolean
+  revision?: number // Revision number of the load plan (deprecated, use additional_data instead)
+  additional_data?: boolean // Flag indicating if this item is additional data (new item added in subsequent upload)
 }
 
 function AWBRow({
@@ -1323,6 +1372,8 @@ function AWBRow({
   isRampTransfer,
   hoveredUld,
   isQRTList = false,
+  revision = 1,
+  additional_data = false,
 }: AWBRowProps) {
   const [hoveredSection, setHoveredSection] = useState<"left" | "right" | null>(null)
   
@@ -1368,6 +1419,13 @@ function AWBRow({
   const leftFields = awbFields.slice(0, 8) // Up to and including SHC
   const rightFields = awbFields.slice(8) // After SHC
 
+  // Determine text color based on additional_data flag:
+  // - additional_data = false: black text (original)
+  // - additional_data = true: red text (new/additional data)
+  // Use additional_data from awb object (from database) or from prop
+  const isAdditionalData = awb.additional_data === true || additional_data === true
+  const textColorClass = isAdditionalData ? "text-red-600" : "text-gray-900"
+
   return (
     <>
       <tr
@@ -1409,10 +1467,11 @@ function AWBRow({
         )}
         {/* Left section - Quick Actions (SER onwards, up to and including SHC) */}
         {leftFields.map(({ key, className }) => {
-          // Remove whitespace from AWB number
-          const displayValue = key === "awbNo" 
-            ? (awb[key] || "").replace(/\s+/g, "")
-            : (awb[key] || "")
+          // Remove whitespace from AWB number and ensure string type
+          const rawValue = awb[key]
+          const displayValue: string = key === "awbNo" 
+            ? String(rawValue || "").replace(/\s+/g, "")
+            : String(rawValue || "")
           
           return (
             <td
@@ -1434,7 +1493,7 @@ function AWBRow({
                   const cleanedValue = key === "awbNo" ? value.replace(/\s+/g, "") : value
                   onUpdateField(key, cleanedValue)
                 }}
-                className={`text-xs ${className || ""}`}
+                className={`text-xs ${textColorClass} ${className || ""}`}
                 readOnly={isReadOnly}
               />
             </td>
@@ -1443,10 +1502,11 @@ function AWBRow({
         
         {/* Right section - AWB Assignment (after SHC) */}
         {rightFields.map(({ key, className, isEditable }) => {
-          // Remove whitespace from AWB number (though it shouldn't be in right section)
-          const displayValue = key === "awbNo" 
-            ? (awb[key] || "").replace(/\s+/g, "")
-            : (awb[key] || "")
+          // Remove whitespace from AWB number and ensure string type
+          const rawValue = awb[key]
+          const displayValue: string = key === "awbNo" 
+            ? String(rawValue || "").replace(/\s+/g, "")
+            : String(rawValue || "")
           
           // ULD Number field in QRT mode is always editable and visually distinct
           const isUldNumberField = key === "uldNumber" && isEditable
@@ -1475,7 +1535,7 @@ function AWBRow({
                   value={displayValue}
                   onChange={(e) => onUpdateField(key, e.target.value)}
                   placeholder="Enter ULD#"
-                  className="w-full px-1.5 py-0.5 text-xs border border-yellow-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-yellow-500 focus:border-yellow-500"
+                  className={`w-full px-1.5 py-0.5 text-xs border border-yellow-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-yellow-500 focus:border-yellow-500 ${textColorClass}`}
                   onClick={(e) => e.stopPropagation()}
                 />
               ) : (
@@ -1486,16 +1546,16 @@ function AWBRow({
                     const cleanedValue = key === "awbNo" ? value.replace(/\s+/g, "") : value
                     onUpdateField(key, cleanedValue)
                   }}
-                  className={`text-xs ${className || ""}`}
+                  className={`text-xs ${textColorClass} ${className || ""}`}
                   readOnly={isReadOnly}
                 />
               )}
             </td>
           )
         })}
-        <td className="px-2 py-1">
+        <td className={`px-2 py-1 ${textColorClass}`}>
           {remainingPieces ? (
-            <span className="text-xs text-orange-600 font-semibold">{remainingPieces}</span>
+            <span className={`text-xs font-semibold ${textColorClass}`}>{remainingPieces}</span>
           ) : (
             !isReadOnly && (
               <div className="flex items-center gap-1">
@@ -1524,11 +1584,11 @@ function AWBRow({
       </tr>
       {awb.remarks && (
         <tr>
-          <td colSpan={isQRTList ? 21 : 20} className="px-2 py-1 text-xs text-gray-700 italic">
+          <td colSpan={isQRTList ? 21 : 20} className={`px-2 py-1 text-xs italic ${textColorClass}`}>
             <EditableField
               value={awb.remarks}
               onChange={(value) => onUpdateField("remarks", value)}
-              className="text-xs italic w-full"
+              className={`text-xs italic w-full ${textColorClass}`}
               multiline
               readOnly={isReadOnly}
             />
@@ -1547,14 +1607,14 @@ function AWBRow({
             onMouseLeave={onMouseLeave}
           >
             {enableBulkCheckboxes && <td className="px-2 py-1"></td>}
-            <td className="px-2 py-1 pl-8 text-xs text-gray-500">
-              <span className="text-gray-400">└─</span>
+            <td className={`px-2 py-1 pl-8 text-xs ${textColorClass}`}>
+              <span className={textColorClass}>└─</span>
             </td>
-            <td className="px-2 py-1 text-xs font-medium text-gray-700">{awb.awbNo.replace(/\s+/g, "")}</td>
-            <td className="px-2 py-1 text-xs text-gray-500">{awb.orgDes}</td>
-            <td className="px-2 py-1 text-xs text-gray-700 font-semibold">{group.pieces || "-"}</td>
-            <td className="px-2 py-1 text-xs text-gray-500">{groupUld || "-"}</td>
-            <td className="px-2 py-1 text-xs text-gray-600 font-mono">{group.no || "-"}</td>
+            <td className={`px-2 py-1 text-xs font-medium ${textColorClass}`}>{awb.awbNo.replace(/\s+/g, "")}</td>
+            <td className={`px-2 py-1 text-xs ${textColorClass}`}>{awb.orgDes}</td>
+            <td className={`px-2 py-1 text-xs font-semibold ${textColorClass}`}>{group.pieces || "-"}</td>
+            <td className={`px-2 py-1 text-xs ${textColorClass}`}>{groupUld || "-"}</td>
+            <td className={`px-2 py-1 text-xs font-mono ${textColorClass}`}>{group.no || "-"}</td>
             <td colSpan={isQRTList ? 15 : 14} className="px-2 py-1"></td>
           </tr>
         )
