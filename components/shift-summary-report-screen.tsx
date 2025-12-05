@@ -7,10 +7,9 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
 import { Copy, FileText, Plus, Search, Clock, X, Settings2, ArrowUpDown, SlidersHorizontal } from "lucide-react"
 import UWSDelayReportModal from "./uws-delay-report-modal"
-import { useWorkAreaFilter, WorkAreaFilterControls } from "./work-area-filter-controls"
-import type { WorkArea } from "@/lib/work-area-filter-utils"
 
 // Filter types
+type WorkArea = "GCR" | "PIL and PER"
 type Shift = "All" | "9am to 9pm" | "9pm to 9am"
 type Module = "All" | "PAX & PF build-up EUR (1st floor, E)" | "PAX & PF build-up AFR (1st floor, F)" | "PAX & PF build-up ME, SubCon, Asia (1st floor, G)" | "Build-up AUS (1st floor, H)" | "US Screening Flights (1st floor, I)" | "Freighter & PAX Breakdown & build-up (Ground floor, F)" | "IND/PAK Build-up (Ground floor, G)" | "PER (Ground floor, H)" | "PIL (Ground floor, I)"
 
@@ -1017,8 +1016,16 @@ TOTAL\t${totalPending.pmcAmf}\t${totalPending.alfPla}\t${totalPending.akeRke}\t$
 
           <div className="w-px h-6 bg-gray-200" />
 
-          {/* Work Area Filter */}
-          <WorkAreaFilterControls />
+          {/* Work Area Filter - Functional */}
+          <select
+            id="work-area-filter"
+            value={selectedWorkArea}
+            onChange={(e) => setSelectedWorkArea(e.target.value as WorkArea)}
+            className="px-2 py-1.5 text-xs border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-[#D71A21] focus:border-transparent"
+          >
+            <option value="GCR">Work Area: GCR</option>
+            <option value="PIL and PER">Work Area: PIL/PER</option>
+          </select>
 
           {/* Shift Filter - Dummy */}
           <select
