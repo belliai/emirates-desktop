@@ -630,6 +630,7 @@ export default function LoadPlansScreen({ onLoadPlanSelect }: { onLoadPlanSelect
             // Check if flight already exists in current list
             const exists = loadPlans.some((lp) => lp.flight === header.flightNumber)
             if (exists) {
+              // Flight was updated (revision incremented)
               totalSkippedCount++
               skippedFlights.push(header.flightNumber)
             } else {
@@ -663,7 +664,7 @@ export default function LoadPlansScreen({ onLoadPlanSelect }: { onLoadPlanSelect
           message += `Successfully added ${totalAddedCount} load plan${totalAddedCount > 1 ? "s" : ""}. `
         }
         if (totalSkippedCount > 0) {
-          message += `${totalSkippedCount} flight${totalSkippedCount > 1 ? "s" : ""} already exist${totalSkippedCount > 1 ? "" : "s"} (${skippedFlights.slice(0, 5).join(", ")}${skippedFlights.length > 5 ? `, and ${skippedFlights.length - 5} more` : ""}) and ${totalSkippedCount > 1 ? "were" : "was"} updated. `
+          message += `${totalSkippedCount} flight${totalSkippedCount > 1 ? "s" : ""} already exist${totalSkippedCount > 1 ? "" : "s"} (${skippedFlights.slice(0, 5).join(", ")}${skippedFlights.length > 5 ? `, and ${skippedFlights.length - 5} more` : ""}) and ${totalSkippedCount > 1 ? "were" : "was"} updated with revision incremented. `
         }
         if (failedFiles.length > 0) {
           message += `${failedFiles.length} file${failedFiles.length > 1 ? "s" : ""} could not be processed (${failedFiles.slice(0, 3).join(", ")}${failedFiles.length > 3 ? "..." : ""}).`

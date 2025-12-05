@@ -244,8 +244,37 @@ export async function saveListsDataToSupabase({
       date_original: results.header.date,
     })
 
-    // 1. Insert load_plan
-    // Prepare insert data
+    // Check if load plan with this flight_number already exists
+    const { data: existingLoadPlan, error: checkError } = await supabase
+      .from("load_plans")
+      .select("id, revision")
+      .eq("flight_number", flightNumber)
+      .order("revision", { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    if (checkError && checkError.code !== 'PGRST116') { // PGRST116 = no rows returned
+      console.error("[v0] Error checking existing load plan:", checkError)
+      return {
+        success: false,
+        error: `Failed to check existing load plan: ${checkError.message}`
+      }
+    }
+
+    // Determine revision number
+    let newRevision = 1
+    let existingLoadPlanId: string | null = null
+    
+    if (existingLoadPlan) {
+      existingLoadPlanId = existingLoadPlan.id
+      newRevision = (existingLoadPlan.revision || 1) + 1
+      console.log("[v0] Found existing load plan for flight", flightNumber, "with revision", existingLoadPlan.revision, "- updating to revision", newRevision)
+    } else {
+      console.log("[v0] No existing load plan found for flight", flightNumber, "- creating new with revision", newRevision)
+    }
+
+    // 1. Insert or Update load_plan
+    // Prepare insert/update data
     const loadPlanData: any = {
       flight_number: flightNumber,
       flight_date: flightDateStr,
@@ -262,6 +291,7 @@ export async function saveListsDataToSupabase({
       prepared_on: preparedOn,
       sector: results.header.sector || null,
       header_warning: results.header.headerWarning || null,
+      revision: newRevision,
     }
     
     // Log header data for debugging
@@ -302,16 +332,26 @@ export async function saveListsDataToSupabase({
       loadPlanData.is_critical = false
     }
     
-    console.log("[v0] Inserting load_plan with data:", {
+    console.log("[v0] " + (existingLoadPlanId ? "Updating" : "Inserting") + " load_plan with data:", {
       ...loadPlanData,
       is_critical: loadPlanData.is_critical,
     })
     
-    let { data: loadPlan, error: loadPlanError } = await supabase
-      .from("load_plans")
-      .insert(loadPlanData)
-      .select()
-      .single()
+    let { data: loadPlan, error: loadPlanError } = existingLoadPlanId
+      ? await supabase
+          .from("load_plans")
+          .update({
+            ...loadPlanData,
+            revision: newRevision, // Update revision
+          })
+          .eq("id", existingLoadPlanId)
+          .select()
+          .single()
+      : await supabase
+          .from("load_plans")
+          .insert(loadPlanData)
+          .select()
+          .single()
 
     // If error is about is_critical column, retry without it
     if (loadPlanError) {
@@ -322,7 +362,7 @@ export async function saveListsDataToSupabase({
         hint: loadPlanError.hint || 'No hint',
         code: loadPlanError.code || 'No error code',
       }
-      console.error("[v0] Error inserting load_plan:", errorDetails)
+      console.error("[v0] Error " + (existingLoadPlanId ? "updating" : "inserting") + " load_plan:", errorDetails)
       
       // Check if error is related to is_critical column
       if (errorMessage.includes('is_critical') || 
@@ -332,14 +372,24 @@ export async function saveListsDataToSupabase({
         
         // Remove is_critical and retry
         const { is_critical, ...loadPlanDataWithoutCritical } = loadPlanData
-        const retryResult = await supabase
-          .from("load_plans")
-          .insert(loadPlanDataWithoutCritical)
-          .select()
-          .single()
+        const retryResult = existingLoadPlanId
+          ? await supabase
+              .from("load_plans")
+              .update({
+                ...loadPlanDataWithoutCritical,
+                revision: newRevision,
+              })
+              .eq("id", existingLoadPlanId)
+              .select()
+              .single()
+          : await supabase
+              .from("load_plans")
+              .insert(loadPlanDataWithoutCritical)
+              .select()
+              .single()
         
         if (retryResult.error) {
-          console.error("[v0] Error inserting load_plan (retry without is_critical):", {
+          console.error("[v0] Error " + (existingLoadPlanId ? "updating" : "inserting") + " load_plan (retry without is_critical):", {
             message: retryResult.error.message || 'No error message',
             details: retryResult.error.details || 'No details',
             hint: retryResult.error.hint || 'No hint',
@@ -347,7 +397,7 @@ export async function saveListsDataToSupabase({
           })
           return { 
             success: false, 
-            error: retryResult.error.message || JSON.stringify(retryResult.error) || 'Failed to insert load plan' 
+            error: retryResult.error.message || JSON.stringify(retryResult.error) || 'Failed to ' + (existingLoadPlanId ? 'update' : 'insert') + ' load plan' 
           }
         }
         
@@ -357,18 +407,34 @@ export async function saveListsDataToSupabase({
       } else {
         return { 
           success: false, 
-          error: loadPlanError.message || JSON.stringify(loadPlanError) || 'Failed to insert load plan' 
+          error: loadPlanError.message || JSON.stringify(loadPlanError) || 'Failed to ' + (existingLoadPlanId ? 'update' : 'insert') + ' load plan' 
         }
       }
     }
 
     if (!loadPlan) {
-      return { success: false, error: "Failed to create load plan" }
+      return { success: false, error: "Failed to " + (existingLoadPlanId ? "update" : "create") + " load plan" }
     }
 
     const loadPlanId = loadPlan.id
 
-    // 2. Insert load_plan_items from shipments
+    // 2. If updating existing load plan, delete old items first
+    if (existingLoadPlanId) {
+      console.log("[v0] Deleting old load_plan_items for load_plan_id:", loadPlanId)
+      const { error: deleteItemsError } = await supabase
+        .from("load_plan_items")
+        .delete()
+        .eq("load_plan_id", loadPlanId)
+      
+      if (deleteItemsError) {
+        console.error("[v0] Error deleting old load_plan_items:", deleteItemsError)
+        // Continue anyway - we'll try to insert new items
+      } else {
+        console.log("[v0] Successfully deleted old load_plan_items")
+      }
+    }
+
+    // 3. Insert load_plan_items from shipments
     if (shipments && shipments.length > 0) {
       // Check for VUN shipments before saving
       const vunShipments = shipments.filter(s => s.shc && s.shc.includes('VUN'))

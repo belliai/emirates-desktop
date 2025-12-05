@@ -447,6 +447,7 @@ export default function LoadPlanDetailScreen({ loadPlan, onBack, onSave, onNavig
         onGenerateBCR={isReadOnly ? () => setShowBCRModal(true) : undefined}
         onHandover={isReadOnly ? () => setShowHandoverModal(true) : undefined}
         onSave={onSave ? handleSave : undefined}
+        revision={editedPlan.revision}
       />
 
       <div className="bg-gray-50 relative">

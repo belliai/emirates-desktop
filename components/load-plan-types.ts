@@ -51,6 +51,7 @@ export type LoadPlanDetail = {
   preparedOn: string
   headerWarning?: string
   isCritical?: boolean // Flag to indicate if document has CRITICAL stamp
+  revision?: number // Revision number for the load plan
   remarks?: string[]
   sectors: {
     sector: string
