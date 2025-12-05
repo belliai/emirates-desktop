@@ -335,17 +335,17 @@ export async function saveListsDataToSupabase({
         }
       }
       
-      // For now, keep revision = 1 even if there is additional data
-      // We'll implement revision logic later
-      // Focus on additional_data flag first
-      newRevision = 1
+      // For load_plans table: ALWAYS increment revision if data already exists
+      // This is independent of additional_data logic (which is used for load_plan_items)
+      newRevision = (existingLoadPlan.revision || 1) + 1
+      
       if (hasAdditionalData) {
-        console.log("[v0] Found existing load plan for flight", flightNumber, "- additional data detected, setting additional_data = true for new items, revision remains 1")
+        console.log("[v0] Found existing load plan for flight", flightNumber, "- additional data detected, incrementing revision from", existingLoadPlan.revision, "to", newRevision)
       } else {
         if (hasChanges) {
-          console.log("[v0] Found existing load plan for flight", flightNumber, "with revision", existingLoadPlan.revision, "- header changes detected but no additional items, keeping revision", newRevision, "(items belong to original)")
+          console.log("[v0] Found existing load plan for flight", flightNumber, "with revision", existingLoadPlan.revision, "- header changes detected, incrementing revision to", newRevision, "(items belong to original)")
         } else {
-          console.log("[v0] Found existing load plan for flight", flightNumber, "with revision", existingLoadPlan.revision, "- no changes detected, keeping revision", newRevision)
+          console.log("[v0] Found existing load plan for flight", flightNumber, "with revision", existingLoadPlan.revision, "- no changes detected but incrementing revision to", newRevision, "(always increment on re-upload)")
         }
       }
     } else {
@@ -412,19 +412,26 @@ export async function saveListsDataToSupabase({
       loadPlanData.is_critical = false
     }
     
-    // Only proceed with insert/update if there are changes or it's a new load plan
-    if (existingLoadPlanId && !hasChanges) {
-      console.log("[v0] No changes detected in load_plan data, skipping update. Checking items...")
-      // Still need to check items, so continue but skip load_plan update
-      // We'll use existingLoadPlanId for items check
-    } else {
-      console.log("[v0] " + (existingLoadPlanId ? "Updating" : "Inserting") + " load_plan with data:", {
+    // Always update load_plan if it already exists (to increment revision)
+    // Revision in load_plans table always increments on re-upload, regardless of changes
+    if (existingLoadPlanId) {
+      // Always update existing load plan to increment revision
+      console.log("[v0] Updating load_plan with data (revision will be incremented):", {
         ...loadPlanData,
         is_critical: loadPlanData.is_critical,
+        revision: newRevision,
+      })
+    } else {
+      // New load plan, insert it
+      console.log("[v0] Inserting new load_plan with data:", {
+        ...loadPlanData,
+        is_critical: loadPlanData.is_critical,
+        revision: newRevision,
       })
     }
     
-    let loadPlan = existingLoadPlanId && !hasChanges ? existingLoadPlan : null
+    // Always update/insert load_plan if it exists (to increment revision)
+    let loadPlan = null
     let loadPlanError = null
     
     if (!loadPlan) {
@@ -558,127 +565,194 @@ export async function saveListsDataToSupabase({
       // New items will be inserted with the new revision number
     }
 
-    // 4. Insert load_plan_items from shipments
+    // 4. Process load_plan_items from shipments
     // Logic:
     // - New load plan (no existing): Always insert all items with revision 1 (original)
-    // - Existing load plan: Only insert NEW items (not already exist based on serial_number)
-    //   - Check existing items by serial_number
-    //   - Filter shipments to only include items that don't exist yet
-    //   - Insert only new items with new revision
-    let itemsToInsert = shipments || []
+    // - Existing load plan: 
+    //   - Update existing items (based on serial_number) with new revision
+    //   - Insert new items (serial_number doesn't exist) with new revision
+    let itemsToInsert: Shipment[] = []
+    let itemsToUpdate: { shipment: Shipment; existingItemId: string }[] = []
     
     if (existingLoadPlanId && shipments && shipments.length > 0) {
       // Fetch all existing items for this load plan (from all revisions) to check by serial_number
       const { data: allExistingItems, error: allItemsError } = await supabase
         .from("load_plan_items")
-        .select("serial_number")
+        .select("id, serial_number")
         .eq("load_plan_id", existingLoadPlanId)
       
       if (allItemsError) {
         console.error("[v0] Error fetching existing items for duplicate check:", allItemsError)
+        // If error, treat all as new items
+        itemsToInsert = shipments || []
       } else {
-        // Create a Set of existing serial numbers for fast lookup
-        const existingSerialNumbers = new Set(
-          (allExistingItems || [])
-            .map(item => item.serial_number)
-            .filter(num => num !== null && num !== undefined)
-        )
-        
-        // Filter shipments to only include items with serial_number that don't exist yet
-        itemsToInsert = shipments.filter(shipment => {
-          const serialNo = shipment.serialNo ? parseInt(shipment.serialNo, 10) : null
-          if (serialNo === null) {
-            // If no serial number, include it (might be new)
-            return true
+        // Create a Map of existing serial numbers to item IDs for fast lookup
+        const existingItemsMap = new Map<number, string>()
+        ;(allExistingItems || []).forEach(item => {
+          if (item.serial_number !== null && item.serial_number !== undefined) {
+            existingItemsMap.set(item.serial_number, item.id)
           }
-          // Only include if serial_number doesn't exist yet
-          return !existingSerialNumbers.has(serialNo)
         })
         
-        console.log(`[v0] Filtered items: ${shipments.length} total, ${itemsToInsert.length} new items to insert, ${shipments.length - itemsToInsert.length} already exist`)
+        // Separate shipments into items to update and items to insert
+        shipments.forEach(shipment => {
+          const serialNo = shipment.serialNo ? parseInt(shipment.serialNo, 10) : null
+          if (serialNo !== null && existingItemsMap.has(serialNo)) {
+            // Item exists, add to update list
+            itemsToUpdate.push({
+              shipment,
+              existingItemId: existingItemsMap.get(serialNo)!
+            })
+          } else {
+            // Item doesn't exist, add to insert list
+            itemsToInsert.push(shipment)
+          }
+        })
+        
+        console.log(`[v0] Separated items: ${shipments.length} total, ${itemsToUpdate.length} items to update, ${itemsToInsert.length} new items to insert`)
       }
+    } else {
+      // New load plan, all items are new
+      itemsToInsert = shipments || []
     }
     
-    if (itemsToInsert && itemsToInsert.length > 0 && (!existingLoadPlanId || itemsToInsert.length > 0)) {
-      // Check for VUN shipments before saving
-      const vunShipments = shipments.filter(s => s.shc && s.shc.includes('VUN'))
-      if (vunShipments.length > 0) {
-        console.log(`[v0] Found ${vunShipments.length} shipment(s) with SHC=VUN:`, 
-          vunShipments.map(s => ({
-            serialNo: s.serialNo,
-            awbNo: s.awbNo,
-            shc: s.shc,
-            origin: s.origin,
-            destination: s.destination,
-          }))
-        )
+    // Helper function to truncate string to max length
+    const truncate = (str: string | null | undefined, maxLength: number): string | null => {
+      if (!str) return null
+      return str.length > maxLength ? str.substring(0, maxLength) : str
+    }
+
+    // Helper function to create load_plan_item data from shipment
+    const createLoadPlanItem = (shipment: Shipment, isNewItem: boolean) => {
+      // Determine if this item is additional data (new item added in subsequent upload)
+      // additional_data = true if:
+      //   - Existing load plan AND hasAdditionalData is true (new items with new serial_number detected)
+      //   - This flag helps identify which items are truly new (not just re-uploaded)
+      // additional_data = false if:
+      //   - New load plan (first upload, all items are original)
+      //   - Or item already exists (re-uploaded, not new)
+      // IMPORTANT: Always set a boolean value (never null) to satisfy NOT NULL constraint
+      // Note: Revision in load_plans always increments on re-upload, but additional_data flag
+      // in load_plan_items only marks truly new items (with new serial_number)
+      // Explicitly convert to boolean to ensure never null/undefined
+      const isAdditionalData: boolean = !!(existingLoadPlanId && hasAdditionalData && isNewItem)
+      
+      return {
+        load_plan_id: loadPlanId,
+        serial_number: shipment.serialNo ? parseInt(shipment.serialNo, 10) : null,
+        awb_number: truncate(shipment.awbNo, 50),
+        origin_destination: shipment.origin && shipment.destination 
+          ? truncate(`${shipment.origin}${shipment.destination}`, 50)
+          : null,
+        pieces: shipment.pieces || null,
+        weight: shipment.weight || null,
+        volume: shipment.volume || null,
+        load_volume: shipment.lvol || null,
+        special_handling_code: truncate(shipment.shc, 50),
+        // Manual description - DO NOT include special notes here
+        // Special notes like "[Must be load in Fire containment equipment]" should be stored separately
+        manual_description: shipment.manDesc || null, // This is TEXT, no limit
+        product_code_pc: truncate(shipment.pcode, 50),
+        total_handling_charge: shipment.thc && !isNaN(parseFloat(shipment.thc)) ? parseFloat(shipment.thc) : null,
+        additional_total_handling_charge: null, // Not available in parsed data
+        booking_status: truncate(shipment.bs, 50),
+        priority_indicator: truncate(shipment.pi, 50),
+        flight_in: truncate(shipment.fltIn, 50),
+        arrival_date_time: shipment.arrDtTime ? parseDateTimeString(shipment.arrDtTime) : null,
+        quantity_aqnn: truncate(shipment.qnnAqnn, 50),
+        payment_terms: null, // Not available in parsed data
+        warehouse_code: truncate(shipment.whs, 50),
+        // SI field - only store original SI value, NOT special notes
+        special_instructions: truncate(shipment.si, 50),
+        // ULD allocation - format ULD with proper spacing before saving
+        uld_allocation: truncate(formatULD(shipment.uld), 50),
+        // Special notes - store in separate column (e.g., "[Must be load in Fire containment equipment]")
+        // Join multiple special notes with newline
+        special_notes: shipment.specialNotes && shipment.specialNotes.length > 0
+          ? shipment.specialNotes.join("\n")
+          : null,
+        // Sector information for grouping items by sector
+        sector: truncate(shipment.sector, 50),
+        is_ramp_transfer: shipment.isRampTransfer === true,
+        // Revision number - tracks which revision of the load plan this item belongs to
+        // revision = 1 means original data, revision > 1 means updated/new data
+        revision: newRevision,
+        // Additional data flag - true if this item is new data added in subsequent upload
+        // This flag helps identify which items triggered the revision increment
+        // IMPORTANT: Always boolean (true or false), never null
+        additional_data: Boolean(isAdditionalData),
+      }
+    }
+
+    // Check for VUN shipments before saving
+    const vunShipments = shipments.filter(s => s.shc && s.shc.includes('VUN'))
+    if (vunShipments.length > 0) {
+      console.log(`[v0] Found ${vunShipments.length} shipment(s) with SHC=VUN:`, 
+        vunShipments.map(s => ({
+          serialNo: s.serialNo,
+          awbNo: s.awbNo,
+          shc: s.shc,
+          origin: s.origin,
+          destination: s.destination,
+        }))
+      )
+    }
+
+    // 5. Update existing items with new revision
+    // IMPORTANT: Preserve additional_data flag (it's historical information)
+    // additional_data should not be changed when updating existing items
+    if (itemsToUpdate.length > 0) {
+      console.log(`[v0] Updating ${itemsToUpdate.length} existing items with revision ${newRevision}`)
+      
+      // Fetch existing items to preserve their additional_data values
+      const existingItemIds = itemsToUpdate.map(item => item.existingItemId)
+      const { data: existingItemsData } = await supabase
+        .from("load_plan_items")
+        .select("id, additional_data")
+        .in("id", existingItemIds)
+      
+      // Create a map of item ID to additional_data value
+      const additionalDataMap = new Map<string, boolean>()
+      if (existingItemsData) {
+        existingItemsData.forEach(item => {
+          additionalDataMap.set(item.id, item.additional_data === true)
+        })
       }
       
-      // Helper function to truncate string to max length
-      const truncate = (str: string | null | undefined, maxLength: number): string | null => {
-        if (!str) return null
-        return str.length > maxLength ? str.substring(0, maxLength) : str
-      }
-
-      const loadPlanItems = itemsToInsert.map((shipment) => {
-        // Determine if this item is additional data (new item added in subsequent upload)
-        // additional_data = true if:
-        //   - Existing load plan AND hasAdditionalData is true (new items detected)
-        //   - This means it's additional data that triggered revision increment
-        // additional_data = false if:
-        //   - New load plan (first upload, all items are original)
-        //   - Or no additional data detected (all items already exist)
-        // IMPORTANT: Always set a boolean value (never null) to satisfy NOT NULL constraint
-        // For original upload (no existing load plan): additional_data = false
-        // For subsequent upload with new items: additional_data = true
-        // Explicitly convert to boolean to ensure never null/undefined
-        const isAdditionalData: boolean = !!(existingLoadPlanId && hasAdditionalData)
+      // Update each existing item
+      for (const { shipment, existingItemId } of itemsToUpdate) {
+        const itemData = createLoadPlanItem(shipment, false) // false = not new item
         
-        const item = {
-          load_plan_id: loadPlanId,
-          serial_number: shipment.serialNo ? parseInt(shipment.serialNo, 10) : null,
-          awb_number: truncate(shipment.awbNo, 50),
-          origin_destination: shipment.origin && shipment.destination 
-            ? truncate(`${shipment.origin}${shipment.destination}`, 50)
-            : null,
-          pieces: shipment.pieces || null,
-          weight: shipment.weight || null,
-          volume: shipment.volume || null,
-          load_volume: shipment.lvol || null,
-          special_handling_code: truncate(shipment.shc, 50),
-          // Manual description - DO NOT include special notes here
-          // Special notes like "[Must be load in Fire containment equipment]" should be stored separately
-          manual_description: shipment.manDesc || null, // This is TEXT, no limit
-          product_code_pc: truncate(shipment.pcode, 50),
-          total_handling_charge: shipment.thc && !isNaN(parseFloat(shipment.thc)) ? parseFloat(shipment.thc) : null,
-          additional_total_handling_charge: null, // Not available in parsed data
-          booking_status: truncate(shipment.bs, 50),
-          priority_indicator: truncate(shipment.pi, 50),
-          flight_in: truncate(shipment.fltIn, 50),
-          arrival_date_time: shipment.arrDtTime ? parseDateTimeString(shipment.arrDtTime) : null,
-          quantity_aqnn: truncate(shipment.qnnAqnn, 50),
-          payment_terms: null, // Not available in parsed data
-          warehouse_code: truncate(shipment.whs, 50),
-          // SI field - only store original SI value, NOT special notes
-          special_instructions: truncate(shipment.si, 50),
-          // ULD allocation - format ULD with proper spacing before saving
-          uld_allocation: truncate(formatULD(shipment.uld), 50),
-          // Special notes - store in separate column (e.g., "[Must be load in Fire containment equipment]")
-          // Join multiple special notes with newline
-          special_notes: shipment.specialNotes && shipment.specialNotes.length > 0
-            ? shipment.specialNotes.join("\n")
-            : null,
-          // Sector information for grouping items by sector
-          sector: truncate(shipment.sector, 50),
-          is_ramp_transfer: shipment.isRampTransfer === true,
-          // Revision number - tracks which revision of the load plan this item belongs to
-          // revision = 1 means original data, revision > 1 means updated/new data
-          revision: newRevision,
-          // Additional data flag - true if this item is new data added in subsequent upload
-          // This flag helps identify which items triggered the revision increment
-          // IMPORTANT: Always boolean (true or false), never null
-          additional_data: Boolean(isAdditionalData),
+        // Preserve the existing additional_data value (historical information)
+        // Don't overwrite it with false
+        const existingAdditionalData = additionalDataMap.get(existingItemId)
+        if (existingAdditionalData !== undefined) {
+          itemData.additional_data = existingAdditionalData
         }
+        
+        // Log if ULD is being saved to special_notes (this should NOT happen)
+        if (itemData.uld_allocation && itemData.special_notes && itemData.special_notes.includes(itemData.uld_allocation)) {
+          console.warn(`[v0] ⚠️ WARNING: ULD "${itemData.uld_allocation}" found in special_notes for shipment ${itemData.serial_number}`)
+        }
+        
+        const { error: updateError } = await supabase
+          .from("load_plan_items")
+          .update(itemData)
+          .eq("id", existingItemId)
+        
+        if (updateError) {
+          console.error(`[v0] Error updating load_plan_item ${existingItemId}:`, updateError)
+          // Continue with other items even if one fails
+        }
+      }
+      
+      console.log(`[v0] Successfully updated ${itemsToUpdate.length} existing items (preserved additional_data values)`)
+    }
+
+    // 6. Insert new items
+    if (itemsToInsert && itemsToInsert.length > 0) {
+      const loadPlanItems = itemsToInsert.map((shipment) => {
+        const item = createLoadPlanItem(shipment, true) // true = new item
         
         // Log if ULD is being saved to special_notes (this should NOT happen)
         if (item.uld_allocation && item.special_notes && item.special_notes.includes(item.uld_allocation)) {

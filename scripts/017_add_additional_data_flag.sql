@@ -24,20 +24,41 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON load_plan_items TO authenticated;
 GRANT USAGE ON SCHEMA public TO anon;
 GRANT USAGE ON SCHEMA public TO authenticated;
 
--- Explicitly grant UPDATE on additional_data column
+-- Explicitly grant SELECT and UPDATE on additional_data column
+-- This ensures PostgREST can both read and write this column
+GRANT SELECT (additional_data) ON load_plan_items TO anon;
+GRANT SELECT (additional_data) ON load_plan_items TO authenticated;
 GRANT UPDATE (additional_data) ON load_plan_items TO anon;
 GRANT UPDATE (additional_data) ON load_plan_items TO authenticated;
+
+-- Step 10: Verify column exists (this will show error if column doesn't exist)
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_schema = 'public' 
+          AND table_name = 'load_plan_items' 
+          AND column_name = 'additional_data'
+    ) THEN
+        RAISE NOTICE 'SUCCESS: additional_data column exists in load_plan_items table';
+    ELSE
+        RAISE EXCEPTION 'ERROR: additional_data column NOT found in load_plan_items table';
+    END IF;
+END $$;
 
 -- Force PostgREST to reload schema cache
 NOTIFY pgrst, 'reload schema';
 
 -- ============================================
--- IMPORTANT: After running this script:
+-- CRITICAL: After running this script:
 -- ============================================
 -- 1. Go to Supabase Dashboard
 -- 2. Navigate to: Settings > API
--- 3. Click "Restart PostgREST" button
+-- 3. Click "Restart PostgREST" button (THIS IS REQUIRED!)
 -- 4. Wait 10-30 seconds for restart to complete
+-- 5. Try your query again
+--
+-- The NOTIFY command above may not always work, so manual restart is required.
 -- ============================================
 
 -- Verification query (run after PostgREST restart to verify column exists)
