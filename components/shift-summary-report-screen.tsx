@@ -246,10 +246,7 @@ export default function ShiftSummaryReportScreen() {
   const [showUWSDelayReport, setShowUWSDelayReport] = useState(false)
 
   // Filter state
-  // Work area filter hook (note: this screen only uses GCR and PIL/PER, not "All")
-  const { selectedWorkArea: rawWorkArea, pilPerSubFilter } = useWorkAreaFilter()
-  // Map "All" to "GCR" for this screen since it doesn't support "All"
-  const selectedWorkArea: WorkArea = rawWorkArea === "All" ? "GCR" : rawWorkArea as WorkArea
+  const [selectedWorkArea, setSelectedWorkArea] = useState<WorkArea>("GCR")
   const [selectedShift, setSelectedShift] = useState<Shift>("All" as Shift)
   const [selectedModule, setSelectedModule] = useState<Module>("All")
   const [customTimeRange, setCustomTimeRange] = useState<{ start: string; end: string } | null>(null)
@@ -1025,6 +1022,16 @@ TOTAL\t${totalPending.pmcAmf}\t${totalPending.alfPla}\t${totalPending.akeRke}\t$
           >
             <option value="GCR">Work Area: GCR</option>
             <option value="PIL and PER">Work Area: PIL/PER</option>
+          </select>
+          
+          {/* PIL/PER Sub-filter - Dummy (always disabled) */}
+          <select
+            disabled
+            className="px-2 py-1.5 text-xs border border-gray-300 rounded-md bg-gray-100 text-gray-400 cursor-not-allowed focus:outline-none"
+          >
+            <option value="Both">Both</option>
+            <option value="PIL only">PIL only</option>
+            <option value="PER only">PER only</option>
           </select>
 
           {/* Shift Filter - Dummy */}
