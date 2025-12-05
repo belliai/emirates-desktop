@@ -872,33 +872,23 @@ function CombinedTable({
   pilPerSubFilter,
   isQRTList = false,
 }: CombinedTableProps) {
-  // Group AWBs by sector first, then flatten within each sector
-  // Structure: Map<sectorName, { regular: [], rampTransfer: [] }>
-  const sectorGroups = new Map<string, {
-    regular: Array<{
-      awb: AWBRow
-      sectorIndex: number
-      uldSectionIndex: number
-      awbIndex: number
-      uld: string
-    }>
-    rampTransfer: Array<{
-      awb: AWBRow
-      sectorIndex: number
-      uldSectionIndex: number
-      awbIndex: number
-      uld: string
-    }>
-  }>()
-
+  // CRITICAL: Flatten ALL items first, then sort GLOBALLY by additional_data DESC (red on top), then by serial_number
+  // This ensures ALL items with additional_data = true appear at the top of the ENTIRE table,
+  // regardless of which sector or ULD section they're in
+  type FlatItem = {
+    awb: AWBRow
+    sectorIndex: number
+    uldSectionIndex: number
+    awbIndex: number
+    uld: string
+    sectorName: string
+    isRampTransfer: boolean
+  }
+  
+  const allItems: FlatItem[] = []
+  
   editedPlan.sectors.forEach((sector, sectorIndex) => {
     const sectorName = sector.sector || "UNKNOWN"
-    
-    if (!sectorGroups.has(sectorName)) {
-      sectorGroups.set(sectorName, { regular: [], rampTransfer: [] })
-    }
-    
-    const group = sectorGroups.get(sectorName)!
     
     // Filter ULD sections based on workAreaFilter, tracking original indices
     const filteredUldSectionsWithIndices = sector.uldSections
@@ -909,83 +899,134 @@ function CombinedTable({
     
     filteredUldSectionsWithIndices.forEach(({ uldSection, originalIndex }) => {
       uldSection.awbs.forEach((awb, awbIndex) => {
-        const item = {
+        allItems.push({
           awb,
           sectorIndex,
           uldSectionIndex: originalIndex,
           awbIndex,
           uld: uldSection.uld || "",
-        }
-        
-        if (uldSection.isRampTransfer) {
-          group.rampTransfer.push(item)
-        } else {
-          group.regular.push(item)
-        }
+          sectorName,
+          isRampTransfer: uldSection.isRampTransfer || false,
+        })
       })
     })
   })
-
-  // Sort AWBs within each sector by additional_data DESC (red on top), then by serial number
-  sectorGroups.forEach((group) => {
-    // Sort regular items by additional_data DESC (red on top), then by serial number
-    group.regular.sort((a, b) => {
-      const aAdditional = a.awb?.additional_data === true
-      const bAdditional = b.awb?.additional_data === true
-      if (aAdditional !== bAdditional) {
-        return bAdditional ? 1 : -1 // DESC: additional_data = true first (red on top)
-      }
-      // If same additional_data, sort by serial number
-      const aSer = parseInt(a.awb.ser) || 0
-      const bSer = parseInt(b.awb.ser) || 0
-      return aSer - bSer
-    })
+  
+  // CRITICAL: Sort ALL items GLOBALLY by additional_data DESC first (red on top), then by serial_number
+  // Priority 1: additional_data DESC (true/red first)
+  // Priority 2: serial_number ASC (lower number first)
+  allItems.sort((a, b) => {
+    const aAdditional = a.awb?.additional_data === true
+    const bAdditional = b.awb?.additional_data === true
     
-    group.rampTransfer.sort((a, b) => {
-      const aAdditional = a.awb?.additional_data === true
-      const bAdditional = b.awb?.additional_data === true
-      if (aAdditional !== bAdditional) {
-        return bAdditional ? 1 : -1 // DESC: additional_data = true first (red on top)
-      }
-      // If same additional_data, sort by serial number
-      const aSer = parseInt(a.awb.ser) || 0
-      const bSer = parseInt(b.awb.ser) || 0
-      return aSer - bSer
-    })
+    // FIRST PRIORITY: additional_data DESC (true first/red on top)
+    if (aAdditional !== bAdditional) {
+      return bAdditional ? 1 : -1 // DESC: additional_data = true first (red on top)
+    }
+    
+    // SECOND PRIORITY: serial_number ASC (lower number first)
+    const aSer = parseInt(a.awb.ser) || 0
+    const bSer = parseInt(b.awb.ser) || 0
+    return aSer - bSer
   })
   
-  // Convert to array for rendering
-  // IMPORTANT: Sort sectors by additional_data first (sectors with red items on top)
-  // This ensures all red items (additional_data = true) appear at the top, regardless of which sector they're in
+  // Separate red items (additional_data = true) and original items (additional_data = false)
+  const redItems = allItems.filter(item => item.awb?.additional_data === true)
+  const originalItems = allItems.filter(item => !(item.awb?.additional_data === true))
+  
+  // Group red items by sector
+  const redItemsBySector = new Map<string, {
+    regular: FlatItem[]
+    rampTransfer: FlatItem[]
+  }>()
+  
+  redItems.forEach((item) => {
+    if (!redItemsBySector.has(item.sectorName)) {
+      redItemsBySector.set(item.sectorName, { regular: [], rampTransfer: [] })
+    }
+    const group = redItemsBySector.get(item.sectorName)!
+    if (item.isRampTransfer) {
+      group.rampTransfer.push(item)
+    } else {
+      group.regular.push(item)
+    }
+  })
+  
+  // Group original items by sector
+  const originalItemsBySector = new Map<string, {
+    regular: FlatItem[]
+    rampTransfer: FlatItem[]
+  }>()
+  
+  originalItems.forEach((item) => {
+    if (!originalItemsBySector.has(item.sectorName)) {
+      originalItemsBySector.set(item.sectorName, { regular: [], rampTransfer: [] })
+    }
+    const group = originalItemsBySector.get(item.sectorName)!
+    if (item.isRampTransfer) {
+      group.rampTransfer.push(item)
+    } else {
+      group.regular.push(item)
+    }
+  })
+  
+  // Convert to format for rendering
   const sectorOrder = editedPlan.sectors.map(s => s.sector || "UNKNOWN")
-  const sortedSectors = Array.from(sectorGroups.entries()).sort((a, b) => {
-    // Check if sectors have items with additional_data = true
-    const aAllItems = [...a[1].regular, ...a[1].rampTransfer]
-    const bAllItems = [...b[1].regular, ...b[1].rampTransfer]
-    
-    const aHasAdditional = aAllItems.some(item => item.awb?.additional_data === true)
-    const bHasAdditional = bAllItems.some(item => item.awb?.additional_data === true)
-    
-    // Sort by additional_data DESC first (sectors with additional_data = true/red items on top)
-    if (aHasAdditional !== bHasAdditional) {
-      return bHasAdditional ? 1 : -1
-    }
-    
-    // If both have or don't have additional_data, check count of items with additional_data = true
-    const aRedCount = aAllItems.filter(item => item.awb?.additional_data === true).length
-    const bRedCount = bAllItems.filter(item => item.awb?.additional_data === true).length
-    if (aRedCount !== bRedCount) {
-      return bRedCount - aRedCount // More red items first
-    }
-    
-    // If same additional_data status and red count, preserve original sector order
-    const aIndex = sectorOrder.indexOf(a[0])
-    const bIndex = sectorOrder.indexOf(b[0])
+  
+  // Prepare red sectors (sectors with red items)
+  const redSectors = Array.from(redItemsBySector.entries()).map(([sectorName, group]) => ({
+    sectorName,
+    regular: group.regular.map(item => ({
+      awb: item.awb,
+      sectorIndex: item.sectorIndex,
+      uldSectionIndex: item.uldSectionIndex,
+      awbIndex: item.awbIndex,
+      uld: item.uld,
+    })),
+    rampTransfer: group.rampTransfer.map(item => ({
+      awb: item.awb,
+      sectorIndex: item.sectorIndex,
+      uldSectionIndex: item.uldSectionIndex,
+      awbIndex: item.awbIndex,
+      uld: item.uld,
+    })),
+  })).sort((a, b) => {
+    const aIndex = sectorOrder.indexOf(a.sectorName)
+    const bIndex = sectorOrder.indexOf(b.sectorName)
     if (aIndex === -1 && bIndex === -1) return 0
     if (aIndex === -1) return 1
     if (bIndex === -1) return -1
     return aIndex - bIndex
   })
+  
+  // Prepare original sectors (sectors with original items)
+  const originalSectors = Array.from(originalItemsBySector.entries()).map(([sectorName, group]) => ({
+    sectorName,
+    regular: group.regular.map(item => ({
+      awb: item.awb,
+      sectorIndex: item.sectorIndex,
+      uldSectionIndex: item.uldSectionIndex,
+      awbIndex: item.awbIndex,
+      uld: item.uld,
+    })),
+    rampTransfer: group.rampTransfer.map(item => ({
+      awb: item.awb,
+      sectorIndex: item.sectorIndex,
+      uldSectionIndex: item.uldSectionIndex,
+      awbIndex: item.awbIndex,
+      uld: item.uld,
+    })),
+  })).sort((a, b) => {
+    const aIndex = sectorOrder.indexOf(a.sectorName)
+    const bIndex = sectorOrder.indexOf(b.sectorName)
+    if (aIndex === -1 && bIndex === -1) return 0
+    if (aIndex === -1) return 1
+    if (bIndex === -1) return -1
+    return aIndex - bIndex
+  })
+  
+  // Combine: red sectors first, then original sectors
+  const sortedSectors = [...redSectors, ...originalSectors]
   
   return (
     <>
@@ -1060,7 +1101,9 @@ function CombinedTable({
                 </tr>
               )}
               {/* Group by Sector - Show AWBs grouped by sector */}
-              {sortedSectors.map(([sectorName, group], sectorGroupIndex) => {
+              {/* CRITICAL: Red items (additional_data = true) are rendered first, then original items */}
+              {sortedSectors.map((sectorData, sectorGroupIndex) => {
+                const { sectorName, regular, rampTransfer } = sectorData
                 const hasMultipleSectors = sortedSectors.length > 1
                 const hasSectorName = sectorName && sectorName !== "UNKNOWN"
                 
@@ -1076,7 +1119,7 @@ function CombinedTable({
                     )}
                     
                     {/* Regular AWBs for this sector */}
-                    {group.regular.map((item, index) => {
+                    {regular.map((item, index) => {
                       const { awb, sectorIndex, uldSectionIndex, awbIndex, uld } = item
                       const assignmentKey = `${awb.awbNo}-${sectorIndex}-${uldSectionIndex}-${awbIndex}`
                       const assignment = awbAssignments.get(assignmentKey)
@@ -1097,7 +1140,7 @@ function CombinedTable({
                       // Show ULD row only if:
                       // 1. Current item has a ULD
                       // 2. Next item has different ULD (or is the last item in this sector)
-                      const nextItem = group.regular[index + 1]
+                      const nextItem = regular[index + 1]
                       const shouldShowULD = uld && uld.trim() !== "" && (
                         !nextItem || 
                         nextItem.uld !== uld
@@ -1156,14 +1199,14 @@ function CombinedTable({
                     })}
                     
                     {/* Ramp Transfer AWBs for this sector */}
-                    {group.rampTransfer.length > 0 && (
+                    {rampTransfer.length > 0 && (
                       <>
                         <tr className="bg-gray-50">
                           <td colSpan={enableBulkCheckboxes ? (isQRTList ? 22 : 21) : (isQRTList ? 21 : 20)} className="px-2 py-1 font-semibold text-gray-900 text-center">
                             ***** RAMP TRANSFER *****
                           </td>
                         </tr>
-                        {group.rampTransfer.map((item, index) => {
+                        {rampTransfer.map((item, index) => {
                           const { awb, sectorIndex, uldSectionIndex, awbIndex, uld } = item
                           const assignmentKey = `${awb.awbNo}-${sectorIndex}-${uldSectionIndex}-${awbIndex}`
                           const assignment = awbAssignments.get(assignmentKey)
@@ -1173,7 +1216,7 @@ function CombinedTable({
                           const itemRevision = (awb.revision !== undefined && awb.revision !== null && !isNaN(Number(awb.revision))) ? Number(awb.revision) : 1
                           
                           // Check if we need to show ULD row after this AWB
-                          const nextItem = group.rampTransfer[index + 1]
+                          const nextItem = rampTransfer[index + 1]
                           const shouldShowULD = uld && uld.trim() !== "" && (
                             !nextItem || 
                             nextItem.uld !== uld

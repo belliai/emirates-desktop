@@ -294,8 +294,46 @@ export async function getLoadPlanDetailFromSupabase(flightNumber: string): Promi
     // Each sector should have its own ULD sections
     const sectors: any[] = []
     
-    // Process each sector separately
-    Array.from(sectorMap.entries()).forEach(([sectorName, sectorUldMap]) => {
+    // CRITICAL: Sort sectors by additional_data first (sectors with red items on top)
+    // This ensures all red items (additional_data = true) appear at the top of the entire table
+    const sortedSectorEntries = Array.from(sectorMap.entries()).sort((a, b) => {
+      // Get all items from both sectors to check for additional_data
+      const aAllItems: any[] = []
+      const bAllItems: any[] = []
+      
+      Array.from(a[1].entries()).forEach(([uld, rampTransferMap]) => {
+        Array.from(rampTransferMap.entries()).forEach(([isRamp, items]) => {
+          aAllItems.push(...items)
+        })
+      })
+      
+      Array.from(b[1].entries()).forEach(([uld, rampTransferMap]) => {
+        Array.from(rampTransferMap.entries()).forEach(([isRamp, items]) => {
+          bAllItems.push(...items)
+        })
+      })
+      
+      const aHasAdditional = aAllItems.some(item => item.additional_data === true || item.additional_data === 1)
+      const bHasAdditional = bAllItems.some(item => item.additional_data === true || item.additional_data === 1)
+      
+      // Sort by additional_data DESC first (sectors with additional_data = true/red items on top)
+      if (aHasAdditional !== bHasAdditional) {
+        return bHasAdditional ? 1 : -1 // Sectors with red items first
+      }
+      
+      // If both have or don't have additional_data, check count of items with additional_data = true
+      const aRedCount = aAllItems.filter(item => item.additional_data === true || item.additional_data === 1).length
+      const bRedCount = bAllItems.filter(item => item.additional_data === true || item.additional_data === 1).length
+      if (aRedCount !== bRedCount) {
+        return bRedCount - aRedCount // More red items first
+      }
+      
+      // If same additional_data status and red count, preserve original order (by sector name)
+      return a[0].localeCompare(b[0])
+    })
+    
+    // Process each sector separately (now sorted by additional_data)
+    sortedSectorEntries.forEach(([sectorName, sectorUldMap]) => {
       // Separate items by ramp transfer status for this sector
       const sectorRegularItems: any[] = []
       const sectorRampTransferItems: any[] = []
