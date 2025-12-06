@@ -557,64 +557,198 @@ export async function saveListsDataToSupabase({
       }
     }
 
-    // 3. If updating existing load plan and items have changes, keep old items with their revision
-    // Don't delete - we keep history. New items will be inserted with new revision number
-    if (existingLoadPlanId && itemsHaveChanges) {
-      console.log("[v0] Changes detected in load_plan_items, keeping old items with revision", existingLoadPlan.revision, "and inserting new items with revision", newRevision)
-      // Old items remain in database with their original revision
-      // New items will be inserted with the new revision number
-    }
-
-    // 4. Process load_plan_items from shipments
-    // Logic:
-    // - New load plan (no existing): Always insert all items with revision 1 (original)
-    // - Existing load plan: 
-    //   - Update existing items (based on serial_number) with new revision
-    //   - Insert new items (serial_number doesn't exist) with new revision
+    // 3. Compare and save changes BEFORE update (if updating existing load plan)
+    // IMPORTANT: Only update items that have changes, don't delete items that don't exist in new shipments
+    let itemsToUpdate: { shipment: Shipment; existingItemId: string; fieldChanges: Record<string, any> }[] = []
     let itemsToInsert: Shipment[] = []
-    let itemsToUpdate: { shipment: Shipment; existingItemId: string }[] = []
+    let changesToSave: any[] = []
     
-    if (existingLoadPlanId && shipments && shipments.length > 0) {
-      // Fetch all existing items for this load plan (from all revisions) to check by serial_number
-      const { data: allExistingItems, error: allItemsError } = await supabase
-        .from("load_plan_items")
-        .select("id, serial_number")
-        .eq("load_plan_id", existingLoadPlanId)
-      
-      if (allItemsError) {
-        console.error("[v0] Error fetching existing items for duplicate check:", allItemsError)
-        // If error, treat all as new items
+    if (existingLoadPlanId && itemsHaveChanges && shipments && shipments.length > 0) {
+      try {
+        const { compareBeforeDelete, saveChangesBeforeDelete } = await import("@/lib/load-plan-diff-before-delete")
+        const previousRevision = existingLoadPlan.revision || 1
+        
+        console.log(`[v0] 🔍 Step 1: Comparing existing items (revision ${previousRevision}) with new shipments`)
+        
+        // Fetch existing items to compare
+        const { data: existingItems, error: existingError } = await supabase
+          .from("load_plan_items")
+          .select("*")
+          .eq("load_plan_id", loadPlanId)
+          .eq("revision", previousRevision)
+          .order("serial_number", { ascending: true })
+        
+        if (existingError) {
+          console.error("[v0] Error fetching existing items:", existingError)
+        } else {
+          // Helper function to create unique key from serial_number and awb_number
+          const createItemKey = (serialNo: number | null, awbNo: string | null): string | null => {
+            if (serialNo === null || serialNo === undefined || isNaN(serialNo)) return null
+            const normalizedAwb = awbNo ? awbNo.replace(/\s+/g, "").trim() : ""
+            return `${serialNo}_${normalizedAwb}`
+          }
+          
+          // Create maps for comparison using serial_number + awb_number as key
+          const existingItemsMap = new Map<string, any>()
+          const newShipmentsMap = new Map<string, Shipment>()
+          
+          // Build existing items map
+          ;(existingItems || []).forEach(item => {
+            if (item.serial_number !== null) {
+              const key = createItemKey(item.serial_number, item.awb_number)
+              if (key) {
+                // If key already exists, log warning but keep the first one
+                if (existingItemsMap.has(key)) {
+                  console.warn(`[v0] ⚠️ Duplicate key found in existing items: ${key}`, {
+                    existing: existingItemsMap.get(key),
+                    duplicate: item,
+                  })
+                } else {
+                  existingItemsMap.set(key, item)
+                }
+              }
+            }
+          })
+          
+          // Build new shipments map
+          shipments.forEach(shipment => {
+            let serialNo: number | null = null
+            if (shipment.serialNo) {
+              if (typeof shipment.serialNo === 'string') {
+                serialNo = parseInt(shipment.serialNo.trim(), 10)
+              } else if (typeof shipment.serialNo === 'number') {
+                serialNo = shipment.serialNo
+              }
+            }
+            const normalizedAwb = shipment.awbNo ? shipment.awbNo.replace(/\s+/g, "").trim() : ""
+            const key = createItemKey(serialNo, normalizedAwb)
+            
+            if (key) {
+              // If key already exists in new shipments, log warning
+              if (newShipmentsMap.has(key)) {
+                console.warn(`[v0] ⚠️ Duplicate key found in new shipments: ${key}`, {
+                  existing: newShipmentsMap.get(key),
+                  duplicate: shipment,
+                })
+              } else {
+                newShipmentsMap.set(key, shipment)
+              }
+            }
+          })
+          
+          console.log(`[v0] Maps created:`, {
+            existingItems: existingItemsMap.size,
+            newShipments: newShipmentsMap.size,
+            hasItem001InExisting: existingItemsMap.has(createItemKey(1, null) || ""),
+            hasItem001InNew: newShipmentsMap.has(createItemKey(1, null) || ""),
+          })
+          
+          // Import compareItemWithShipment function
+          const { compareItemWithShipment } = await import("@/lib/load-plan-diff-before-delete")
+          
+          // Compare and categorize items
+          for (const [itemKey, shipment] of newShipmentsMap.entries()) {
+            const existingItem = existingItemsMap.get(itemKey)
+            if (existingItem) {
+              // Item exists in both - check if it has changes
+              const fieldChanges = compareItemWithShipment(existingItem, shipment)
+              
+              const serialNo = shipment.serialNo ? (typeof shipment.serialNo === 'string' ? parseInt(shipment.serialNo.trim(), 10) : shipment.serialNo) : null
+              
+              if (Object.keys(fieldChanges).length > 0) {
+                // Has changes - add to update list
+                itemsToUpdate.push({
+                  shipment,
+                  existingItemId: existingItem.id,
+                  fieldChanges,
+                })
+                
+                // Record as modified change
+                changesToSave.push({
+                  changeType: 'modified',
+                  itemType: 'awb',
+                  originalItemId: existingItem.id,
+                  serialNumber: serialNo,
+                  fieldChanges,
+                  originalData: existingItem,
+                  newData: shipment,
+                })
+                
+                // Log item 001 specifically
+                if (serialNo === 1) {
+                  console.log(`[v0] ✅ Item 001 has changes - will be updated:`, {
+                    itemKey,
+                    changedFields: Object.keys(fieldChanges),
+                    fieldChanges: fieldChanges,
+                  })
+                }
+              } else {
+                // No changes - keep existing item as is (don't update)
+                if (serialNo === 1) {
+                  console.log(`[v0] Item 001 has no changes - will be kept as is`)
+                }
+              }
+            } else {
+              // Item only in new shipments - add to insert list
+              itemsToInsert.push(shipment)
+              
+              const serialNo = shipment.serialNo ? (typeof shipment.serialNo === 'string' ? parseInt(shipment.serialNo.trim(), 10) : shipment.serialNo) : null
+              
+              // Record as added change
+              changesToSave.push({
+                changeType: 'added',
+                itemType: 'awb',
+                serialNumber: serialNo,
+                newData: shipment,
+              })
+            }
+          }
+          
+          // Items that exist but not in new shipments - DON'T DELETE, DON'T RECORD
+          // These items will remain in the database with their original revision
+          // We don't record deleted changes for now (only record updated and added)
+          existingItemsMap.forEach((existingItem, itemKey) => {
+            if (!newShipmentsMap.has(itemKey)) {
+              // Item exists but not in new shipments - keep it in database, don't record anything
+              if (existingItem.serial_number === 1) {
+                console.log(`[v0] Item 001 exists but not in new shipments - will be kept in database (not recorded)`)
+              }
+            }
+          })
+          
+          console.log(`[v0] 🔍 Step 2: Categorized items:`, {
+            toUpdate: itemsToUpdate.length,
+            toInsert: itemsToInsert.length,
+            toKeep: (existingItems || []).length - itemsToUpdate.length - existingItemsMap.size + newShipmentsMap.size,
+            changesToRecord: changesToSave.length, // Only modified and added
+          })
+          
+          // Save changes to load_plan_changes
+          if (changesToSave.length > 0) {
+            console.log(`[v0] 🔍 Step 3: Saving ${changesToSave.length} changes to load_plan_changes table`)
+            
+            const saveResult = await saveChangesBeforeDelete(loadPlanId, newRevision, changesToSave)
+            if (!saveResult.success) {
+              console.error("[v0] ❌ Failed to save changes:", saveResult.error)
+            } else {
+              console.log(`[v0] ✅ Step 3 Complete: Saved ${changesToSave.length} changes to load_plan_changes`)
+            }
+          }
+        }
+      } catch (error) {
+        console.error("[v0] ❌ Error comparing before update:", error)
+        // Continue anyway - treat all as new items
         itemsToInsert = shipments || []
-      } else {
-        // Create a Map of existing serial numbers to item IDs for fast lookup
-        const existingItemsMap = new Map<number, string>()
-        ;(allExistingItems || []).forEach(item => {
-          if (item.serial_number !== null && item.serial_number !== undefined) {
-            existingItemsMap.set(item.serial_number, item.id)
-          }
-        })
-        
-        // Separate shipments into items to update and items to insert
-        shipments.forEach(shipment => {
-          const serialNo = shipment.serialNo ? parseInt(shipment.serialNo, 10) : null
-          if (serialNo !== null && existingItemsMap.has(serialNo)) {
-            // Item exists, add to update list
-            itemsToUpdate.push({
-              shipment,
-              existingItemId: existingItemsMap.get(serialNo)!
-            })
-          } else {
-            // Item doesn't exist, add to insert list
-            itemsToInsert.push(shipment)
-          }
-        })
-        
-        console.log(`[v0] Separated items: ${shipments.length} total, ${itemsToUpdate.length} items to update, ${itemsToInsert.length} new items to insert`)
       }
     } else {
-      // New load plan, all items are new
+      // New load plan - all items are new
       itemsToInsert = shipments || []
     }
+    
+    console.log(`[v0] 🔍 Step 4: Preparing to process items:`, {
+      toUpdate: itemsToUpdate.length,
+      toInsert: itemsToInsert.length,
+    })
     
     // Helper function to truncate string to max length
     const truncate = (str: string | null | undefined, maxLength: number): string | null => {
@@ -698,20 +832,17 @@ export async function saveListsDataToSupabase({
       )
     }
 
-    // 5. Update existing items with new revision
-    // IMPORTANT: Preserve additional_data flag (it's historical information)
-    // additional_data should not be changed when updating existing items
+    // 5. Update existing items that have changes
     if (itemsToUpdate.length > 0) {
-      console.log(`[v0] Updating ${itemsToUpdate.length} existing items with revision ${newRevision}`)
+      console.log(`[v0] 🔍 Step 5: Updating ${itemsToUpdate.length} existing items with changes`)
       
-      // Fetch existing items to preserve their additional_data values
+      // Fetch existing items to preserve additional_data values
       const existingItemIds = itemsToUpdate.map(item => item.existingItemId)
       const { data: existingItemsData } = await supabase
         .from("load_plan_items")
         .select("id, additional_data")
         .in("id", existingItemIds)
       
-      // Create a map of item ID to additional_data value
       const additionalDataMap = new Map<string, boolean>()
       if (existingItemsData) {
         existingItemsData.forEach(item => {
@@ -719,20 +850,31 @@ export async function saveListsDataToSupabase({
         })
       }
       
-      // Update each existing item
-      for (const { shipment, existingItemId } of itemsToUpdate) {
+      for (const { shipment, existingItemId, fieldChanges } of itemsToUpdate) {
         const itemData = createLoadPlanItem(shipment, false) // false = not new item
         
-        // Preserve the existing additional_data value (historical information)
-        // Don't overwrite it with false
+        // Preserve additional_data from existing item
         const existingAdditionalData = additionalDataMap.get(existingItemId)
         if (existingAdditionalData !== undefined) {
           itemData.additional_data = existingAdditionalData
         }
         
-        // Log if ULD is being saved to special_notes (this should NOT happen)
-        if (itemData.uld_allocation && itemData.special_notes && itemData.special_notes.includes(itemData.uld_allocation)) {
-          console.warn(`[v0] ⚠️ WARNING: ULD "${itemData.uld_allocation}" found in special_notes for shipment ${itemData.serial_number}`)
+        // Update revision to new revision
+        itemData.revision = newRevision
+        
+        // Log item 001 specifically
+        const serialNo = shipment.serialNo ? (typeof shipment.serialNo === 'string' ? parseInt(shipment.serialNo.trim(), 10) : shipment.serialNo) : null
+        if (serialNo === 1) {
+          console.log(`[v0] ✅ Updating item 001:`, {
+            existingItemId,
+            changedFields: Object.keys(fieldChanges),
+            fieldChanges: fieldChanges,
+            newData: {
+              awb_number: itemData.awb_number,
+              origin_destination: itemData.origin_destination,
+              weight: itemData.weight,
+            },
+          })
         }
         
         const { error: updateError } = await supabase
@@ -741,18 +883,95 @@ export async function saveListsDataToSupabase({
           .eq("id", existingItemId)
         
         if (updateError) {
-          console.error(`[v0] Error updating load_plan_item ${existingItemId}:`, updateError)
-          // Continue with other items even if one fails
+          console.error(`[v0] Error updating item ${existingItemId}:`, updateError)
         }
       }
       
-      console.log(`[v0] Successfully updated ${itemsToUpdate.length} existing items (preserved additional_data values)`)
+      console.log(`[v0] ✅ Step 5 Complete: Updated ${itemsToUpdate.length} items`)
     }
 
-    // 6. Insert new items
+    // 6. Insert new items (items that don't exist in existing)
     if (itemsToInsert && itemsToInsert.length > 0) {
-      const loadPlanItems = itemsToInsert.map((shipment) => {
+      console.log(`[v0] 🔍 Step 6: Creating ${itemsToInsert.length} new load plan items for insertion`)
+      
+      // Helper function to create unique key from serial_number and awb_number
+      const createItemKey = (serialNo: number | null, awbNo: string | null): string | null => {
+        if (serialNo === null || serialNo === undefined || isNaN(serialNo)) return null
+        const normalizedAwb = awbNo ? awbNo.replace(/\s+/g, "").trim() : ""
+        return `${serialNo}_${normalizedAwb}`
+      }
+      
+      // Check for duplicates in itemsToInsert before creating loadPlanItems
+      const seenKeys = new Set<string>()
+      const uniqueItemsToInsert: Shipment[] = []
+      
+      itemsToInsert.forEach(shipment => {
+        const serialNo = shipment.serialNo ? (typeof shipment.serialNo === 'string' ? parseInt(shipment.serialNo.trim(), 10) : shipment.serialNo) : null
+        const normalizedAwb = shipment.awbNo ? shipment.awbNo.replace(/\s+/g, "").trim() : ""
+        const key = createItemKey(serialNo, normalizedAwb)
+        
+        if (key && !seenKeys.has(key)) {
+          seenKeys.add(key)
+          uniqueItemsToInsert.push(shipment)
+        } else if (key) {
+          console.warn(`[v0] ⚠️ Skipping duplicate item in new shipments: serial_number=${serialNo}, awb_number=${normalizedAwb}`)
+        }
+      })
+      
+      if (uniqueItemsToInsert.length < itemsToInsert.length) {
+        console.log(`[v0] ⚠️ Removed ${itemsToInsert.length - uniqueItemsToInsert.length} duplicate items from insertion list`)
+      }
+      
+      // Also check against ALL existing items in this load plan (not just current revision)
+      // to prevent duplicates across revisions
+      const { data: allExistingItems } = await supabase
+        .from("load_plan_items")
+        .select("serial_number, awb_number")
+        .eq("load_plan_id", loadPlanId)
+      
+      const existingKeysSet = new Set<string>()
+      if (allExistingItems) {
+        allExistingItems.forEach(item => {
+          const key = createItemKey(item.serial_number, item.awb_number)
+          if (key) {
+            existingKeysSet.add(key)
+          }
+        })
+      }
+      
+      // Filter out items that already exist in any revision
+      const finalItemsToInsert = uniqueItemsToInsert.filter(shipment => {
+        const serialNo = shipment.serialNo ? (typeof shipment.serialNo === 'string' ? parseInt(shipment.serialNo.trim(), 10) : shipment.serialNo) : null
+        const normalizedAwb = shipment.awbNo ? shipment.awbNo.replace(/\s+/g, "").trim() : ""
+        const key = createItemKey(serialNo, normalizedAwb)
+        
+        if (key && existingKeysSet.has(key)) {
+          console.warn(`[v0] ⚠️ Skipping item that already exists in database: serial_number=${serialNo}, awb_number=${normalizedAwb}`)
+          return false
+        }
+        return true
+      })
+      
+      if (finalItemsToInsert.length < uniqueItemsToInsert.length) {
+        console.log(`[v0] ⚠️ Removed ${uniqueItemsToInsert.length - finalItemsToInsert.length} items that already exist in database`)
+      }
+      
+      const loadPlanItems = finalItemsToInsert.map((shipment) => {
         const item = createLoadPlanItem(shipment, true) // true = new item
+        
+        // Log item 001 specifically for debugging
+        const serialNoStr = String(shipment.serialNo || "").trim()
+        const serialNoNum = parseInt(serialNoStr, 10)
+        if (serialNoNum === 1 || serialNoStr === "001" || serialNoStr === "1") {
+          console.log(`[v0] 🔍 Creating new item 001:`, {
+            shipmentSerialNo: shipment.serialNo,
+            shipmentSerialNoType: typeof shipment.serialNo,
+            itemSerialNumber: item.serial_number,
+            awb_number: item.awb_number,
+            origin_destination: item.origin_destination,
+            weight: item.weight,
+          })
+        }
         
         // Log if ULD is being saved to special_notes (this should NOT happen)
         if (item.uld_allocation && item.special_notes && item.special_notes.includes(item.uld_allocation)) {
@@ -819,7 +1038,23 @@ export async function saveListsDataToSupabase({
       }
 
       // Try to insert with is_ramp_transfer field first
+      console.log(`[v0] Inserting ${loadPlanItems.length} items into load_plan_items table`)
+      
       let { error: itemsError } = await supabase.from("load_plan_items").insert(loadPlanItems)
+      
+      // Log if item 001 was inserted
+      const item001 = loadPlanItems.find(item => item.serial_number === 1)
+      if (item001) {
+        console.log(`[v0] ✅ Item 001 included in insert batch:`, {
+          serial_number: item001.serial_number,
+          awb_number: item001.awb_number,
+          origin_destination: item001.origin_destination,
+          weight: item001.weight,
+        })
+      } else {
+        console.error(`[v0] ❌ Item 001 NOT found in items to insert!`)
+        console.error(`[v0] Available serial numbers in batch:`, loadPlanItems.map(item => item.serial_number).slice(0, 10))
+      }
 
       // If error occurs, it might be because additional_data or is_ramp_transfer field doesn't exist yet
       // Try without these fields as fallback
@@ -880,16 +1115,32 @@ export async function saveListsDataToSupabase({
           }
         }
       } else {
-        console.log(`[v0] Successfully inserted ${loadPlanItems.length} load_plan_items`)
+        console.log(`[v0] ✅ Successfully inserted ${loadPlanItems.length} load_plan_items`)
+        
+        // Verify item 001 was inserted
+        const insertedItem001 = loadPlanItems.find(item => item.serial_number === 1)
+        if (insertedItem001) {
+          console.log(`[v0] ✅ Item 001 successfully inserted:`, {
+            serial_number: insertedItem001.serial_number,
+            awb_number: insertedItem001.awb_number,
+            origin_destination: insertedItem001.origin_destination,
+            weight: insertedItem001.weight,
+            revision: insertedItem001.revision,
+          })
+        } else {
+          console.error(`[v0] ❌ Item 001 was NOT in the inserted items!`)
+        }
       }
     }
+
+    // Note: Changes are already saved before delete/update in step 3 above
 
     if (hasChanges || itemsHaveChanges || !existingLoadPlanId) {
       console.log("[v0] Successfully saved lists data to Supabase, load_plan_id:", loadPlanId)
       return { success: true, loadPlanId }
     } else {
       console.log("[v0] No changes detected, data not updated, load_plan_id:", loadPlanId)
-      return { success: true, loadPlanId, message: "No changes detected, update skipped" }
+      return { success: true, loadPlanId }
     }
   } catch (error) {
     console.error("[v0] Error saving lists data to Supabase:", error)

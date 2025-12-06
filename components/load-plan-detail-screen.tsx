@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import React from "react"
 import { Plus, Trash2, CheckCircle } from "lucide-react"
 import BCRModal, { generateBCRData } from "./bcr-modal"
@@ -19,6 +19,8 @@ import { getULDEntriesFromStorage, saveULDEntriesToStorage } from "@/lib/uld-sto
 import { AWBQuickActionModal } from "./awb-quick-action-modal"
 import type { WorkArea, PilPerSubFilter } from "@/lib/work-area-filter-utils"
 import { shouldIncludeULDSection } from "@/lib/work-area-filter-utils"
+import { getLoadPlanChanges, type LoadPlanChange } from "@/lib/load-plan-diff"
+import { createClient } from "@/lib/supabase/client"
 
 // Re-export types for backward compatibility
 export type { AWBRow, ULDSection, LoadPlanItem, LoadPlanDetail } from "./load-plan-types"
@@ -85,12 +87,95 @@ export default function LoadPlanDetailScreen({ loadPlan, onBack, onSave, onNavig
   } | null>(null)
   const [selectedAWBKeys, setSelectedAWBKeys] = useState<Set<string>>(new Set())
   const { sendToFlightAssignment, flightAssignments, addSentBCR } = useLoadPlans()
+  const [loadPlanChanges, setLoadPlanChanges] = useState<Map<number, LoadPlanChange>>(new Map())
+  const [loadPlanId, setLoadPlanId] = useState<string | null>(null)
+  const [deletedItems, setDeletedItems] = useState<AWBRow[]>([]) // Deleted items from original load plan
   
   // Load ULD entries from localStorage on mount (supports both old format string[] and new format ULDEntry[])
   // Uses utility function to ensure checked state is preserved
   const [uldEntriesFromStorage, setUldEntriesFromStorage] = useState<Map<string, ULDEntry[]>>(() => {
     return getULDEntriesFromStorage(loadPlan.flight, loadPlan.sectors)
   })
+  
+  // Fetch load plan changes on mount
+  useEffect(() => {
+    const fetchChanges = async () => {
+      if (!loadPlan.revision || loadPlan.revision <= 1) {
+        // No changes for revision 1
+        return
+      }
+      
+      try {
+        const supabase = createClient()
+        // Get load plan ID from database
+        const { data: loadPlanData } = await supabase
+          .from("load_plans")
+          .select("id")
+          .eq("flight_number", loadPlan.flight)
+          .order("revision", { ascending: false })
+          .limit(1)
+          .single()
+        
+        if (loadPlanData?.id) {
+          setLoadPlanId(loadPlanData.id)
+          const changes = await getLoadPlanChanges(loadPlanData.id, loadPlan.revision)
+          
+          // Create a map by serial number for quick lookup
+          const changesMap = new Map<number, LoadPlanChange>()
+          const deletedItemsList: AWBRow[] = []
+          
+          changes.forEach(change => {
+            if (change.serialNumber !== undefined) {
+              changesMap.set(change.serialNumber, change)
+              
+              // If deleted, add to deleted items list
+              if (change.changeType === 'deleted' && change.originalData) {
+                const deletedItem = transformDeletedItemToAWBRow(change.originalData)
+                if (deletedItem) {
+                  deletedItemsList.push(deletedItem)
+                }
+              }
+            }
+          })
+          
+          setLoadPlanChanges(changesMap)
+          setDeletedItems(deletedItemsList)
+        }
+      } catch (error) {
+        console.error("[LoadPlanDetailScreen] Error fetching changes:", error)
+      }
+    }
+    
+    fetchChanges()
+  }, [loadPlan.flight, loadPlan.revision])
+  
+  // Helper function to transform deleted item data to AWBRow
+  const transformDeletedItemToAWBRow = (itemData: any): AWBRow | null => {
+    if (!itemData) return null
+    
+    return {
+      ser: String(itemData.serial_number || ""),
+      awbNo: itemData.awb_number || "",
+      orgDes: itemData.origin_destination || "",
+      pcs: String(itemData.pieces || ""),
+      wgt: String(itemData.weight || ""),
+      vol: String(itemData.volume || ""),
+      lvol: String(itemData.load_volume || ""),
+      shc: itemData.special_handling_code || "",
+      manDesc: itemData.manual_description || "",
+      pcode: itemData.product_code_pc || "",
+      pc: "",
+      thc: String(itemData.total_handling_charge || ""),
+      bs: itemData.booking_status || "",
+      pi: itemData.priority_indicator || "",
+      fltin: itemData.flight_in || "",
+      arrdtTime: itemData.arrival_date_time || "",
+      qnnAqnn: itemData.quantity_aqnn || "",
+      whs: itemData.warehouse_code || "",
+      si: itemData.special_instructions || "",
+      remarks: itemData.special_notes || "",
+    }
+  }
   
   const {
     editedPlan,
@@ -617,6 +702,7 @@ export default function LoadPlanDetailScreen({ loadPlan, onBack, onSave, onNavig
             setEditedPlan={setEditedPlan}
             workAreaFilter={workAreaFilter}
             pilPerSubFilter={pilPerSubFilter}
+            loadPlanChanges={loadPlanChanges}
           />
 
           {/* Bottom Footer */}
@@ -837,6 +923,7 @@ interface CombinedTableProps {
   workAreaFilter?: WorkArea // Filter ULD sections based on work area (SHC codes)
   pilPerSubFilter?: PilPerSubFilter // Sub-filter for PIL/PER work area (PIL only, PER only, or Both)
   isQRTList?: boolean // Show Bay Number and Connection Time columns for QRT List
+  loadPlanChanges?: Map<number, LoadPlanChange> // Map of serial number to change information
 }
 
 function CombinedTable({
@@ -871,6 +958,7 @@ function CombinedTable({
   workAreaFilter,
   pilPerSubFilter,
   isQRTList = false,
+  loadPlanChanges = new Map(),
 }: CombinedTableProps) {
   // CRITICAL: Flatten ALL items first, then sort GLOBALLY by additional_data DESC (red on top), then by serial_number
   // This ensures ALL items with additional_data = true appear at the top of the ENTIRE table,
@@ -1174,6 +1262,7 @@ function CombinedTable({
                             hoveredUld={hoveredUld}
                             isQRTList={isQRTList}
                             additional_data={isAdditionalData}
+                            changeInfo={loadPlanChanges.get(parseInt(awb.ser) || 0)}
                           />
                           {shouldShowULD && (
                             <ULDRow
@@ -1248,6 +1337,7 @@ function CombinedTable({
                                 hoveredUld={hoveredUld}
                                 isQRTList={isQRTList}
                                 additional_data={isRampAdditionalData}
+                                changeInfo={loadPlanChanges.get(parseInt(awb.ser) || 0)}
                               />
                               {shouldShowULD && (
                                 <ULDRow
@@ -1392,6 +1482,7 @@ interface AWBRowProps {
   isQRTList?: boolean
   revision?: number // Revision number of the load plan (deprecated, use additional_data instead)
   additional_data?: boolean // Flag indicating if this item is additional data (new item added in subsequent upload)
+  changeInfo?: LoadPlanChange // Change information for this AWB (added, modified, deleted)
 }
 
 function AWBRow({
@@ -1417,6 +1508,7 @@ function AWBRow({
   isQRTList = false,
   revision = 1,
   additional_data = false,
+  changeInfo,
 }: AWBRowProps) {
   const [hoveredSection, setHoveredSection] = useState<"left" | "right" | null>(null)
   
@@ -1462,17 +1554,58 @@ function AWBRow({
   const leftFields = awbFields.slice(0, 8) // Up to and including SHC
   const rightFields = awbFields.slice(8) // After SHC
 
-  // Determine text color based on additional_data flag:
-  // - additional_data = false: black text (original)
-  // - additional_data = true: red text (new/additional data)
-  // Use additional_data from awb object (from database) or from prop
-  const isAdditionalData = awb.additional_data === true || additional_data === true
-  const textColorClass = isAdditionalData ? "text-red-600" : "text-gray-900"
+  // Determine styling based on change type:
+  // - added: all text red (additional_data = true)
+  // - modified: only modified fields red
+  // - deleted: strikethrough for all text
+  const isDeleted = changeInfo?.changeType === 'deleted'
+  const isAdded = changeInfo?.changeType === 'added' || (awb.additional_data === true || additional_data === true)
+  const isModified = changeInfo?.changeType === 'modified'
+  
+  // Base text color: red for added, gray for deleted, black for others
+  const baseTextColorClass = isDeleted 
+    ? "text-gray-500 line-through" 
+    : isAdded 
+    ? "text-red-600" 
+    : "text-gray-900"
+  
+  // Helper function to check if a field was modified
+  const isFieldModified = (fieldKey: string): boolean => {
+    if (!isModified || !changeInfo?.fieldChanges) return false
+    // Map AWBRow field names to database field names
+    const fieldMap: Record<string, string> = {
+      'ser': 'serial_number', // Usually not modified, but include for completeness
+      'awbNo': 'awb_number',
+      'orgDes': 'origin_destination',
+      'pcs': 'pieces',
+      'wgt': 'weight',
+      'vol': 'volume',
+      'lvol': 'load_volume',
+      'shc': 'special_handling_code',
+      'manDesc': 'manual_description',
+      'pcode': 'product_code_pc',
+      'pc': 'product_code_pc', // Alternative mapping
+      'thc': 'total_handling_charge',
+      'bs': 'booking_status',
+      'pi': 'priority_indicator',
+      'fltin': 'flight_in',
+      'arrdtTime': 'arrival_date_time',
+      'qnnAqnn': 'quantity_aqnn',
+      'whs': 'warehouse_code',
+      'si': 'special_instructions',
+      'remarks': 'special_notes',
+      'uldNumber': 'uld_allocation', // For QRT List
+    }
+    const dbFieldName = fieldMap[fieldKey] || fieldKey
+    // Check if this field exists in fieldChanges
+    const hasChange = changeInfo.fieldChanges[dbFieldName] !== undefined
+    return hasChange
+  }
 
   return (
     <>
       <tr
-        className={`border-b border-gray-100 ${isLoaded ? "bg-gray-200 opacity-60" : isRampTransfer ? "bg-gray-50 hover:bg-gray-50" : ""} ${isHovered ? "border-l-4 border-l-red-500" : ""}`}
+        className={`border-b border-gray-100 ${isLoaded ? "bg-gray-200 opacity-60" : isRampTransfer ? "bg-gray-50 hover:bg-gray-50" : ""} ${isHovered ? "border-l-4 border-l-red-500" : ""} ${isDeleted ? "opacity-60" : ""}`}
         onMouseEnter={onMouseEnter}
         onMouseLeave={() => {
           onMouseLeave?.()
@@ -1536,7 +1669,11 @@ function AWBRow({
                   const cleanedValue = key === "awbNo" ? value.replace(/\s+/g, "") : value
                   onUpdateField(key, cleanedValue)
                 }}
-                className={`text-xs ${textColorClass} ${className || ""}`}
+                className={`text-xs ${
+                  isModified && isFieldModified(key) 
+                    ? "text-red-600 font-semibold" 
+                    : baseTextColorClass
+                } ${className || ""}`}
                 readOnly={isReadOnly}
               />
             </td>
@@ -1578,7 +1715,7 @@ function AWBRow({
                   value={displayValue}
                   onChange={(e) => onUpdateField(key, e.target.value)}
                   placeholder="Enter ULD#"
-                  className={`w-full px-1.5 py-0.5 text-xs border border-yellow-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-yellow-500 focus:border-yellow-500 ${textColorClass}`}
+                  className={`w-full px-1.5 py-0.5 text-xs border border-yellow-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-yellow-500 focus:border-yellow-500 ${baseTextColorClass}`}
                   onClick={(e) => e.stopPropagation()}
                 />
               ) : (
@@ -1589,16 +1726,20 @@ function AWBRow({
                     const cleanedValue = key === "awbNo" ? value.replace(/\s+/g, "") : value
                     onUpdateField(key, cleanedValue)
                   }}
-                  className={`text-xs ${textColorClass} ${className || ""}`}
+                  className={`text-xs ${
+                    isModified && isFieldModified(key) 
+                      ? "text-red-600 font-semibold" 
+                      : baseTextColorClass
+                  } ${className || ""}`}
                   readOnly={isReadOnly}
                 />
               )}
             </td>
           )
         })}
-        <td className={`px-2 py-1 ${textColorClass}`}>
+        <td className={`px-2 py-1 ${baseTextColorClass}`}>
           {remainingPieces ? (
-            <span className={`text-xs font-semibold ${textColorClass}`}>{remainingPieces}</span>
+            <span className={`text-xs font-semibold ${baseTextColorClass}`}>{remainingPieces}</span>
           ) : (
             !isReadOnly && (
               <div className="flex items-center gap-1">
@@ -1627,11 +1768,19 @@ function AWBRow({
       </tr>
       {awb.remarks && (
         <tr>
-          <td colSpan={isQRTList ? 21 : 20} className={`px-2 py-1 text-xs italic ${textColorClass}`}>
+          <td colSpan={isQRTList ? 21 : 20} className={`px-2 py-1 text-xs italic ${
+            isModified && isFieldModified("remarks") 
+              ? "text-red-600 font-semibold" 
+              : baseTextColorClass
+          }`}>
             <EditableField
               value={awb.remarks}
               onChange={(value) => onUpdateField("remarks", value)}
-              className={`text-xs italic w-full ${textColorClass}`}
+              className={`text-xs italic w-full ${
+                isModified && isFieldModified("remarks") 
+                  ? "text-red-600 font-semibold" 
+                  : baseTextColorClass
+              }`}
               multiline
               readOnly={isReadOnly}
             />
@@ -1650,14 +1799,14 @@ function AWBRow({
             onMouseLeave={onMouseLeave}
           >
             {enableBulkCheckboxes && <td className="px-2 py-1"></td>}
-            <td className={`px-2 py-1 pl-8 text-xs ${textColorClass}`}>
-              <span className={textColorClass}>└─</span>
+            <td className={`px-2 py-1 pl-8 text-xs ${baseTextColorClass}`}>
+              <span className={baseTextColorClass}>└─</span>
             </td>
-            <td className={`px-2 py-1 text-xs font-medium ${textColorClass}`}>{awb.awbNo.replace(/\s+/g, "")}</td>
-            <td className={`px-2 py-1 text-xs ${textColorClass}`}>{awb.orgDes}</td>
-            <td className={`px-2 py-1 text-xs font-semibold ${textColorClass}`}>{group.pieces || "-"}</td>
-            <td className={`px-2 py-1 text-xs ${textColorClass}`}>{groupUld || "-"}</td>
-            <td className={`px-2 py-1 text-xs font-mono ${textColorClass}`}>{group.no || "-"}</td>
+            <td className={`px-2 py-1 text-xs font-medium ${baseTextColorClass}`}>{awb.awbNo.replace(/\s+/g, "")}</td>
+            <td className={`px-2 py-1 text-xs ${baseTextColorClass}`}>{awb.orgDes}</td>
+            <td className={`px-2 py-1 text-xs font-semibold ${baseTextColorClass}`}>{group.pieces || "-"}</td>
+            <td className={`px-2 py-1 text-xs ${baseTextColorClass}`}>{groupUld || "-"}</td>
+            <td className={`px-2 py-1 text-xs font-mono ${baseTextColorClass}`}>{group.no || "-"}</td>
             <td colSpan={isQRTList ? 15 : 14} className="px-2 py-1"></td>
           </tr>
         )
