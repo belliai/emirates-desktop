@@ -149,6 +149,24 @@ export default function LoadPlanDetailScreen({ loadPlan, onBack, onSave, onNavig
     fetchChanges()
   }, [loadPlan.flight, loadPlan.revision])
   
+  // Helper function to format arrival date time to display format (e.g., "12Oct0024 13:29/")
+  const formatArrivalDateTime = (dateTimeStr: string | null): string => {
+    if (!dateTimeStr) return ""
+    
+    try {
+      const date = new Date(dateTimeStr)
+      const day = date.getDate().toString().padStart(2, "0")
+      const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+      const month = monthNames[date.getMonth()]
+      const year = date.getFullYear().toString()
+      const hours = date.getHours().toString().padStart(2, "0")
+      const minutes = date.getMinutes().toString().padStart(2, "0")
+      return `${day}${month}${year} ${hours}:${minutes}/`
+    } catch {
+      return dateTimeStr
+    }
+  }
+  
   // Helper function to transform deleted item data to AWBRow
   const transformDeletedItemToAWBRow = (itemData: any): AWBRow | null => {
     if (!itemData) return null
@@ -169,7 +187,7 @@ export default function LoadPlanDetailScreen({ loadPlan, onBack, onSave, onNavig
       bs: itemData.booking_status || "",
       pi: itemData.priority_indicator || "",
       fltin: itemData.flight_in || "",
-      arrdtTime: itemData.arrival_date_time || "",
+      arrdtTime: formatArrivalDateTime(itemData.arrival_date_time),
       qnnAqnn: itemData.quantity_aqnn || "",
       whs: itemData.warehouse_code || "",
       si: itemData.special_instructions || "",
@@ -703,6 +721,7 @@ export default function LoadPlanDetailScreen({ loadPlan, onBack, onSave, onNavig
             workAreaFilter={workAreaFilter}
             pilPerSubFilter={pilPerSubFilter}
             loadPlanChanges={loadPlanChanges}
+            deletedItems={deletedItems}
           />
 
           {/* Bottom Footer */}
@@ -924,6 +943,7 @@ interface CombinedTableProps {
   pilPerSubFilter?: PilPerSubFilter // Sub-filter for PIL/PER work area (PIL only, PER only, or Both)
   isQRTList?: boolean // Show Bay Number and Connection Time columns for QRT List
   loadPlanChanges?: Map<number, LoadPlanChange> // Map of serial number to change information
+  deletedItems?: AWBRow[] // Deleted items from original load plan to display with strikethrough
 }
 
 function CombinedTable({
@@ -959,6 +979,7 @@ function CombinedTable({
   pilPerSubFilter,
   isQRTList = false,
   loadPlanChanges = new Map(),
+  deletedItems = [],
 }: CombinedTableProps) {
   // CRITICAL: Flatten ALL items first, then sort GLOBALLY by additional_data DESC (red on top), then by serial_number
   // This ensures ALL items with additional_data = true appear at the top of the ENTIRE table,
@@ -1367,6 +1388,44 @@ function CombinedTable({
                   </React.Fragment>
                 )
               })}
+              
+              {/* Deleted Items - Display with strikethrough */}
+              {deletedItems.length > 0 && (
+                <>
+                  <tr className="bg-red-50 border-t-2 border-red-300">
+                    <td colSpan={enableBulkCheckboxes ? (isQRTList ? 22 : 21) : (isQRTList ? 21 : 20)} className="px-2 py-2 font-bold text-red-900 text-center">
+                      ***** DELETED ITEMS (FROM ORIGINAL LOAD PLAN) *****
+                    </td>
+                  </tr>
+                  {deletedItems.map((deletedAWB, index) => {
+                    const serialNo = parseInt(deletedAWB.ser) || 0
+                    const changeInfo = loadPlanChanges.get(serialNo)
+                    
+                    return (
+                      <AWBRow
+                        key={`deleted-${serialNo}-${index}`}
+                        awb={deletedAWB}
+                        sectorIndex={-1} // Deleted items don't belong to any sector
+                        uldSectionIndex={-1}
+                        awbIndex={index}
+                        assignment={undefined}
+                        assignmentKey={`deleted-${serialNo}-${index}`}
+                        enableBulkCheckboxes={false}
+                        isSelected={false}
+                        onToggleSelect={() => {}}
+                        isReadOnly={isReadOnly}
+                        awbComments={awbComments}
+                        onRowClick={() => {}}
+                        onLeftSectionClick={() => {}}
+                        onUpdateField={() => {}}
+                        hoveredUld={hoveredUld}
+                        isQRTList={isQRTList}
+                        changeInfo={changeInfo}
+                      />
+                    )
+                  })}
+                </>
+              )}
             </tbody>
           </table>
         </div>

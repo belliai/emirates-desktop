@@ -65,6 +65,9 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON load_plan_changes TO authenticated;
 GRANT USAGE ON SCHEMA public TO anon;
 GRANT USAGE ON SCHEMA public TO authenticated;
 
+-- Enable Row Level Security (consistent with other tables)
+ALTER TABLE load_plan_changes ENABLE ROW LEVEL SECURITY;
+
 -- Force PostgREST to reload schema cache
 NOTIFY pgrst, 'reload schema';
 

@@ -704,14 +704,22 @@ export async function saveListsDataToSupabase({
             }
           }
           
-          // Items that exist but not in new shipments - DON'T DELETE, DON'T RECORD
+          // Items that exist but not in new shipments - RECORD AS DELETED
           // These items will remain in the database with their original revision
-          // We don't record deleted changes for now (only record updated and added)
+          // But we record them as 'deleted' in load_plan_changes so they can be displayed with strikethrough
           existingItemsMap.forEach((existingItem, itemKey) => {
             if (!newShipmentsMap.has(itemKey)) {
-              // Item exists but not in new shipments - keep it in database, don't record anything
+              // Item exists but not in new shipments - keep it in database, but record as deleted
+              changesToSave.push({
+                changeType: 'deleted',
+                itemType: 'awb',
+                originalItemId: existingItem.id,
+                serialNumber: existingItem.serial_number,
+                originalData: existingItem,
+              })
+              
               if (existingItem.serial_number === 1) {
-                console.log(`[v0] Item 001 exists but not in new shipments - will be kept in database (not recorded)`)
+                console.log(`[v0] Item 001 exists but not in new shipments - will be kept in database and recorded as deleted`)
               }
             }
           })
@@ -720,7 +728,8 @@ export async function saveListsDataToSupabase({
             toUpdate: itemsToUpdate.length,
             toInsert: itemsToInsert.length,
             toKeep: (existingItems || []).length - itemsToUpdate.length - existingItemsMap.size + newShipmentsMap.size,
-            changesToRecord: changesToSave.length, // Only modified and added
+            changesToRecord: changesToSave.length, // Modified, added, and deleted
+            deletedCount: changesToSave.filter(c => c.changeType === 'deleted').length,
           })
           
           // Save changes to load_plan_changes
