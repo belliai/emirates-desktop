@@ -277,6 +277,75 @@ export interface ParsedShipmentFields {
 }
 
 /**
+ * Helper function to parse SHC and MAN.DESC from a string
+ * Handles cases like:
+ * - "PER- FRO-ICE CONSOLIDATION" -> SHC: "PER-FRO-ICE", MAN.DESC: "CONSOLIDATION"
+ * - "PER-FRO-ICECONSOLIDATION" -> SHC: "PER-FRO-ICE", MAN.DESC: "CONSOLIDATION"
+ */
+function parseSHCAndManDesc(text: string): { shc: string; manDesc: string } {
+  let shc = ""
+  let manDesc = ""
+  
+  if (!text || !text.trim()) {
+    return { shc: "", manDesc: "" }
+  }
+  
+  // Handle cases like "PER- FRO-ICE" (with space) -> "PER-FRO-ICE"
+  // First normalize spaces: "PER- FRO-ICE" -> "PER-FRO-ICE"
+  let shcManDescCombined = text.replace(/\s+/g, " ").trim()
+  
+  // Pattern 1: SHC with spaces around hyphens, MAN.DESC starts after space
+  // Example: "PER- FRO-ICE CONSOLIDATION" -> SHC: "PER-FRO-ICE", MAN.DESC: "CONSOLIDATION"
+  const shcWithSpacePattern = /^([A-Z]{2,4}(?:\s*-?\s*[A-Z]{2,4})+?)\s+([A-Z][A-Z\s]+)/
+  const shcWithSpaceMatch = shcManDescCombined.match(shcWithSpacePattern)
+  if (shcWithSpaceMatch) {
+    // Normalize SHC: remove spaces around hyphens
+    shc = shcWithSpaceMatch[1].replace(/\s*-\s*/g, "-").trim()
+    manDesc = shcWithSpaceMatch[2].trim()
+    return { shc, manDesc }
+  }
+  
+  // Pattern 2: Try without spaces (fields are joined)
+  // Example: "PER-FRO-ICECONSOLIDATION" -> SHC: "PER-FRO-ICE", MAN.DESC: "CONSOLIDATION"
+  shcManDescCombined = text.replace(/\s+/g, "")
+  
+  // Pattern 2a: SHC ends with hyphen pattern, MAN.DESC starts after (no space)
+  // Example: "PER-FRO-ICECONSOLIDATION" -> SHC: "PER-FRO-ICE", MAN.DESC: "CONSOLIDATION"
+  // Common SHC patterns: "PER-FRO-ICE", "VAL-ECC", "AXA-COL", "PIL-COL", "PEP-COL-BUP", etc.
+  // SHC typically ends with a hyphen followed by 2-4 letters, then MAN.DESC starts
+  const shcPattern = /^([A-Z]{2,4}(?:-[A-Z]{2,4})+?)([A-Z]{4,})/
+  const shcMatch = shcManDescCombined.match(shcPattern)
+  if (shcMatch) {
+    shc = shcMatch[1]
+    manDesc = shcMatch[2]
+    return { shc, manDesc }
+  }
+  
+  // Pattern 2b: Try simpler pattern - SHC with single hyphen
+  // Example: "VAL-ECCCONSOLIDATION" -> SHC: "VAL-ECC", MAN.DESC: "CONSOLIDATION"
+  const shcHyphenMatch = shcManDescCombined.match(/^([A-Z]{2,4}-[A-Z]{2,4})([A-Z]+)$/)
+  if (shcHyphenMatch) {
+    shc = shcHyphenMatch[1]
+    manDesc = shcHyphenMatch[2]
+    return { shc, manDesc }
+  }
+  
+  // Pattern 3: Fallback - use space if available
+  const spaceIndex = text.indexOf(" ")
+  if (spaceIndex > 0) {
+    shc = text.substring(0, spaceIndex).trim().replace(/\s*-\s*/g, "-")
+    manDesc = text.substring(spaceIndex).trim()
+    return { shc, manDesc }
+  }
+  
+  // Pattern 4: Last resort - assume entire text is SHC (no MAN.DESC)
+  shc = text.replace(/\s*-\s*/g, "-")
+  manDesc = ""
+  
+  return { shc, manDesc }
+}
+
+/**
  * Parse shipment line field by field, handling joined fields
  * This is a smarter parser that works backwards from known patterns
  */
@@ -478,132 +547,183 @@ export function parseShipmentLine(line: string): ParsedShipmentFields | null {
   
   // Strategy: Work backwards from BS/PI, then THC, then PCODE+PC
   
-  // Find BS and PI (SS/BS/NN followed by N/Y) - can be separate or joined
-  if (!bs || bs === "SS") {
-    const bsPiPattern = /\s+(SS|BS|NN)\s+([YN])\s*$/
-    const bsPiMatch = remaining.match(bsPiPattern)
-    if (bsPiMatch) {
-      bs = bsPiMatch[1]
-      pi = bsPiMatch[2]
-      remaining = remaining.substring(0, remaining.length - bsPiMatch[0].length).trim()
-    } else {
-      // Try joined pattern (e.g., "SSN" = SS + N)
-      const bsPiJoinedPattern = /(SS|BS|NN)([YN])\s*$/
-      const bsPiJoinedMatch = remaining.match(bsPiJoinedPattern)
-      if (bsPiJoinedMatch) {
-        bs = bsPiJoinedMatch[1]
-        pi = bsPiJoinedMatch[2]
-        remaining = remaining.substring(0, remaining.length - bsPiJoinedMatch[0].length).trim()
-      }
-    }
-  }
-  
-  // Find THC (QWT, QRT, NORM, etc.) - usually 3-4 uppercase letters/numbers
-  // Can be before BS/PI or after PCODE+PC
-  const thcPattern = /\s+([A-Z0-9]{3,4})\s*$/
-  const thcMatch = remaining.match(thcPattern)
-  if (thcMatch) {
-    thc = thcMatch[1]
-    remaining = remaining.substring(0, remaining.length - thcMatch[0].length).trim()
-  } else {
-    // Try to find THC in joined pattern (e.g., "QWTSS" = QWT + SS)
-    const thcBsJoinedPattern = /([A-Z0-9]{3,4})(SS|BS|NN)\s*$/
-    const thcBsJoinedMatch = remaining.match(thcBsJoinedPattern)
-    if (thcBsJoinedMatch) {
-      thc = thcBsJoinedMatch[1]
-      if (!bs || bs === "SS") {
-        bs = thcBsJoinedMatch[2]
-      }
-      remaining = remaining.substring(0, remaining.length - thcBsJoinedMatch[0].length).trim()
-    }
-  }
-  
-  // Try to find PCODE+PC pattern (3 letters + P#)
+  // IMPORTANT: Extract PCODE before BS/PI, because PCODE can be directly followed by BS/PI
+  // Example: "PNFSS" = PCODE "PNF" followed by BS "SS"
+  // Try to find PCODE+PC pattern first (3 letters + P#)
   // Examples: "VALP2", "AXDP2", "GCRP2"
   const pcodePcPattern = /([A-Z]{3})(P\d)/
   const pcodePcMatch = remaining.match(pcodePcPattern)
   
+  // Also try PCODE without PC (3 letters followed by BS/PI or other pattern)
+  // Example: "PNFSS" = PCODE "PNF" followed by BS "SS"
+  const pcodeWithoutPcPattern = /([A-Z]{3})(SS|BS|NN)/
+  const pcodeWithoutPcMatch = !pcodePcMatch ? remaining.match(pcodeWithoutPcPattern) : null
+  
+  // Also try PCODE alone (3 letters) followed by FLTIN or other pattern
+  // Example: "PNFEK0204" = PCODE "PNF" followed by FLTIN "EK0204"
+  const pcodeAlonePattern = !pcodePcMatch && !pcodeWithoutPcMatch ? /([A-Z]{3})([A-Z]{2}\d{4})/ : null
+  const pcodeAloneMatch = pcodeAlonePattern ? remaining.match(pcodeAlonePattern) : null
+  
+  let pcodeIndex = -1
+  
   if (pcodePcMatch) {
     pcode = pcodePcMatch[1]
     pc = pcodePcMatch[2]
-    const pcodeIndex = remaining.indexOf(pcodePcMatch[0])
-    
+    pcodeIndex = remaining.indexOf(pcodePcMatch[0])
+  } else if (pcodeWithoutPcMatch) {
+    pcode = pcodeWithoutPcMatch[1]
+    pc = ""
+    pcodeIndex = remaining.indexOf(pcodeWithoutPcMatch[0])
+  } else if (pcodeAloneMatch) {
+    pcode = pcodeAloneMatch[1]
+    pc = ""
+    pcodeIndex = remaining.indexOf(pcodeAloneMatch[0])
+  }
+  
+  // Find BS and PI (SS/BS/NN followed by N/Y) - can be separate or joined
+  // Can be at end or before FLTIN (e.g., "SSNEK0204" or "SS N EK0204")
+  // But if PCODE was found and it's followed by BS/PI, we already know BS from pcodeWithoutPcMatch
+  if (!bs || bs === "SS") {
+    // Pattern 1: BS followed by PI with space, then FLTIN or end
+    // Example: "SS N EK0204" or "SS N"
+    const bsPiPattern = /\s+(SS|BS|NN)\s+([YN])(?:\s+([A-Z]{2}\d{4})|\s*$)/
+    const bsPiMatch = remaining.match(bsPiPattern)
+    if (bsPiMatch) {
+      bs = bsPiMatch[1]
+      pi = bsPiMatch[2]
+      const matchEnd = bsPiMatch.index! + bsPiMatch[0].length
+      // If followed by FLTIN, keep FLTIN in remaining
+      if (bsPiMatch[3]) {
+        // FLTIN is in the match, extract it and keep in remaining
+        remaining = remaining.substring(0, bsPiMatch.index!).trim() + " " + bsPiMatch[3] + remaining.substring(matchEnd)
+      } else {
+        remaining = remaining.substring(0, bsPiMatch.index!).trim()
+      }
+    } else {
+      // Pattern 2: Joined pattern (e.g., "SSN" = SS + N, or "SSNEK0204" = SS + N + EK0204)
+      // Example: "SSNEK0204" -> BS: "SS", PI: "N", FLTIN: "EK0204"
+      const bsPiJoinedPattern = /(SS|BS|NN)([YN])([A-Z]{2}\d{4})?/
+      const bsPiJoinedMatch = remaining.match(bsPiJoinedPattern)
+      if (bsPiJoinedMatch) {
+        bs = bsPiJoinedMatch[1]
+        pi = bsPiJoinedMatch[2]
+        const matchEnd = bsPiJoinedMatch.index! + bsPiJoinedMatch[0].length
+        // If FLTIN is in the match, keep it in remaining
+        if (bsPiJoinedMatch[3]) {
+          remaining = remaining.substring(0, bsPiJoinedMatch.index!).trim() + " " + bsPiJoinedMatch[3] + remaining.substring(matchEnd)
+        } else {
+          remaining = remaining.substring(0, bsPiJoinedMatch.index!).trim() + remaining.substring(matchEnd)
+        }
+      } else {
+        // Pattern 3: BS/PI at very end (no FLTIN after)
+        const bsPiEndPattern = /(SS|BS|NN)([YN])\s*$/
+        const bsPiEndMatch = remaining.match(bsPiEndPattern)
+        if (bsPiEndMatch) {
+          bs = bsPiEndMatch[1]
+          pi = bsPiEndMatch[2]
+          remaining = remaining.substring(0, remaining.length - bsPiEndMatch[0].length).trim()
+        }
+      }
+    }
+  }
+  
+  // If PCODE was found and it's followed by BS (from pcodeWithoutPcMatch), extract BS/PI from there
+  if (pcodeWithoutPcMatch && (!bs || bs === "SS")) {
+    bs = pcodeWithoutPcMatch[2] // BS is the second group (SS|BS|NN)
+    // PI should be after BS, try to find it
+    const afterPcodeBs = remaining.substring(pcodeIndex + pcodeWithoutPcMatch[0].length).trim()
+    const piMatch = afterPcodeBs.match(/^([YN])(?:\s+[A-Z]{2}\d{4}|\s*$)/)
+    if (piMatch) {
+      pi = piMatch[1]
+      remaining = remaining.substring(0, pcodeIndex).trim()
+      // If FLTIN is after PI, keep it
+      if (afterPcodeBs.substring(piMatch[0].length).trim().match(/^[A-Z]{2}\d{4}/)) {
+        const fltInAfterPi = afterPcodeBs.substring(piMatch[0].length).trim().match(/^([A-Z]{2}\d{4})/)
+        if (fltInAfterPi) {
+          remaining = remaining + " " + fltInAfterPi[1] + afterPcodeBs.substring(piMatch[0].length + fltInAfterPi[0].length)
+        }
+      }
+    } else {
+      // PI might be joined with BS (e.g., "SSN")
+      const piJoinedMatch = afterPcodeBs.match(/^([YN])/)
+      if (piJoinedMatch) {
+        pi = piJoinedMatch[1]
+        remaining = remaining.substring(0, pcodeIndex).trim()
+        // Check for FLTIN after PI
+        const afterPi = afterPcodeBs.substring(piJoinedMatch[0].length).trim()
+        if (afterPi.match(/^[A-Z]{2}\d{4}/)) {
+          const fltInMatch = afterPi.match(/^([A-Z]{2}\d{4})/)
+          if (fltInMatch) {
+            remaining = remaining + " " + fltInMatch[1] + afterPi.substring(fltInMatch[0].length)
+          }
+        }
+      } else {
+        remaining = remaining.substring(0, pcodeIndex).trim()
+      }
+    }
+  } else if (pcodeAloneMatch) {
+    // PCODE followed by FLTIN, extract FLTIN
+    const afterPcode = remaining.substring(pcodeIndex + pcodeAloneMatch[0].length).trim()
+    remaining = remaining.substring(0, pcodeIndex).trim()
+    // FLTIN is already in pcodeAloneMatch[2], but we need to extract it properly
+    // FLTIN will be extracted later in the function
+  } else if (pcodePcMatch || pcodeIndex >= 0) {
+    // PCODE with PC found, extract remaining after PCODE
+    const afterPcode = remaining.substring(pcodeIndex + (pcodePcMatch ? pcodePcMatch[0].length : 0)).trim()
+    remaining = remaining.substring(0, pcodeIndex).trim()
+  }
+  
+  // Find THC (QWT, QRT, NORM, etc.) - usually 3-4 uppercase letters/numbers
+  // Can be before BS/PI or after PCODE+PC
+  // But only if we haven't extracted PCODE yet (PCODE extraction happens before this)
+  if (pcodeIndex < 0) {
+    const thcPattern = /\s+([A-Z0-9]{3,4})\s*$/
+    const thcMatch = remaining.match(thcPattern)
+    if (thcMatch) {
+      thc = thcMatch[1]
+      remaining = remaining.substring(0, remaining.length - thcMatch[0].length).trim()
+    } else {
+      // Try to find THC in joined pattern (e.g., "QWTSS" = QWT + SS)
+      const thcBsJoinedPattern = /([A-Z0-9]{3,4})(SS|BS|NN)\s*$/
+      const thcBsJoinedMatch = remaining.match(thcBsJoinedPattern)
+      if (thcBsJoinedMatch) {
+        thc = thcBsJoinedMatch[1]
+        if (!bs || bs === "SS") {
+          bs = thcBsJoinedMatch[2]
+        }
+        remaining = remaining.substring(0, remaining.length - thcBsJoinedMatch[0].length).trim()
+      }
+    }
+  }
+  
+  // Parse SHC and MAN.DESC from remaining (before PCODE)
+  if (pcodeIndex >= 0 && remaining) {
     // Before PCODE: SHC and MAN.DESC
     const beforePcode = remaining.substring(0, pcodeIndex).trim()
-    // After PCODE: might have THC (but we already extracted it)
-    const afterPcode = remaining.substring(pcodeIndex + pcodePcMatch[0].length).trim()
+    const shcManDesc = parseSHCAndManDesc(beforePcode)
+    shc = shcManDesc.shc
+    manDesc = shcManDesc.manDesc
     
-    // If afterPcode still has content and we don't have THC yet, it might be THC
-    if (afterPcode && !thc) {
-      const thcFromAfter = afterPcode.match(/^([A-Z0-9]{3,4})/)
-      if (thcFromAfter) {
-        thc = thcFromAfter[1]
-      }
-    }
+    console.log('[parseShipmentLine] ✅ Parsed SHC and MAN.DESC:', {
+      serial,
+      shc,
+      manDesc,
+      pcode,
+      pc,
+      beforePcode: beforePcode.substring(0, 100)
+    })
+  } else if (!pcode && remaining) {
+    // No PCODE found, try to parse SHC and MAN.DESC from remaining
+    const shcManDesc = parseSHCAndManDesc(remaining)
+    shc = shcManDesc.shc
+    manDesc = shcManDesc.manDesc
     
-    // Parse SHC and MAN.DESC from beforePcode
-    // Example: "VAL- ECCCONSOLIDATION" -> SHC: "VAL-ECC", MAN.DESC: "CONSOLIDATION"
-    const shcManDescCombined = beforePcode.replace(/\s+/g, "")
-    
-    // Pattern 1: SHC ends with hyphen, MAN.DESC starts after
-    // Example: "VAL-ECCCONSOLIDATION" -> SHC: "VAL-ECC", MAN.DESC: "CONSOLIDATION"
-    const shcHyphenMatch = shcManDescCombined.match(/^([A-Z]{2,4}-[A-Z]{2,4})([A-Z]+)$/)
-    if (shcHyphenMatch) {
-      shc = shcHyphenMatch[1]
-      manDesc = shcHyphenMatch[2]
-    } else {
-      // Pattern 2: Try to find where SHC ends
-      // Common SHC patterns: "VAL-", "AXA-COL", "PIL-COL", "PEP-COL-BUP", etc.
-      const shcPattern = /^([A-Z]{2,4}(?:-[A-Z]{2,4})*?)([A-Z]{4,})/
-      const shcMatch = shcManDescCombined.match(shcPattern)
-      if (shcMatch) {
-        shc = shcMatch[1]
-        manDesc = shcMatch[2]
-      } else {
-        // Fallback: use space if available
-        const spaceIndex = beforePcode.indexOf(" ")
-        if (spaceIndex > 0) {
-          shc = beforePcode.substring(0, spaceIndex).trim()
-          manDesc = beforePcode.substring(spaceIndex).trim()
-        } else {
-          shc = beforePcode
-        }
-      }
-    }
-  } else {
-    // PCODE and PC might be separate
-    const pcodeMatch = remaining.match(/\s+([A-Z]{3})\s+(P\d)/)
-    if (pcodeMatch) {
-      pcode = pcodeMatch[1]
-      pc = pcodeMatch[2]
-      const beforePcode = remaining.substring(0, remaining.indexOf(pcodeMatch[0])).trim()
-      const afterPcode = remaining.substring(remaining.indexOf(pcodeMatch[0]) + pcodeMatch[0].length).trim()
-      
-      // Parse SHC and MAN.DESC from beforePcode
-      const shcManDescCombined = beforePcode.replace(/\s+/g, "")
-      const shcPattern = /^([A-Z]{2,4}(?:-[A-Z]{2,4})*?)([A-Z]{4,})/
-      const shcMatch = shcManDescCombined.match(shcPattern)
-      if (shcMatch) {
-        shc = shcMatch[1]
-        manDesc = shcMatch[2]
-      } else {
-        const spaceIndex = beforePcode.indexOf(" ")
-        if (spaceIndex > 0) {
-          shc = beforePcode.substring(0, spaceIndex).trim()
-          manDesc = beforePcode.substring(spaceIndex).trim()
-        } else {
-          shc = beforePcode
-        }
-      }
-      
-      // Parse THC from afterPcode if not already found
-      if (!thc) {
-        const thcMatch = afterPcode.match(/^([A-Z0-9]{3,4})/)
-        if (thcMatch) {
-          thc = thcMatch[1]
-        }
-      }
-    }
+    console.log('[parseShipmentLine] ⚠️ No PCODE found, parsed SHC and MAN.DESC from remaining:', {
+      serial,
+      shc,
+      manDesc,
+      remaining: remaining.substring(0, 100)
+    })
   }
   
   // Extract special notes from original line (pattern: [text])

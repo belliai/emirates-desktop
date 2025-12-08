@@ -126,8 +126,10 @@ function preprocessRTFContent(content: string): string {
   // This function just does final normalization
   
   let processed = content
+  console.log("original content",content)
   // Normalize line breaks (ensure consistent \n)
   processed = processed.replace(/\r\n/g, "\n").replace(/\r/g, "\n")
+  console.log("preprocessRTFContent called",processed)
   // Step 1: Fix missing spaces between date/month and field labels
   // Pattern: "01MarACFTTYPE:" -> "01Mar ACFTTYPE:"
   processed = processed.replace(/(\d{1,2}[A-Z]{3})(ACFTTYPE:|ACFTREG:|HEADERVERSION:|PAX:|STD:|PREPAREDBY:|TTLPLNULD:|ULDVERSION:|PREPAREDON:|SECTOR:)/gi, (match, dateMonth, field) => {
