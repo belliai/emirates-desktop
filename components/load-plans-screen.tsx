@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useRef, useEffect, useMemo } from "react"
-import { ChevronRight, Plane, Calendar, Package, Users, Clock, FileText, Upload, Trash2, AlertTriangle, CheckCircle, XCircle, Plus, Search, SlidersHorizontal, Settings2, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react"
+import { ChevronRight, Plane, Calendar, Package, Users, Clock, FileText, Upload, Trash2, AlertTriangle, CheckCircle, XCircle, Plus, Search, SlidersHorizontal, Settings2, ArrowUpDown, ArrowUp, ArrowDown, Loader2 } from "lucide-react"
 import Swal from "sweetalert2"
 import LoadPlanDetailScreen from "./load-plan-detail-screen"
 import type { LoadPlanDetail } from "./load-plan-types"
@@ -64,11 +64,13 @@ type DeleteModalState = {
 function DeleteConfirmationModal({ 
   state, 
   onClose, 
-  onConfirm 
+  onConfirm,
+  isDeleting = false
 }: { 
   state: DeleteModalState
   onClose: () => void
   onConfirm: () => void
+  isDeleting?: boolean
 }) {
   const [confirmText, setConfirmText] = useState("")
   const confirmWord = "DELETE"
@@ -93,17 +95,19 @@ function DeleteConfirmationModal({
         <div className="p-6">
           {/* Icon */}
           <div className="flex justify-center mb-4">
-            {state.type === "confirm" && (
+            {isDeleting ? (
+              <div className="w-12 h-12 rounded-full bg-blue-100 flex items-center justify-center">
+                <Loader2 className="w-6 h-6 text-blue-600 animate-spin" />
+              </div>
+            ) : state.type === "confirm" ? (
               <div className="w-12 h-12 rounded-full bg-amber-100 flex items-center justify-center">
                 <AlertTriangle className="w-6 h-6 text-amber-600" />
               </div>
-            )}
-            {state.type === "success" && (
+            ) : state.type === "success" ? (
               <div className="w-12 h-12 rounded-full bg-green-100 flex items-center justify-center">
                 <CheckCircle className="w-6 h-6 text-green-600" />
               </div>
-            )}
-            {state.type === "error" && (
+            ) : (
               <div className="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center">
                 <XCircle className="w-6 h-6 text-red-600" />
               </div>
@@ -112,23 +116,21 @@ function DeleteConfirmationModal({
 
           {/* Title */}
           <h3 className="text-lg font-semibold text-gray-900 text-center mb-3">
-            {state.type === "confirm" && "Delete Load Plan?"}
-            {state.type === "success" && "Success!"}
-            {state.type === "error" && "Error"}
+            {isDeleting ? "Menghapus Load Plan..." : state.type === "confirm" ? "Delete Load Plan?" : state.type === "success" ? "Success!" : "Error"}
           </h3>
 
           {/* Content */}
           <div className="text-center text-gray-600 text-sm mb-4">
-            {state.type === "confirm" && (
+            {isDeleting ? (
+              <p>Sedang menghapus load plan untuk flight <strong className="text-gray-900">{state.flight}</strong>...</p>
+            ) : state.type === "confirm" ? (
               <>
                 <p>Are you sure you want to delete the load plan for flight <strong className="text-gray-900">{state.flight}</strong>?</p>
                 <p className="mt-2 text-gray-500">This action will delete the load plan and all related items. This action cannot be undone.</p>
               </>
-            )}
-            {state.type === "success" && (
+            ) : state.type === "success" ? (
               <p>Load plan for flight <strong className="text-gray-900">{state.flight}</strong> has been deleted.</p>
-            )}
-            {state.type === "error" && (
+            ) : (
               <p>{state.message || "An error occurred while deleting the load plan."}</p>
             )}
           </div>
@@ -158,21 +160,30 @@ function DeleteConfirmationModal({
                   variant="outline"
                   className="flex-1 border-gray-300 text-gray-700 hover:bg-gray-50"
                   onClick={onClose}
+                  disabled={isDeleting}
                 >
                   Cancel
                 </Button>
                 <Button
                   className="flex-1 bg-[#D71A21] hover:bg-[#B01419] text-white disabled:opacity-50 disabled:cursor-not-allowed"
                   onClick={onConfirm}
-                  disabled={!isConfirmValid}
+                  disabled={!isConfirmValid || isDeleting}
                 >
-                  Delete
+                  {isDeleting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Menghapus...
+                    </>
+                  ) : (
+                    "Delete"
+                  )}
                 </Button>
               </>
             ) : (
               <Button
                 className="w-full bg-[#D71A21] hover:bg-[#B01419] text-white"
                 onClick={onClose}
+                disabled={isDeleting}
               >
                 Close
               </Button>
@@ -199,6 +210,7 @@ export default function LoadPlansScreen({ onLoadPlanSelect }: { onLoadPlanSelect
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [deleteModal, setDeleteModal] = useState<DeleteModalState>({ isOpen: false, type: "confirm", flight: "" })
   const [pendingDeletePlan, setPendingDeletePlan] = useState<LoadPlan | null>(null)
+  const [isDeleting, setIsDeleting] = useState(false)
   const [showAddFilterDropdown, setShowAddFilterDropdown] = useState(false)
   const [showViewOptions, setShowViewOptions] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
@@ -405,10 +417,9 @@ export default function LoadPlansScreen({ onLoadPlanSelect }: { onLoadPlanSelect
   const handleConfirmDelete = async () => {
     if (!pendingDeletePlan) return
 
-    setDeleteModal(prev => ({ ...prev, isOpen: false }))
+    setIsDeleting(true)
     
     try {
-      setIsLoading(true)
       const deleteResult = await deleteLoadPlanFromSupabase(pendingDeletePlan.flight)
       
       if (deleteResult.success) {
@@ -453,7 +464,7 @@ export default function LoadPlansScreen({ onLoadPlanSelect }: { onLoadPlanSelect
         message: `An error occurred while deleting the load plan: ${err instanceof Error ? err.message : "Unknown error"}`
       })
     } finally {
-      setIsLoading(false)
+      setIsDeleting(false)
     }
   }
 
@@ -1233,6 +1244,7 @@ export default function LoadPlansScreen({ onLoadPlanSelect }: { onLoadPlanSelect
         state={deleteModal}
         onClose={handleCloseDeleteModal}
         onConfirm={handleConfirmDelete}
+        isDeleting={isDeleting}
       />
     </div>
   )
