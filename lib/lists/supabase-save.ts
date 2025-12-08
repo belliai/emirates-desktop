@@ -911,7 +911,9 @@ export async function saveListsDataToSupabase({
       }
       
       // Check for duplicates in itemsToInsert before creating loadPlanItems
+      // Check both: 1) duplicate serialNo+awbNo combination, 2) duplicate serialNo only
       const seenKeys = new Set<string>()
+      const seenSerialNos = new Set<number>()
       const uniqueItemsToInsert: Shipment[] = []
       
       itemsToInsert.forEach(shipment => {
@@ -919,50 +921,76 @@ export async function saveListsDataToSupabase({
         const normalizedAwb = shipment.awbNo ? shipment.awbNo.replace(/\s+/g, "").trim() : ""
         const key = createItemKey(serialNo, normalizedAwb)
         
+        // Check for duplicate serialNo (regardless of AWB)
+        if (serialNo !== null && serialNo !== undefined && !isNaN(serialNo)) {
+          if (seenSerialNos.has(serialNo)) {
+            console.warn(`[v0] ⚠️ Skipping duplicate serialNo in new shipments: serial_number=${serialNo}, awb_number=${normalizedAwb} (serialNo already exists)`)
+            return // Skip this shipment
+          }
+          seenSerialNos.add(serialNo)
+        }
+        
+        // Also check for duplicate serialNo+awbNo combination
         if (key && !seenKeys.has(key)) {
           seenKeys.add(key)
           uniqueItemsToInsert.push(shipment)
         } else if (key) {
-          console.warn(`[v0] ⚠️ Skipping duplicate item in new shipments: serial_number=${serialNo}, awb_number=${normalizedAwb}`)
+          console.warn(`[v0] ⚠️ Skipping duplicate item in new shipments: serial_number=${serialNo}, awb_number=${normalizedAwb} (serialNo+awbNo combination already exists)`)
         }
       })
       
       if (uniqueItemsToInsert.length < itemsToInsert.length) {
-        console.log(`[v0] ⚠️ Removed ${itemsToInsert.length - uniqueItemsToInsert.length} duplicate items from insertion list`)
+        console.log(`[v0] ⚠️ Removed ${itemsToInsert.length - uniqueItemsToInsert.length} duplicate items from insertion list (checked for duplicate serialNo and serialNo+awbNo)`)
       }
       
       // Also check against ALL existing items in this load plan (not just current revision)
       // to prevent duplicates across revisions
+      // Check both: 1) duplicate serialNo+awbNo combination, 2) duplicate serialNo only
       const { data: allExistingItems } = await supabase
         .from("load_plan_items")
         .select("serial_number, awb_number")
         .eq("load_plan_id", loadPlanId)
       
       const existingKeysSet = new Set<string>()
+      const existingSerialNosSet = new Set<number>()
       if (allExistingItems) {
         allExistingItems.forEach(item => {
           const key = createItemKey(item.serial_number, item.awb_number)
           if (key) {
             existingKeysSet.add(key)
           }
+          // Also track serialNo separately
+          if (item.serial_number !== null && item.serial_number !== undefined && !isNaN(item.serial_number)) {
+            existingSerialNosSet.add(item.serial_number)
+          }
         })
       }
       
       // Filter out items that already exist in any revision
+      // Check both duplicate serialNo and duplicate serialNo+awbNo combination
       const finalItemsToInsert = uniqueItemsToInsert.filter(shipment => {
         const serialNo = shipment.serialNo ? (typeof shipment.serialNo === 'string' ? parseInt(shipment.serialNo.trim(), 10) : shipment.serialNo) : null
         const normalizedAwb = shipment.awbNo ? shipment.awbNo.replace(/\s+/g, "").trim() : ""
         const key = createItemKey(serialNo, normalizedAwb)
         
+        // Check for duplicate serialNo in database
+        if (serialNo !== null && serialNo !== undefined && !isNaN(serialNo)) {
+          if (existingSerialNosSet.has(serialNo)) {
+            console.warn(`[v0] ⚠️ Skipping item with duplicate serialNo in database: serial_number=${serialNo}, awb_number=${normalizedAwb}`)
+            return false
+          }
+        }
+        
+        // Also check for duplicate serialNo+awbNo combination
         if (key && existingKeysSet.has(key)) {
-          console.warn(`[v0] ⚠️ Skipping item that already exists in database: serial_number=${serialNo}, awb_number=${normalizedAwb}`)
+          console.warn(`[v0] ⚠️ Skipping item that already exists in database: serial_number=${serialNo}, awb_number=${normalizedAwb} (serialNo+awbNo combination exists)`)
           return false
         }
         return true
       })
       
       if (finalItemsToInsert.length < uniqueItemsToInsert.length) {
-        console.log(`[v0] ⚠️ Removed ${uniqueItemsToInsert.length - finalItemsToInsert.length} items that already exist in database`)
+        console.log(`[v0] ⚠️ Removed ${uniqueItemsToInsert.length - finalItemsToInsert.length} items that already exist in database (checked for duplicate serialNo and serialNo+awbNo)`)
       }
       
       const loadPlanItems = finalItemsToInsert.map((shipment) => {

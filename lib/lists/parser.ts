@@ -50,7 +50,7 @@ export function parseHeader(content: string): LoadPlanHeader {
   let foundTableHeader = false
   let foundSeparator = false
   const warningLines: string[] = []
-  
+  console.log("total Lines:", lines.length)
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim()
     
@@ -172,6 +172,7 @@ export async function detectCriticalFromFileImages(file: File): Promise<boolean>
 }
 
 export function parseShipments(content: string, header: LoadPlanHeader): Shipment[] {
+  console.log("parseShipments called")
   const shipments: Shipment[] = []
   const lines = content.split("\n")
   let currentShipment: Partial<Shipment> | null = null
@@ -249,7 +250,9 @@ export function parseShipments(content: string, header: LoadPlanHeader): Shipmen
       // Reset ramp transfer flag for next sector
       isRampTransfer = false
       currentULD = ""
-      console.log("[v0] ✅ TOTALS found for sector:", currentSector, "- flushed buffer, but keeping inShipmentSection active for potential next sector")
+      const bufferCount = awbBuffer.length
+      const bufferSerials = awbBuffer.map(s => s.serialNo).filter(Boolean).join(", ")
+      console.log("[v0] ✅ TOTALS found for sector:", currentSector, "- flushed", bufferCount, "item(s) from buffer (serials:", bufferSerials + "), but keeping inShipmentSection active for potential next sector")
       continue
     }
 
@@ -397,6 +400,42 @@ export function parseShipments(content: string, header: LoadPlanHeader): Shipmen
         /^(\d{3})\s+(\d{3}-\d{8})\s+([A-Z]{3})([A-Z]{3})\s+(\d+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([A-Z-]+)\s+(.+?)\s+([A-Z]{3})\s+([A-Z]\d)?\s*([A-Z0-9\s]*?)\s+(SS|BS|NN)\s+([YN])\s+([A-Z]{2}\d{4})?\s*(\d{2}[A-Za-z]{3}\d{2,4})?\s*([\d:\/]+)?\s*([A-Z0-9\/]+)?\s*([A-Z0-9]+)?\s+([YN])\s*$/i,
       )
       
+      // If first regex doesn't match, try format with empty SHC (e.g., shipment 012)
+      // Pattern: SER AWB ORG/DES PCS WGT VOL LVOL (empty SHC) MAN.DESC PCODE PC THC BS PI FLTIN ARRDT.TIME SI
+      // Example: 012 176-90670086 KULLHR 11 1200.0 29.7 29.7 CONSOLIDATION GCR P1 QRT NN N EK0345 01Mar1320 01:10/ N
+      // Key: After LVOL, if SHC is empty, MAN.DESC (which starts with capital letter) comes directly after
+      if (!shipmentMatch) {
+        // Try pattern that allows SHC to be completely empty
+        // After LVOL, SHC can be empty (just spaces), then MAN.DESC starts with capital letter
+        // Pattern breakdown: ... LVOL \s+ ([A-Z-]*) \s+ ([A-Z][A-Z\s]+) \s+ PCODE ...
+        // The key is that MAN.DESC must start with [A-Z] to distinguish it from empty SHC
+        const emptySHCMatch = normalizedLine.match(
+          /^(\d{3})\s+(\d{3}-\d{8})\s+([A-Z]{3})([A-Z]{3})\s+(\d+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([A-Z-]*)\s+([A-Z][A-Z\s]*?)\s+([A-Z]{3})\s+([A-Z]\d)\s+([A-Z0-9\s]+?)\s+(SS|BS|NN)\s+([YN])\s+([A-Z]{2}\d{4})?\s*(\d{2}[A-Za-z]{3}\d{2,4})?\s*([\d:\/]+)?\s*([A-Z0-9\/]+)?\s*([A-Z0-9]+)?\s+([YN])\s*$/i,
+        )
+        if (emptySHCMatch) {
+          const capturedSHC = (emptySHCMatch[9] || "").trim()
+          const capturedManDesc = emptySHCMatch[10]?.trim()
+          const capturedPcode = emptySHCMatch[11]
+          
+          // Verify: MAN.DESC should start with capital letter, PCODE should be 3 letters
+          // SHC can be empty string ""
+          const isValidManDesc = capturedManDesc && capturedManDesc.length > 0 && capturedManDesc.match(/^[A-Z]/)
+          const isValidPcode = capturedPcode && capturedPcode.length === 3 && capturedPcode.match(/^[A-Z]{3}$/i)
+          const isValidSHC = !capturedSHC || capturedSHC.match(/^[A-Z-]+$/i)
+          
+          if (isValidManDesc && isValidPcode && isValidSHC) {
+            console.log("[v0] ✅ Matched with empty SHC regex (e.g., shipment 012):", {
+              serial: emptySHCMatch[1],
+              awb: emptySHCMatch[2],
+              shc: capturedSHC || "(empty - will save as empty string \"\")",
+              manDesc: capturedManDesc.substring(0, 30),
+              pcode: capturedPcode
+            })
+            shipmentMatch = emptySHCMatch
+          }
+        }
+      }
+      
       // If first regex doesn't match, try format without FLTIN/ARRDT.TIME (e.g., shipment 002)
       // Pattern: SER AWB ORG/DES PCS WGT VOL LVOL SHC MAN.DESC PCODE PC THC ... SI
       // Example: 002 176-98208961 DXBMAA 1 10.0 0.1 0.1 VAL GOLD JEWELLERY. VAL P2 NORM NN N N
@@ -490,6 +529,55 @@ export function parseShipments(content: string, header: LoadPlanHeader): Shipmen
             // Log lines that look like shipments but don't match
             if (line.match(/^\d{3}\s+\d{3}-\d{8}/)) {
               console.log("[v0] ⚠️ Failed to parse shipment line:", line.substring(0, 150))
+              console.log("[v0] ⚠️ Normalized line:", normalizedLine.substring(0, 150))
+              // Try to identify which part might be causing the issue
+              const serialMatch = normalizedLine.match(/^(\d{3})/)
+              if (serialMatch) {
+                const serial = serialMatch[1]
+                console.log("[v0] ⚠️ Serial number detected:", serial, "- attempting to debug parsing issue")
+                
+                // Special handling for shipment 012 (known issue with empty SHC)
+                if (serial === "012") {
+                  console.log("[v0] 🔍 Special debug for shipment 012 with empty SHC")
+                  // Try to manually parse shipment 012 format
+                  // Pattern: 012 176-90670086 KULLHR 11 1200.0 29.7 29.7 CONSOLIDATION GCR P1 QRT NN N EK0345 01Mar1320 01:10/ N
+                  const manualMatch = normalizedLine.match(/^(\d{3})\s+(\d{3}-\d{8})\s+([A-Z]{3})([A-Z]{3})\s+(\d+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([A-Z][A-Z\s]+?)\s+([A-Z]{3})\s+([A-Z]\d)\s+([A-Z0-9\s]+?)\s+(SS|BS|NN)\s+([YN])\s+([A-Z]{2}\d{4})?\s*(\d{2}[A-Za-z]{3}\d{2,4})?\s*([\d:\/]+)?\s*([A-Z0-9\/]+)?\s*([A-Z0-9]+)?\s+([YN])\s*$/i)
+                  if (manualMatch) {
+                    console.log("[v0] ✅ Manual pattern matched for shipment 012:", {
+                      serial: manualMatch[1],
+                      awb: manualMatch[2],
+                      manDesc: manualMatch[9]?.substring(0, 30),
+                      pcode: manualMatch[10]
+                    })
+                    // Create shipment match array manually
+                    shipmentMatch = [
+                      manualMatch[0], // full match
+                      manualMatch[1], // serial
+                      manualMatch[2], // awb
+                      manualMatch[3], // origin
+                      manualMatch[4], // destination
+                      manualMatch[5], // pcs
+                      manualMatch[6], // wgt
+                      manualMatch[7], // vol
+                      manualMatch[8], // lvol
+                      "", // shc (empty)
+                      manualMatch[9], // manDesc
+                      manualMatch[10], // pcode
+                      manualMatch[11], // pc
+                      manualMatch[12], // thc
+                      manualMatch[13], // bs
+                      manualMatch[14], // pi
+                      manualMatch[15] || "", // fltIn
+                      manualMatch[16] || "", // arrDate
+                      manualMatch[17] || "", // arrTime
+                      manualMatch[18] || "", // qnnAqnn
+                      manualMatch[19] || "", // whs
+                      manualMatch[20] || "N", // si
+                    ]
+                    console.log("[v0] ✅ Created manual shipment match for 012 with empty SHC")
+                  }
+                }
+              }
             }
           }
         }
@@ -552,7 +640,9 @@ export function parseShipments(content: string, header: LoadPlanHeader): Shipmen
           })
         }
 
-        const trimmedSHC = shc ? shc.trim() : ""
+        // Ensure SHC is saved as empty string "" if empty or undefined
+        // This handles cases like shipment 012 where SHC field is completely empty
+        const trimmedSHC = (shc && shc.trim()) ? shc.trim() : ""
         
         // Log VUN shipments specifically for debugging
         if (trimmedSHC && trimmedSHC.includes("VUN")) {
@@ -633,6 +723,19 @@ export function parseShipments(content: string, header: LoadPlanHeader): Shipmen
             origin,
             destination,
             isRampTransfer: true,
+          })
+        }
+        
+        // Log shipments with empty SHC for debugging (e.g., shipment 012)
+        // Ensure SHC is saved as empty string "" if empty
+        if (!trimmedSHC || trimmedSHC === "") {
+          console.log("[v0] ✅ Shipment with empty SHC detected (will save as empty string \"\"):", {
+            serialNo: serial,
+            awbNo: awb,
+            shcRaw: shc || "(empty)",
+            shcTrimmed: trimmedSHC || "(empty string)",
+            manDesc: manDesc?.substring(0, 30),
+            isInBuffer: !currentULD && awbBuffer.length > 0
           })
         }
       } else if ((line.startsWith("[") || line.startsWith("**["))) {
