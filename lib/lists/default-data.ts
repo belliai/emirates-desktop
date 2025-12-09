@@ -10,7 +10,7 @@ function getDefaultListsResults(): ListsResults {
   // EK0205 load plan content
   const ek0205Content = `EMIRATES LOAD PLAN
 EK0205  / 12Oct  ACFT TYPE: 388R    ACFT REG: A6-EOW      HEADER VERSION: 1
-PAX: DXB/MXP                       STD: 09:35               PREPARED BY: S294162
+Route: DXB/MXP                       STD: 09:35               PREPARED BY: S294162
 TTL PLN ULD: 05PMC/10AKE           ULD VERSION: 05PMC/26 PREPARED ON: 15-Oct-25 11:29:32
 
 SECTOR: DXBMXP
@@ -84,7 +84,7 @@ TOTALS : 132     5,757.98     25.90     25.90`
   // EK0544 load plan content
   const ek0544Content = `EMIRATES LOAD PLAN
 EK0544  / 01Mar  ACFT TYPE: 77WER   ACFT REG: A6-ENT      HEADER VERSION: 1
-PAX: DXB/MAA/0/23/251              STD: 02:50                   PREPARED BY: PRINCE
+Route: DXB/MAA/0/23/251              STD: 02:50                   PREPARED BY: PRINCE
 TTL PLN ULD: 06PMC/07AKE           ULD VERSION: 06/26    PREPARED ON: 29-Feb-24 12:44:05
 
 SECTOR: DXBMAA

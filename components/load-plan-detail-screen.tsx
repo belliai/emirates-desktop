@@ -7,6 +7,7 @@ import BCRModal, { generateBCRData } from "./bcr-modal"
 import type { AWBComment } from "./bcr-modal"
 import AWBAssignmentModal, { LoadedStatusModal, type AWBAssignmentData } from "./awb-assignment-modal"
 import HandoverModal from "./handover-modal"
+import { AWBSplitOffloadModal } from "./awb-split-offload-modal"
 import { LoadPlanHeader } from "./load-plan-header"
 import { FlightHeaderRow } from "./flight-header-row"
 import { EditableField } from "./editable-field"
@@ -16,7 +17,6 @@ import type { LoadPlanDetail, AWBRow, ULDSection } from "./load-plan-types"
 import { ULDNumberModal, type ULDEntry } from "./uld-number-modal"
 import { parseULDSection, formatULDSection, formatULDSectionFromEntries, formatULDSectionFromCheckedEntries } from "@/lib/uld-parser"
 import { getULDEntriesFromStorage, saveULDEntriesToStorage } from "@/lib/uld-storage"
-import { AWBQuickActionModal } from "./awb-quick-action-modal"
 import type { WorkArea, PilPerSubFilter } from "@/lib/work-area-filter-utils"
 import { shouldIncludeULDSection } from "@/lib/work-area-filter-utils"
 import { getLoadPlanChanges, type LoadPlanChange } from "@/lib/load-plan-diff"
@@ -54,6 +54,72 @@ type DepartureBayInfoData = {
   gate?: string
 } | null
 
+/**
+ * Calculate connection time in minutes based on arrival and departure times
+ * Priority: ATD - ATA > ATD - ETA > ETD - ATA > ETD - ETA
+ * Returns formatted string in minutes or empty string if calculation not possible
+ */
+function calculateConnectionTime(
+  arrivalInfo: BayInfoData,
+  departureInfo: DepartureBayInfoData
+): string {
+  if (!arrivalInfo && !departureInfo) return "0"
+  
+  // Helper to parse time in HH:MM format to minutes since midnight
+  const parseTime = (timeStr: string | undefined): number | null => {
+    if (!timeStr || timeStr.trim() === "" || timeStr === "-") return null
+    const match = timeStr.match(/(\d{1,2}):(\d{2})/)
+    if (!match) return null
+    const hours = parseInt(match[1], 10)
+    const minutes = parseInt(match[2], 10)
+    return hours * 60 + minutes
+  }
+  
+  // Get available times
+  const ata = arrivalInfo?.ata ? parseTime(arrivalInfo.ata) : null
+  const eta = arrivalInfo?.eta ? parseTime(arrivalInfo.eta) : null
+  const atd = departureInfo?.atd ? parseTime(departureInfo.atd) : null
+  const etd = departureInfo?.etd ? parseTime(departureInfo.etd) : null
+  
+  let arrivalTime: number | null = null
+  let departureTime: number | null = null
+  
+  // Determine best arrival time (ATA preferred, then ETA)
+  if (ata !== null) {
+    arrivalTime = ata
+  } else if (eta !== null) {
+    arrivalTime = eta
+  }
+  
+  // Determine best departure time (ATD preferred, then ETD)
+  if (atd !== null) {
+    departureTime = atd
+  } else if (etd !== null) {
+    departureTime = etd
+  }
+  
+  // Calculate connection time
+  if (arrivalTime !== null && departureTime !== null) {
+    let connectionMinutes = departureTime - arrivalTime
+    
+    // Handle overnight flights (departure next day)
+    if (connectionMinutes < 0) {
+      connectionMinutes += 24 * 60 // Add 24 hours
+    }
+    
+    // Format based on duration
+    if (connectionMinutes < 60) {
+      return `${connectionMinutes} mins`
+    } else {
+      const hours = Math.floor(connectionMinutes / 60)
+      const mins = connectionMinutes % 60
+      return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`
+    }
+  }
+  
+  return "N/A"
+}
+
 interface LoadPlanDetailScreenProps {
   loadPlan: LoadPlanDetail
   onBack: () => void
@@ -73,6 +139,11 @@ export default function LoadPlanDetailScreen({ loadPlan, onBack, onSave, onNavig
   const [showHandoverModal, setShowHandoverModal] = useState(false)
   const [awbComments, setAwbComments] = useState<AWBComment[]>([])
   const [showULDModal, setShowULDModal] = useState(false)
+  
+  // Calculate connection time for QRT List (flight-level, applies to all AWBs)
+  const calculatedConnectionTime = isQRTList && arrivalBayInfo && departureBayInfo
+    ? calculateConnectionTime(arrivalBayInfo, departureBayInfo)
+    : "0"
   const [selectedULDSection, setSelectedULDSection] = useState<{
     sectorIndex: number
     uldSectionIndex: number
@@ -289,10 +360,15 @@ export default function LoadPlanDetailScreen({ loadPlan, onBack, onSave, onNavig
   ) => {
     if (!isReadOnly) return
     
-    // For Buildup Staff (with bulk checkboxes), show Quick Actions modal instead of assignment modal
+    // For Buildup Staff (with bulk checkboxes), right side shows Assignment modal
     if (enableBulkCheckboxes) {
-      setSelectedAWBForQuickAction({ awb, sectorIndex, uldSectionIndex, awbIndex })
-      setShowQuickActionModal(true)
+      if (assignment?.isLoaded) {
+        setLoadedAWBNo(awb.awbNo)
+        setShowLoadedModal(true)
+      } else {
+        setSelectedAWB({ awb, sectorIndex, uldSectionIndex, awbIndex })
+        setShowAssignmentModal(true)
+      }
       return
     }
     
@@ -619,6 +695,15 @@ export default function LoadPlanDetailScreen({ loadPlan, onBack, onSave, onNavig
           </div>
         )}
 
+        {/* Connection Time Display - For QRT List, shown after DEP row and before main table */}
+        {isQRTList && (
+          <div className="mx-4 mt-3 mb-2">
+            <p className="text-sm text-red-700">
+              <span className="font-bold">Connection Time:</span> {calculatedConnectionTime}
+            </p>
+          </div>
+        )}
+
         {/* Header Warning Display - Same format as original document (NOT shown inline for QRT List - moved to bottom) */}
         {!isQRTList && editedPlan.headerWarning && (
           <div className="mx-4 mt-4 mb-2 relative">
@@ -709,6 +794,7 @@ export default function LoadPlanDetailScreen({ loadPlan, onBack, onSave, onNavig
               setShowULDModal(true)
             }}
             isQRTList={isQRTList}
+            calculatedConnectionTime={calculatedConnectionTime}
             onUpdateAWBField={updateAWBField}
             onUpdateULDField={updateULDField}
             onAddNewAWBRow={addNewAWBRow}
@@ -827,7 +913,7 @@ export default function LoadPlanDetailScreen({ loadPlan, onBack, onSave, onNavig
         />
       )}
       {selectedAWBForQuickAction && (
-        <AWBQuickActionModal
+        <AWBSplitOffloadModal
           isOpen={showQuickActionModal}
           onClose={() => {
             setShowQuickActionModal(false)
@@ -836,6 +922,12 @@ export default function LoadPlanDetailScreen({ loadPlan, onBack, onSave, onNavig
           awb={selectedAWBForQuickAction.awb}
           onMarkLoaded={handleMarkAWBLoaded}
           onMarkOffload={handleMarkAWBOffload}
+          onConfirmSplit={(splitGroups) => {
+            // Handle split logic for left side quick actions
+            console.log("Split groups from quick actions:", splitGroups)
+            setShowQuickActionModal(false)
+            setSelectedAWBForQuickAction(null)
+          }}
         />
       )}
 
@@ -942,6 +1034,7 @@ interface CombinedTableProps {
   workAreaFilter?: WorkArea // Filter ULD sections based on work area (SHC codes)
   pilPerSubFilter?: PilPerSubFilter // Sub-filter for PIL/PER work area (PIL only, PER only, or Both)
   isQRTList?: boolean // Show Bay Number and Connection Time columns for QRT List
+  calculatedConnectionTime?: string // Calculated connection time for QRT List (ETD - ETA with fallbacks)
   loadPlanChanges?: Map<number, LoadPlanChange> // Map of serial number to change information
   deletedItems?: AWBRow[] // Deleted items from original load plan to display with strikethrough
 }
@@ -978,6 +1071,7 @@ function CombinedTable({
   workAreaFilter,
   pilPerSubFilter,
   isQRTList = false,
+  calculatedConnectionTime = "0",
   loadPlanChanges = new Map(),
   deletedItems = [],
 }: CombinedTableProps) {
@@ -1282,6 +1376,7 @@ function CombinedTable({
                             onDeleteRow={() => onDeleteAWBRow(sectorIndex, uldSectionIndex, awbIndex)}
                             hoveredUld={hoveredUld}
                             isQRTList={isQRTList}
+                            calculatedConnectionTime={calculatedConnectionTime}
                             additional_data={isAdditionalData}
                             changeInfo={loadPlanChanges.get(parseInt(awb.ser) || 0)}
                           />
@@ -1357,6 +1452,7 @@ function CombinedTable({
                                 isRampTransfer
                                 hoveredUld={hoveredUld}
                                 isQRTList={isQRTList}
+                                calculatedConnectionTime={calculatedConnectionTime}
                                 additional_data={isRampAdditionalData}
                                 changeInfo={loadPlanChanges.get(parseInt(awb.ser) || 0)}
                               />
@@ -1420,6 +1516,7 @@ function CombinedTable({
                         onUpdateField={() => {}}
                         hoveredUld={hoveredUld}
                         isQRTList={isQRTList}
+                        calculatedConnectionTime={calculatedConnectionTime}
                         changeInfo={changeInfo}
                       />
                     )
@@ -1539,6 +1636,7 @@ interface AWBRowProps {
   isRampTransfer?: boolean
   hoveredUld?: string | null
   isQRTList?: boolean
+  calculatedConnectionTime?: string // Calculated connection time for QRT List
   revision?: number // Revision number of the load plan (deprecated, use additional_data instead)
   additional_data?: boolean // Flag indicating if this item is additional data (new item added in subsequent upload)
   changeInfo?: LoadPlanChange // Change information for this AWB (added, modified, deleted)
@@ -1565,6 +1663,7 @@ function AWBRow({
   isRampTransfer,
   hoveredUld,
   isQRTList = false,
+  calculatedConnectionTime = "0",
   revision = 1,
   additional_data = false,
   changeInfo,
@@ -1749,16 +1848,17 @@ function AWBRow({
           
           // ULD Number field in QRT mode is always editable and visually distinct
           const isUldNumberField = key === "uldNumber" && isEditable
+          const isEditableQRTField = isUldNumberField
           
           return (
             <td
               key={key}
-              className={`px-2 py-1 ${isUldNumberField ? "bg-yellow-50" : ""} ${isReadOnly && enableBulkCheckboxes && !isUldNumberField ? "cursor-pointer" : ""} ${hoveredSection === "right" && isReadOnly && enableBulkCheckboxes && !isUldNumberField ? "bg-gray-50" : ""}`}
-              onMouseEnter={() => isReadOnly && enableBulkCheckboxes && !isUldNumberField && setHoveredSection("right")}
+              className={`px-2 py-1 ${isUldNumberField ? "bg-yellow-50" : ""} ${isReadOnly && enableBulkCheckboxes && !isEditableQRTField ? "cursor-pointer" : ""} ${hoveredSection === "right" && isReadOnly && enableBulkCheckboxes && !isEditableQRTField ? "bg-gray-50" : ""}`}
+              onMouseEnter={() => isReadOnly && enableBulkCheckboxes && !isEditableQRTField && setHoveredSection("right")}
               onMouseLeave={() => setHoveredSection(null)}
               onClick={(e) => {
-                // Don't trigger row click for ULD Number field
-                if (isUldNumberField) {
+                // Don't trigger row click for editable QRT field
+                if (isEditableQRTField) {
                   e.stopPropagation()
                   return
                 }

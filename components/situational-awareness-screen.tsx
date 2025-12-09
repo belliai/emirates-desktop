@@ -1013,7 +1013,7 @@ export default function SituationalAwarenessScreen() {
                     <th className="px-2 py-1 text-left font-semibold text-xs">
                       <div className="flex items-center gap-2">
                         <Users className="w-4 h-4 flex-shrink-0" />
-                        <span className="whitespace-nowrap">PAX</span>
+                        <span className="whitespace-nowrap">Route</span>
                       </div>
                     </th>
                     <th className="px-2 py-1 text-left font-semibold text-xs">

@@ -22,7 +22,7 @@ function preprocessRTFContent(content: string): string {
   console.log('[RTFParser] Normalized line breaks:', processed)
   // Step 1: Fix missing spaces between date/month and field labels
   // Pattern: "01MarACFTTYPE:" -> "01Mar ACFTTYPE:"
-  processed = processed.replace(/(\d{1,2}[A-Z]{3})(ACFTTYPE:|ACFTREG:|HEADERVERSION:|PAX:|STD:|PREPAREDBY:|TTLPLNULD:|ULDVERSION:|PREPAREDON:|SECTOR:)/gi, (match, dateMonth, field) => {
+  processed = processed.replace(/(\d{1,2}[A-Z]{3})(ACFTTYPE:|ACFTREG:|HEADERVERSION:|ROUTE:|STD:|PREPAREDBY:|TTLPLNULD:|ULDVERSION:|PREPAREDON:|SECTOR:)/gi, (match, dateMonth, field) => {
     return `${dateMonth} ${field}`
   })
   
@@ -271,12 +271,12 @@ export function parseRTFHeader(content: string): LoadPlanHeader {
     { pattern: /(\d+[A-Z]+\d+[A-Z]+)PREPARED\s*ON:\s*([\d-]+\s+[\d:]+)/i, extract: (m) => m[2].trim() }, // Extract value after PREPARED ON
   ])
 
-  // Parse PAX - try multiple patterns
-  // Example: "PAX: DXB/LHR/13/75/320" - can have slashes, letters, numbers
-  const pax = tryPattern('PAX', [
-    { pattern: /PAX:\s*([A-Z0-9\/\s]+?)(?:\s{2,}STD|\s+PREPARED|$)/i, extract: (m) => m[1].trim() }, // Stop at multiple spaces before STD
-    { pattern: /PAX:\s*([A-Z0-9\/\s]+?)(?=\s+STD|\s+PREPARED|$)/i, extract: (m) => m[1].trim() }, // Lookahead for STD or PREPARED
-    { pattern: /PAX[:\s]+([A-Z0-9\/]+)/i, extract: (m) => m[1].trim() },
+  // Parse Route - try multiple patterns
+  // Example: "Route: DXB/LHR/13/75/320" - can have slashes, letters, numbers
+  const pax = tryPattern('Route', [
+    { pattern: /ROUTE:\s*([A-Z0-9\/\s]+?)(?:\s{2,}STD|\s+PREPARED|$)/i, extract: (m) => m[1].trim() }, // Stop at multiple spaces before STD
+    { pattern: /ROUTE:\s*([A-Z0-9\/\s]+?)(?=\s+STD|\s+PREPARED|$)/i, extract: (m) => m[1].trim() }, // Lookahead for STD or PREPARED
+    { pattern: /ROUTE[:\s]+([A-Z0-9\/]+)/i, extract: (m) => m[1].trim() },
   ])
 
   // Parse TTL PLN ULD - try multiple patterns

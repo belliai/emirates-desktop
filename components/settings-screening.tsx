@@ -685,10 +685,10 @@ export default function SettingsScreening() {
               15:09)
             </p>
             <p className="text-gray-900">
-              * MUX / MHD - PAX flight not operating (terminated 28-Oct-2018)
+              * MUX / MHD - Route flight not operating (terminated 28-Oct-2018)
             </p>
             <p className="line-through text-gray-600">
-              *EBL - PAX flight not operating (Suspended 22NOV2015). Sereening applieable on freighters.
+              *EBL - Route flight not operating (Suspended 22NOV2015). Sereening applieable on freighters.
             </p>
             <p className="text-gray-900">
               * For cargo originating form high risk countries as per Transport Canada dual screening must be performed at LPD

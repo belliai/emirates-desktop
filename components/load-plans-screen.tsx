@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useRef, useEffect, useMemo } from "react"
-import { ChevronRight, Plane, Calendar, Package, Users, Clock, FileText, Upload, Trash2, AlertTriangle, CheckCircle, XCircle, ArrowUp, ArrowDown, Loader2 } from "lucide-react"
+import { ChevronRight, Plane, Calendar, Package, Users, Clock, FileText, Upload, Trash2, AlertTriangle, CheckCircle, XCircle, Plus, Search, SlidersHorizontal, Settings2, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react"
 import Swal from "sweetalert2"
 import LoadPlanDetailScreen from "./load-plan-detail-screen"
 import type { LoadPlanDetail } from "./load-plan-types"
@@ -11,8 +11,7 @@ import { Button } from "@/components/ui/button"
 import { useLoadPlans, type LoadPlan, type ShiftType, type PeriodType, type WaveType } from "@/lib/load-plan-context"
 import { getLoadPlansFromSupabase, getLoadPlanDetailFromSupabase, deleteLoadPlanFromSupabase } from "@/lib/load-plans-supabase"
 import { parseHeader, parseShipments, detectCriticalFromFileImages } from "@/lib/lists/parser"
-import { useWorkAreaFilter } from "./work-area-filter-controls"
-import { LoadPlanFilter } from "./filter/loadPlanScreen/filter"
+import { useWorkAreaFilter, WorkAreaFilterControls } from "./work-area-filter-controls"
 import { parseRTFHeader, parseRTFShipments, parseRTFFileWithStreamParser } from "@/lib/lists/rtf-parser"
 import { detectFileFormat } from "@/lib/lists/rtf-html-parser"
 import { saveListsDataToSupabase } from "@/lib/lists/supabase-save"
@@ -65,13 +64,11 @@ type DeleteModalState = {
 function DeleteConfirmationModal({ 
   state, 
   onClose, 
-  onConfirm,
-  isDeleting = false
+  onConfirm 
 }: { 
   state: DeleteModalState
   onClose: () => void
   onConfirm: () => void
-  isDeleting?: boolean
 }) {
   const [confirmText, setConfirmText] = useState("")
   const confirmWord = "DELETE"
@@ -96,19 +93,17 @@ function DeleteConfirmationModal({
         <div className="p-6">
           {/* Icon */}
           <div className="flex justify-center mb-4">
-            {isDeleting ? (
-              <div className="w-12 h-12 rounded-full bg-blue-100 flex items-center justify-center">
-                <Loader2 className="w-6 h-6 text-blue-600 animate-spin" />
-              </div>
-            ) : state.type === "confirm" ? (
+            {state.type === "confirm" && (
               <div className="w-12 h-12 rounded-full bg-amber-100 flex items-center justify-center">
                 <AlertTriangle className="w-6 h-6 text-amber-600" />
               </div>
-            ) : state.type === "success" ? (
+            )}
+            {state.type === "success" && (
               <div className="w-12 h-12 rounded-full bg-green-100 flex items-center justify-center">
                 <CheckCircle className="w-6 h-6 text-green-600" />
               </div>
-            ) : (
+            )}
+            {state.type === "error" && (
               <div className="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center">
                 <XCircle className="w-6 h-6 text-red-600" />
               </div>
@@ -117,21 +112,23 @@ function DeleteConfirmationModal({
 
           {/* Title */}
           <h3 className="text-lg font-semibold text-gray-900 text-center mb-3">
-            {isDeleting ? "Menghapus Load Plan..." : state.type === "confirm" ? "Delete Load Plan?" : state.type === "success" ? "Success!" : "Error"}
+            {state.type === "confirm" && "Delete Load Plan?"}
+            {state.type === "success" && "Success!"}
+            {state.type === "error" && "Error"}
           </h3>
 
           {/* Content */}
           <div className="text-center text-gray-600 text-sm mb-4">
-            {isDeleting ? (
-              <p>Sedang menghapus load plan untuk flight <strong className="text-gray-900">{state.flight}</strong>...</p>
-            ) : state.type === "confirm" ? (
+            {state.type === "confirm" && (
               <>
                 <p>Are you sure you want to delete the load plan for flight <strong className="text-gray-900">{state.flight}</strong>?</p>
                 <p className="mt-2 text-gray-500">This action will delete the load plan and all related items. This action cannot be undone.</p>
               </>
-            ) : state.type === "success" ? (
+            )}
+            {state.type === "success" && (
               <p>Load plan for flight <strong className="text-gray-900">{state.flight}</strong> has been deleted.</p>
-            ) : (
+            )}
+            {state.type === "error" && (
               <p>{state.message || "An error occurred while deleting the load plan."}</p>
             )}
           </div>
@@ -161,30 +158,21 @@ function DeleteConfirmationModal({
                   variant="outline"
                   className="flex-1 border-gray-300 text-gray-700 hover:bg-gray-50"
                   onClick={onClose}
-                  disabled={isDeleting}
                 >
                   Cancel
                 </Button>
                 <Button
                   className="flex-1 bg-[#D71A21] hover:bg-[#B01419] text-white disabled:opacity-50 disabled:cursor-not-allowed"
                   onClick={onConfirm}
-                  disabled={!isConfirmValid || isDeleting}
+                  disabled={!isConfirmValid}
                 >
-                  {isDeleting ? (
-                    <>
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      Menghapus...
-                    </>
-                  ) : (
-                    "Delete"
-                  )}
+                  Delete
                 </Button>
               </>
             ) : (
               <Button
                 className="w-full bg-[#D71A21] hover:bg-[#B01419] text-white"
                 onClick={onClose}
-                disabled={isDeleting}
               >
                 Close
               </Button>
@@ -211,7 +199,8 @@ export default function LoadPlansScreen({ onLoadPlanSelect }: { onLoadPlanSelect
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [deleteModal, setDeleteModal] = useState<DeleteModalState>({ isOpen: false, type: "confirm", flight: "" })
   const [pendingDeletePlan, setPendingDeletePlan] = useState<LoadPlan | null>(null)
-  const [isDeleting, setIsDeleting] = useState(false)
+  const [showAddFilterDropdown, setShowAddFilterDropdown] = useState(false)
+  const [showViewOptions, setShowViewOptions] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
   const [shiftFilter, setShiftFilter] = useState<ShiftType>("current")
   const [periodFilter, setPeriodFilter] = useState<PeriodType>("all")
@@ -220,8 +209,8 @@ export default function LoadPlansScreen({ onLoadPlanSelect }: { onLoadPlanSelect
   const { selectedWorkArea, pilPerSubFilter } = useWorkAreaFilter()
   const [sortColumn, setSortColumn] = useState<"std" | "flight" | "date">("std")
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc")
-  const [currentPage, setCurrentPage] = useState(1)
-  const [itemsPerPage, setItemsPerPage] = useState(10)
+  const addFilterRef = useRef<HTMLDivElement>(null)
+  const viewOptionsRef = useRef<HTMLDivElement>(null)
 
   // Fetch load plans from Supabase on mount
   useEffect(() => {
@@ -246,6 +235,24 @@ export default function LoadPlansScreen({ onLoadPlanSelect }: { onLoadPlanSelect
     fetchLoadPlans()
   }, [setLoadPlans])
 
+  // Close dropdowns when clicking outside
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (addFilterRef.current && !addFilterRef.current.contains(event.target as Node)) {
+        setShowAddFilterDropdown(false)
+      }
+      if (viewOptionsRef.current && !viewOptionsRef.current.contains(event.target as Node)) {
+        setShowViewOptions(false)
+      }
+    }
+
+    if (showAddFilterDropdown || showViewOptions) {
+      document.addEventListener('mousedown', handleClickOutside)
+      return () => {
+        document.removeEventListener('mousedown', handleClickOutside)
+      }
+    }
+  }, [showAddFilterDropdown, showViewOptions])
 
   // Filter and sort load plans
   const filteredLoadPlans = useMemo(() => {
@@ -340,17 +347,6 @@ export default function LoadPlansScreen({ onLoadPlanSelect }: { onLoadPlanSelect
   // Determine if wave filter should be shown
   const showWaveFilter = periodFilter === "late-morning" || periodFilter === "afternoon"
 
-  // Pagination logic
-  const totalPages = Math.ceil(filteredLoadPlans.length / itemsPerPage)
-  const startIndex = (currentPage - 1) * itemsPerPage
-  const endIndex = startIndex + itemsPerPage
-  const paginatedLoadPlans = filteredLoadPlans.slice(startIndex, endIndex)
-
-  // Reset to page 1 when filters change
-  useEffect(() => {
-    setCurrentPage(1)
-  }, [shiftFilter, periodFilter, waveFilter, searchQuery, sortColumn, sortDirection, selectedWorkArea, pilPerSubFilter])
-
   // Handle column header click for sorting
   const handleSortByColumn = (column: "std" | "flight" | "date") => {
     if (sortColumn === column) {
@@ -409,9 +405,10 @@ export default function LoadPlansScreen({ onLoadPlanSelect }: { onLoadPlanSelect
   const handleConfirmDelete = async () => {
     if (!pendingDeletePlan) return
 
-    setIsDeleting(true)
+    setDeleteModal(prev => ({ ...prev, isOpen: false }))
     
     try {
+      setIsLoading(true)
       const deleteResult = await deleteLoadPlanFromSupabase(pendingDeletePlan.flight)
       
       if (deleteResult.success) {
@@ -456,7 +453,7 @@ export default function LoadPlansScreen({ onLoadPlanSelect }: { onLoadPlanSelect
         message: `An error occurred while deleting the load plan: ${err instanceof Error ? err.message : "Unknown error"}`
       })
     } finally {
-      setIsDeleting(false)
+      setIsLoading(false)
     }
   }
 
@@ -881,23 +878,226 @@ export default function LoadPlansScreen({ onLoadPlanSelect }: { onLoadPlanSelect
         </div>
 
         {/* Filters */}
-        <LoadPlanFilter
-          searchQuery={searchQuery}
-          onSearchChange={setSearchQuery}
-          shiftFilter={shiftFilter}
-          onShiftFilterChange={setShiftFilter}
-          periodFilter={periodFilter}
-          onPeriodFilterChange={setPeriodFilter}
-          waveFilter={waveFilter}
-          onWaveFilterChange={setWaveFilter}
-          showWaveFilter={showWaveFilter}
-          sortColumn={sortColumn}
-          onSortColumnChange={setSortColumn}
-          sortDirection={sortDirection}
-          onSortDirectionChange={setSortDirection}
-          filteredCount={filteredLoadPlans.length}
-          totalCount={loadPlans.length}
-        />
+        <div className="flex items-center gap-2 mb-4 px-2 flex-wrap">
+          {/* Default View Dropdown */}
+          <div className="flex items-center">
+            <select
+              className="px-2 py-1.5 text-xs border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-[#D71A21] focus:border-transparent"
+            >
+              <option value="default">≡ Default</option>
+              <option value="custom">Custom View</option>
+            </select>
+          </div>
+
+          {/* Add Filter Dropdown */}
+          <div className="relative" ref={addFilterRef}>
+            <button
+              type="button"
+              onClick={() => setShowAddFilterDropdown(!showAddFilterDropdown)}
+              className="flex items-center gap-1 px-2 py-1.5 text-xs border border-gray-300 rounded-md bg-white hover:border-gray-400 transition-colors"
+            >
+              <Plus className="w-3 h-3" />
+              <span>Add Filter</span>
+            </button>
+            
+            {showAddFilterDropdown && (
+              <div className="absolute top-full left-0 mt-1 z-50 bg-white border border-gray-200 rounded-lg shadow-lg w-48">
+                <div className="p-2">
+                  <div className="relative mb-2">
+                    <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 w-3 h-3 text-gray-400" />
+                    <input
+                      type="text"
+                      placeholder="Search column..."
+                      className="w-full pl-7 pr-2 py-1.5 text-xs border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-[#D71A21]"
+                    />
+                  </div>
+                  <div className="space-y-0.5">
+                    {["Flight", "Date", "ACFT TYPE", "ACFT REG", "Route", "STD", "TTL PLN ULD"].map((col) => (
+                      <button
+                        key={col}
+                        className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-gray-700 hover:bg-gray-50 rounded transition-colors text-left"
+                        onClick={() => setShowAddFilterDropdown(false)}
+                      >
+                        <span className="text-gray-400">≡</span>
+                        {col}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Search Load Plans */}
+          <div className="relative">
+            <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 w-3 h-3 text-gray-400" />
+            <input
+              type="text"
+              placeholder="Search load plans..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-7 pr-2 py-1.5 text-xs border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-[#D71A21] focus:border-transparent w-36"
+            />
+          </div>
+
+          <div className="w-px h-6 bg-gray-200" />
+
+          {/* Work Area Filter */}
+          <WorkAreaFilterControls />
+
+          {/* Shift Type Filter - Compact */}
+          <select
+            id="shift-filter"
+            value={shiftFilter}
+            onChange={(e) => {
+              const newShift = e.target.value as ShiftType
+              setShiftFilter(newShift)
+              setPeriodFilter("all")
+              setWaveFilter("all")
+            }}
+            className="px-2 py-1.5 text-xs border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-[#D71A21] focus:border-transparent"
+          >
+            <option value="current">Current (All)</option>
+            <option value="night">Night Shift</option>
+            <option value="day">Day Shift</option>
+          </select>
+
+          {/* Period Filter - Compact (conditional based on shift) */}
+          <select
+            id="period-filter"
+            value={periodFilter}
+            onChange={(e) => {
+              setPeriodFilter(e.target.value as PeriodType)
+              if (e.target.value === "early-morning") {
+                setWaveFilter("all")
+              }
+            }}
+            className="px-2 py-1.5 text-xs border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-[#D71A21] focus:border-transparent"
+          >
+            {shiftFilter === "current" && (
+              <>
+                <option value="all">All Periods</option>
+                <option value="early-morning">Early Morning (00:01-05:59)</option>
+                <option value="late-morning">Late Morning (06:00-12:59)</option>
+                <option value="afternoon">Afternoon (13:00-23:59)</option>
+              </>
+            )}
+            {shiftFilter === "night" && (
+              <>
+                <option value="all">All Periods</option>
+                <option value="early-morning">Early Morning (00:01-05:59)</option>
+                <option value="late-morning">Late Morning (06:00-12:59)</option>
+              </>
+            )}
+            {shiftFilter === "day" && (
+              <>
+                <option value="all">All Periods</option>
+                <option value="afternoon">Afternoon (13:00-23:59)</option>
+              </>
+            )}
+          </select>
+
+          {/* Wave Filter - Compact (conditional) */}
+          {showWaveFilter && (
+            <select
+              id="wave-filter"
+              value={waveFilter}
+              onChange={(e) => setWaveFilter(e.target.value as WaveType)}
+              className="px-2 py-1.5 text-xs border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-[#D71A21] focus:border-transparent"
+            >
+              <option value="all">All Waves</option>
+              <option value="first-wave">
+                {periodFilter === "late-morning" ? "First Wave (06:00-09:00)" : "First Wave (13:00-15:59)"}
+              </option>
+              <option value="second-wave">
+                {periodFilter === "late-morning" ? "Second Wave (09:01-12:59)" : "Second Wave (16:00-23:59)"}
+              </option>
+            </select>
+          )}
+
+          <div className="flex-1" />
+
+          {/* View Options Panel */}
+          <div className="relative" ref={viewOptionsRef}>
+            <button
+              type="button"
+              onClick={() => setShowViewOptions(!showViewOptions)}
+              className="flex items-center gap-1 px-2 py-1.5 text-xs border border-gray-300 rounded-md bg-white hover:border-gray-400 transition-colors"
+            >
+              <SlidersHorizontal className="w-3 h-3" />
+            </button>
+            
+            {showViewOptions && (
+              <div className="absolute top-full right-0 mt-1 z-50 bg-white border border-gray-200 rounded-lg shadow-lg w-64">
+                <div className="p-3">
+                  <h3 className="text-sm font-semibold text-gray-900 mb-3">View Options</h3>
+                  
+                  {/* Show Load Plans */}
+                  <div className="mb-3">
+                    <div className="flex items-center gap-1.5 text-xs text-gray-600 mb-1.5">
+                      <Plane className="w-3 h-3 text-[#D71A21]" />
+                      <span>Show Load Plans</span>
+                    </div>
+                    <select className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded">
+                      <option>All Load Plans</option>
+                      <option>With ULDs Only</option>
+                      <option>Without ULDs</option>
+                    </select>
+                  </div>
+                  
+                  {/* Ordering */}
+                  <div className="mb-3">
+                    <div className="flex items-center gap-1.5 text-xs text-gray-600 mb-1.5">
+                      <ArrowUpDown className="w-3 h-3" />
+                      <span>Ordering</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <select 
+                        value={sortColumn}
+                        onChange={(e) => setSortColumn(e.target.value as "std" | "flight" | "date")}
+                        className="flex-1 px-2 py-1.5 text-xs border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-[#D71A21]"
+                      >
+                        <option value="std">STD Time</option>
+                        <option value="flight">Flight Number</option>
+                        <option value="date">Date</option>
+                      </select>
+                      <button 
+                        onClick={() => setSortDirection(sortDirection === "asc" ? "desc" : "asc")}
+                        className="p-1.5 border border-gray-200 rounded hover:bg-gray-50 transition-colors"
+                        title={sortDirection === "asc" ? "Ascending" : "Descending"}
+                      >
+                        <ArrowUpDown className={`w-3 h-3 text-gray-500 ${sortDirection === "asc" ? "rotate-180" : ""}`} />
+                      </button>
+                    </div>
+                  </div>
+                  
+                  {/* Display Fields */}
+                  <div>
+                    <div className="flex items-center gap-1.5 text-xs text-gray-600 mb-1.5">
+                      <Settings2 className="w-3 h-3" />
+                      <span>Display Fields</span>
+                    </div>
+                    <div className="flex flex-wrap gap-1">
+                      {["Flight", "Date", "ACFT TYPE", "ACFT REG", "Route", "STD", "TTL PLN ULD", "ULD Version"].map((field) => (
+                        <span
+                          key={field}
+                          className="px-1.5 py-0.5 text-[10px] bg-[#D71A21]/10 text-[#D71A21] border border-[#D71A21]/20 rounded cursor-pointer hover:bg-[#D71A21]/20 transition-colors"
+                        >
+                          {field}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Load plan count */}
+          <div className="text-xs text-gray-500 whitespace-nowrap">
+            {filteredLoadPlans.length} of {loadPlans.length} load plans
+          </div>
+        </div>
 
         <div className="mx-2 rounded-lg border border-gray-200 overflow-x-auto">
           <div className="bg-white">
@@ -951,7 +1151,7 @@ export default function LoadPlansScreen({ onLoadPlanSelect }: { onLoadPlanSelect
                   <th className="px-2 py-1 text-left font-semibold text-xs">
                     <div className="flex items-center gap-2">
                       <Users className="w-4 h-4 flex-shrink-0" />
-                      <span className="whitespace-nowrap">PAX</span>
+                      <span className="whitespace-nowrap">Route</span>
                     </div>
                   </th>
                   <th 
@@ -1000,7 +1200,7 @@ export default function LoadPlansScreen({ onLoadPlanSelect }: { onLoadPlanSelect
                     </td>
                   </tr>
                 ) : (
-                  paginatedLoadPlans.map((loadPlan, index) => (
+                  filteredLoadPlans.map((loadPlan, index) => (
                     <LoadPlanRow key={index} loadPlan={loadPlan} onClick={handleRowClick} onDelete={handleDelete} />
                   ))
                 )}
@@ -1008,92 +1208,6 @@ export default function LoadPlansScreen({ onLoadPlanSelect }: { onLoadPlanSelect
             </table>
           </div>
         </div>
-
-        {/* Pagination Controls */}
-        {filteredLoadPlans.length > 0 && (
-          <div className="mt-4 px-2 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-gray-600">Items per page:</span>
-              <select
-                value={itemsPerPage}
-                onChange={(e) => {
-                  setItemsPerPage(Number(e.target.value))
-                  setCurrentPage(1)
-                }}
-                className="px-2 py-1 text-xs border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-[#D71A21] focus:border-transparent"
-              >
-                <option value={10}>10</option>
-                <option value={25}>25</option>
-                <option value={50}>50</option>
-                <option value={100}>100</option>
-              </select>
-              <span className="text-xs text-gray-500">
-                Showing {startIndex + 1} - {Math.min(endIndex, filteredLoadPlans.length)} of {filteredLoadPlans.length}
-              </span>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setCurrentPage(1)}
-                disabled={currentPage === 1}
-                className="px-2 py-1 text-xs border border-gray-300 rounded-md bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
-                First
-              </button>
-              <button
-                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                disabled={currentPage === 1}
-                className="px-2 py-1 text-xs border border-gray-300 rounded-md bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
-                Previous
-              </button>
-              
-              <div className="flex items-center gap-1">
-                {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                  let pageNum: number
-                  if (totalPages <= 5) {
-                    pageNum = i + 1
-                  } else if (currentPage <= 3) {
-                    pageNum = i + 1
-                  } else if (currentPage >= totalPages - 2) {
-                    pageNum = totalPages - 4 + i
-                  } else {
-                    pageNum = currentPage - 2 + i
-                  }
-                  
-                  return (
-                    <button
-                      key={pageNum}
-                      onClick={() => setCurrentPage(pageNum)}
-                      className={`px-2 py-1 text-xs border rounded-md transition-colors ${
-                        currentPage === pageNum
-                          ? "bg-[#D71A21] text-white border-[#D71A21]"
-                          : "bg-white border-gray-300 hover:bg-gray-50"
-                      }`}
-                    >
-                      {pageNum}
-                    </button>
-                  )
-                })}
-              </div>
-
-              <button
-                onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                disabled={currentPage === totalPages}
-                className="px-2 py-1 text-xs border border-gray-300 rounded-md bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
-                Next
-              </button>
-              <button
-                onClick={() => setCurrentPage(totalPages)}
-                disabled={currentPage === totalPages}
-                className="px-2 py-1 text-xs border border-gray-300 rounded-md bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
-                Last
-              </button>
-            </div>
-          </div>
-        )}
       </div>
 
       <UploadModal
@@ -1119,7 +1233,6 @@ export default function LoadPlansScreen({ onLoadPlanSelect }: { onLoadPlanSelect
         state={deleteModal}
         onClose={handleCloseDeleteModal}
         onConfirm={handleConfirmDelete}
-        isDeleting={isDeleting}
       />
     </div>
   )

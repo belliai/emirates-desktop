@@ -19,7 +19,7 @@ type Shift = "All" | "9am to 9pm" | "9pm to 9am"
 type Module = "All" | "PAX & PF build-up EUR (1st floor, E)" | "PAX & PF build-up AFR (1st floor, F)" | "PAX & PF build-up ME, SubCon, Asia (1st floor, G)" | "Build-up AUS (1st floor, H)" | "US Screening Flights (1st floor, I)" | "Freighter & PAX Breakdown & build-up (Ground floor, F)" | "IND/PAK Build-up (Ground floor, G)" | "PER (Ground floor, H)" | "PIL (Ground floor, I)"
 
 // Filter types
-type FilterColumn = "Flight" | "Date" | "ACFT TYPE" | "ACFT REG" | "PAX" | "STD" | "TTL PLN ULD" | "Completion"
+type FilterColumn = "Flight" | "Date" | "ACFT TYPE" | "ACFT REG" | "Route" | "STD" | "TTL PLN ULD" | "Completion"
 type FilterOperator = "equals" | "contains" | "greaterThan" | "lessThan" | "greaterThanOrEqual" | "lessThanOrEqual" | "is" | "timeRange"
 type ActiveFilter = {
   id: string
@@ -513,7 +513,7 @@ export default function FlightsViewScreen() {
         case "Date":
         case "ACFT TYPE":
         case "ACFT REG":
-        case "PAX":
+        case "Route":
         case "TTL PLN ULD":
           return true // Not implemented yet
         default:
@@ -1056,7 +1056,7 @@ export default function FlightsViewScreen() {
                     />
                   </div>
                   <div className="space-y-0.5">
-                    {(["Flight", "Date", "ACFT TYPE", "ACFT REG", "PAX", "STD", "TTL PLN ULD", "Completion"] as FilterColumn[]).map((col) => (
+                    {(["Flight", "Date", "ACFT TYPE", "ACFT REG", "Route", "STD", "TTL PLN ULD", "Completion"] as FilterColumn[]).map((col) => (
                       <button
                         key={col}
                         className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-gray-700 hover:bg-gray-50 rounded transition-colors text-left"
@@ -1246,7 +1246,7 @@ export default function FlightsViewScreen() {
                   <th className="px-2 py-1 text-left font-semibold text-xs">
                     <div className="flex items-center gap-2">
                       <Users className="w-4 h-4 flex-shrink-0" />
-                      <span className="whitespace-nowrap">PAX</span>
+                      <span className="whitespace-nowrap">Route</span>
                     </div>
                   </th>
                   <th 
