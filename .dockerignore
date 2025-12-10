@@ -2,6 +2,5 @@ node_modules
 .next
 .git
 .gitignore
-pnpm-lock.yaml
 Dockerfile
 .dockerignore
