@@ -1,6 +1,6 @@
 /**
  * Extract text content from different file formats
- * Uses mammoth for DOCX, pdfjs-dist for PDF parsing, and rtf-parser for RTF parsing
+ * Uses mammoth for DOCX, pdfjs-dist for PDF parsing, and rtf-stream-parser for RTF parsing
  */
 
 /**
@@ -103,7 +103,7 @@ function rtfToPlainText(rtf: string): string {
 }
 
 /**
- * Extract text from RTF file using rtf-parser first, then rtf-stream-parser, then manual extraction
+ * Extract text from RTF file using rtf-stream-parser first, then manual extraction as fallback
  */
 async function extractTextFromRTF(file: File): Promise<string> {
   const rtfText = await file.text()
