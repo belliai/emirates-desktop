@@ -227,4 +227,9 @@ flowchart TD
     style SCR fill:#ec4899,stroke:#db2777,stroke-width:2px,color:#fff
     style VL fill:#ec4899,stroke:#db2777,stroke-width:2px,color:#fff
     style Download fill:#8b5cf6,stroke:#7c3aed,stroke-width:2px,color:#fff
-\`\`\`
+```
+
+## RTF handling
+- RTF is not parsed directly. Uploads are converted to DOCX via `/api/convert-rtf-to-docx`, which shells out to `pandoc`.
+- Ensure `pandoc -v` succeeds on the host; otherwise RTF uploads will return a clear conversion error.
+- After conversion, the existing DOCX pipeline runs: `mammoth` text extraction → `parseHeader` / `parseShipments` → reports.

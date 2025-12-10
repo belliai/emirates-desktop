@@ -12,7 +12,6 @@ import { useLoadPlans, type LoadPlan, type ShiftType, type PeriodType, type Wave
 import { getLoadPlansFromSupabase, getLoadPlanDetailFromSupabase, deleteLoadPlanFromSupabase } from "@/lib/load-plans-supabase"
 import { parseHeader, parseShipments, detectCriticalFromFileImages } from "@/lib/lists/parser"
 import { useWorkAreaFilter, WorkAreaFilterControls } from "./work-area-filter-controls"
-import { parseRTFFileWithStreamParser, detectFileFormat } from "@/lib/lists/rtf-parser"
 import { saveListsDataToSupabase } from "@/lib/lists/supabase-save"
 import type { ListsResults } from "@/lib/lists/types"
 import { generateSpecialCargoReport, generateVUNList, generateQRTList } from "@/lib/lists/report-generators"
@@ -461,6 +460,33 @@ export default function LoadPlansScreen({ onLoadPlanSelect }: { onLoadPlanSelect
     setPendingDeletePlan(null)
   }
 
+  // Convert RTF to DOCX via server API (pandoc), returning a DOCX File instance.
+  const convertRtfFileToDocxViaApi = async (file: File): Promise<File> => {
+    const formData = new FormData()
+    formData.append("file", file)
+
+    const response = await fetch("/api/convert-rtf-to-docx", {
+      method: "POST",
+      body: formData,
+    })
+
+    if (!response.ok) {
+      let message = response.statusText
+      try {
+        const details = await response.json()
+        message = details?.details || details?.error || message
+      } catch {
+        // ignore parse error
+      }
+      throw new Error(`Failed to convert RTF to DOCX: ${message}`)
+    }
+
+    const blob = await response.blob()
+    return new File([blob], file.name.replace(/\.rtf$/i, ".docx"), {
+      type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    })
+  }
+
   const handleFileUpload = async (files: File | File[]) => {
     setError(null)
     setIsProcessing(true)
@@ -495,108 +521,46 @@ export default function LoadPlansScreen({ onLoadPlanSelect }: { onLoadPlanSelect
         setProgress(fileProgress)
 
         try {
-          // Detect actual file format from magic bytes (not just extension)
-          const actualFormat = await detectFileFormat(f)
-          const isRTFByExtension = f.name.toLowerCase().endsWith('.rtf')
-          const isRTF = actualFormat === 'rtf'
-          
-          let header, shipments
-          
-          // If file is actually DOCX (even if extension is .rtf), use DOCX parser
-          // This happens when someone saves a DOCX file with .rtf extension
-          if (actualFormat === 'docx') {
-            console.log('[RTFParser] ⚠️ File has .rtf extension but is actually DOCX (detected by magic bytes PK\\x03\\x04)')
-            console.log('[RTFParser] ℹ️ This file is a DOCX/ZIP file that was renamed to .rtf - using DOCX parser instead of RTF parser')
-            // Use extractTextFromDOCX directly to avoid RTF extraction based on extension
-            const content = await extractTextFromDOCX(f)
-            
-            header = parseHeader(content)
-            if (!header.flightNumber) {
-              const filenameMatch = f.name.match(/EK\s*[-]?\s*(\d{4})/i)
-              if (filenameMatch) {
-                header.flightNumber = `EK${filenameMatch[1]}`
-              }
-            }
-            
-            // Check for CRITICAL in images
-            try {
-              const isCriticalFromOCR = await detectCriticalFromFileImages(f)
-              if (isCriticalFromOCR) {
-                header.isCritical = true
-              }
-            } catch (ocrError) {
-              // Don't fail the whole process if OCR fails
-            }
-            
-            shipments = parseShipments(content, header)
-          } else if (isRTF) {
-            // Use RTF parser directly (rtf-stream-parser)
-            console.log('[RTFParser] ✅ File is genuine RTF format (magic bytes: {\\rtf)')
-            console.log('[RTFParser] Processing RTF file with rtf-parser:', f.name)
-            
-            try {
-              const result = await parseRTFFileWithStreamParser(f)
-              header = result.header
-              shipments = result.shipments
-              
-              console.log('[RTFParser] ✅ Successfully parsed RTF file with rtf-parser')
-              console.log('[RTFParser] Parsed header:', {
-                flightNumber: header.flightNumber,
-                date: header.date,
-                aircraftType: header.aircraftType,
-                aircraftReg: header.aircraftReg,
-                sector: header.sector,
-                isCritical: header.isCritical,
-                headerWarning: header.headerWarning,
-                headerWarningLength: header.headerWarning?.length,
-              })
-              console.log('[RTFParser] Parsed shipments:', shipments.length)
-            } catch (rtfError) {
-              console.error('[RTFParser] ❌ Error parsing RTF file with rtf-parser:', rtfError)
-              console.error('[RTFParser] Error details:', {
-                fileName: f.name,
-                errorMessage: rtfError instanceof Error ? rtfError.message : String(rtfError),
-                errorStack: rtfError instanceof Error ? rtfError.stack : undefined
-              })
+          const isRTF = f.name.toLowerCase().endsWith(".rtf")
+          const isDocx = f.name.toLowerCase().endsWith(".docx") || f.name.toLowerCase().endsWith(".doc")
+
+          let workingFile: File = f
+
+          if (isRTF) {
+            console.log("[RTF] Converting RTF to DOCX via API:", f.name)
+            workingFile = await convertRtfFileToDocxViaApi(f)
+          }
+
+          let content: string
+          if (isRTF || isDocx) {
+            content = await extractTextFromDOCX(workingFile)
+          } else {
+            content = await extractTextFromFile(f)
+          }
+
+          let header = parseHeader(content)
+          if (!header.flightNumber) {
+            const filenameMatch = f.name.match(/EK\s*[-]?\s*(\d{4})/i)
+            if (filenameMatch) {
+              header.flightNumber = `EK${filenameMatch[1]}`
+            } else if (!isRTF && !isDocx) {
               failedFiles.push(f.name)
               continue
             }
-          } else {
-            // Process file normally (DOCX, PDF, etc.) or unknown format
-            console.log('[RTFParser] ⚠️ File format is unknown or not RTF/DOCX')
-            console.log('[RTFParser] File info:', {
-              fileName: f.name,
-              actualFormat,
-              extension: f.name.split('.').pop(),
-              note: 'Will try generic extraction method'
-            })
-            const content = await extractTextFromFile(f)
-            
-            header = parseHeader(content)
-            if (!header.flightNumber) {
-              // Try to extract from filename
-              const filenameMatch = f.name.match(/EK\s*[-]?\s*(\d{4})/i)
-              if (filenameMatch) {
-                header.flightNumber = `EK${filenameMatch[1]}`
-              } else {
-                failedFiles.push(f.name)
-                continue
-              }
-            }
-            
-            // Always try OCR on images (stamps are usually images, not text)
-            // OCR is more reliable for detecting visual stamps even if text detection found something
+          }
+
+          if ((isRTF || isDocx) && !header.isCritical) {
             try {
-              const isCriticalFromOCR = await detectCriticalFromFileImages(f)
+              const isCriticalFromOCR = await detectCriticalFromFileImages(workingFile)
               if (isCriticalFromOCR) {
                 header.isCritical = true
               }
-            } catch (ocrError) {
-              // Don't fail the whole process if OCR fails
+            } catch {
+              // Ignore OCR errors
             }
-            
-            shipments = parseShipments(content, header)
           }
+
+          const shipments = parseShipments(content, header)
           
           // Generate reports (required for saveListsDataToSupabase)
           // Use empty array if no shipments to avoid errors
