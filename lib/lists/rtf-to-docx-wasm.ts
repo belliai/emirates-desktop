@@ -10,6 +10,12 @@ type WasmPandoc = {
 let pandocInstance: WasmPandoc | null = null
 let loadPromise: Promise<WasmPandoc> | null = null
 
+const PANDOC_ASSET_MAP: Record<string, string> = {
+  "pandoc-wasm.wasm.gz": "/pandoc-wasm.wasm.gz",
+  "pandoc-data.data.gz": "/pandoc-data.data.gz",
+  "pandoc-data.metadata": "/pandoc-data.metadata",
+}
+
 function getDecoder(): TextDecoder {
   return new TextDecoder("utf-8")
 }
@@ -18,18 +24,38 @@ async function loadPandoc(): Promise<WasmPandoc> {
   if (pandocInstance) return pandocInstance
   if (!loadPromise) {
     loadPromise = (async () => {
-      // `pandoc-wasm` exposes a default loader that returns an object with `convert`.
-      const mod: any = await import("pandoc-wasm")
-      const createPandoc = mod?.default ?? mod
-      if (typeof createPandoc !== "function") {
-        throw new Error("pandoc-wasm module did not expose a loader function.")
+      const originalFetch = globalThis.fetch
+
+      // Redirect pandoc asset requests to our self-hosted copies under /public.
+      const mappedFetch: typeof fetch = (input: RequestInfo | URL, init?: RequestInit) => {
+        if (typeof input === "string") {
+          const hit = Object.keys(PANDOC_ASSET_MAP).find((asset) =>
+            input.includes(asset)
+          )
+          if (hit) {
+            return originalFetch(PANDOC_ASSET_MAP[hit], init)
+          }
+        }
+        return originalFetch(input as RequestInfo, init)
       }
-      const instance = await createPandoc()
-      if (!instance?.convert) {
-        throw new Error("pandoc-wasm failed to initialize.")
+
+      globalThis.fetch = mappedFetch
+      try {
+        // `pandoc-wasm` exposes a default loader that returns an object with `convert`.
+        const mod: any = await import("pandoc-wasm")
+        const createPandoc = mod?.default ?? mod
+        if (typeof createPandoc !== "function") {
+          throw new Error("pandoc-wasm module did not expose a loader function.")
+        }
+        const instance = await createPandoc()
+        if (!instance?.convert) {
+          throw new Error("pandoc-wasm failed to initialize.")
+        }
+        pandocInstance = instance
+        return instance
+      } finally {
+        globalThis.fetch = originalFetch
       }
-      pandocInstance = instance
-      return instance
     })()
   }
   return loadPromise
