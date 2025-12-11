@@ -412,10 +412,19 @@ export default function LoadPlanDetailScreen({ loadPlan, onBack, onSave, onNavig
       .filter((uld): uld is string => uld !== null)
   ))
 
-  const handleHandover = () => {
-    // Get the current staff name from flight assignments
-    const assignment = flightAssignments.find(fa => fa.flight === editedPlan.flight)
+  const handleHandover = async () => {
+    // Helper to extract numeric flight number for normalized comparison
+    const extractFlightNum = (f: string): number => {
+      const match = f.match(/EK0?(\d+)/i)
+      return match ? parseInt(match[1], 10) : 0
+    }
+    
+    // Get the current staff name from flight assignments (use normalized comparison)
+    const targetFlightNum = extractFlightNum(editedPlan.flight)
+    const assignment = flightAssignments.find(fa => extractFlightNum(fa.flight) === targetFlightNum)
     const staffName = assignment?.name || ""
+    
+    console.log(`[LoadPlanDetail] handleHandover - flight: ${editedPlan.flight}, staffName: ${staffName}`)
     
     // Generate BCR data before sending
     const bcrData = generateBCRData(
@@ -435,8 +444,8 @@ export default function LoadPlanDetailScreen({ loadPlan, onBack, onSave, onNavig
       sentBy: staffName,
     })
     
-    // Send back to flight assignment (clear assignment)
-    sendToFlightAssignment(editedPlan.flight)
+    // Send back to flight assignment (clear assignment) - await the async function
+    await sendToFlightAssignment(editedPlan.flight)
     setShowHandoverModal(false)
     
     // Navigate to buildup staff screen with the staff member

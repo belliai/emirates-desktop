@@ -40,7 +40,6 @@ export default function SideNavigation({ currentScreen, onNavigate, onSettingsCl
       defaultOpen: true,
       items: [
         { id: "flights-view", label: "Flights View", icon: Plane },
-        { id: "bup-allocation-list", label: "Build-up Allocation", icon: Clipboard },
       ],
     },
     {
@@ -52,7 +51,7 @@ export default function SideNavigation({ currentScreen, onNavigate, onSettingsCl
         { id: "load-plans", label: "Upload Load Plans", icon: Upload },
         { id: "lists", label: "Export Lists", icon: Download },
         { id: "qrt-list", label: "QRT List", icon: Download },
-        { id: "flight-assignment", label: "Flight Assignment", icon: Plane },
+        { id: "allocations", label: "Flight Assignment", icon: Clipboard },
         { id: "buildup-staff", label: "Build-up Staff", icon: Users },
         { id: "screening", label: "Screening", icon: Search },
         { id: "incoming-workload", label: "Incoming Workload", icon: TrendingUp },

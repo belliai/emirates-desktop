@@ -131,6 +131,43 @@ function parseOriginDestination(pax: string | undefined): string {
 }
 
 /**
+ * Sync unassignment to Supabase bup_allocations table
+ * Clears the staff and mobile fields when a flight is sent back for reassignment
+ */
+async function syncUnassignmentToSupabase(flight: string): Promise<void> {
+  try {
+    // Check if Supabase is configured
+    if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+      console.log("[LoadPlan] Supabase not configured, skipping unassignment sync")
+      return
+    }
+
+    const supabase = createClient()
+    
+    // Extract flight number without EK prefix (handle both EK500 and EK0500 formats)
+    const flightNo = flight.replace(/^EK0?/, "")
+    
+    // Update the staff and mobile fields to empty
+    const { error } = await supabase
+      .from("bup_allocations")
+      .update({
+        staff: "",
+        mobile: "",
+        updated_at: new Date().toISOString()
+      })
+      .or(`flight_no.eq.${flightNo},flight_no.eq.0${flightNo}`)
+    
+    if (error) {
+      console.error("[LoadPlan] Error clearing assignment in Supabase:", error)
+    } else {
+      console.log(`[LoadPlan] Cleared assignment for flight ${flight} in Supabase`)
+    }
+  } catch (error) {
+    console.error("[LoadPlan] Error syncing unassignment to Supabase:", error)
+  }
+}
+
+/**
  * Sync flight assignment to Supabase bup_allocations table
  * This allows mobile apps to see assignments made on desktop
  */
@@ -364,21 +401,90 @@ export function LoadPlanProvider({ children }: { children: ReactNode }) {
     })
   }
 
-  const sendToFlightAssignment = (flight: string) => {
+  const sendToFlightAssignment = async (flight: string) => {
+    // Helper to extract numeric flight number for normalized comparison
+    const extractFlightNum = (f: string): number => {
+      const match = f.match(/EK0?(\d+)/i)
+      return match ? parseInt(match[1], 10) : 0
+    }
+    
+    const targetFlightNum = extractFlightNum(flight)
+    console.log(`[LoadPlan] sendToFlightAssignment called for flight: ${flight}, normalized: ${targetFlightNum}`)
+    
     // Clear the name assignment to send it back to flight assignment for reassignment
     setFlightAssignments((prev) => {
-      return prev.map((fa) => 
-        fa.flight === flight ? { ...fa, name: "" } : fa
-      )
+      console.log(`[LoadPlan] Checking ${prev.length} flight assignments to clear`)
+      return prev.map((fa) => {
+        const faFlightNum = extractFlightNum(fa.flight)
+        if (faFlightNum === targetFlightNum) {
+          console.log(`[LoadPlan] Clearing name for flight ${fa.flight} (was: ${fa.name})`)
+          return { ...fa, name: "" }
+        }
+        return fa
+      })
     })
+    
+    // Also clear the staff in bupAllocations
+    const flightNo = flight.replace(/^EK0?/, "")
+    setBupAllocations((prev) => {
+      console.log(`[LoadPlan] Checking ${prev.length} BUP allocations to clear`)
+      return prev.map((a) => {
+        // Match flight number with or without leading zeros
+        const allocFlightNo = a.flightNo.replace(/^0+/, "")
+        const targetFlightNo = flightNo.replace(/^0+/, "")
+        if (allocFlightNo === targetFlightNo) {
+          console.log(`[LoadPlan] Clearing staff for BUP allocation ${a.flightNo} (was: ${a.staff})`)
+          return { ...a, staff: "", mobile: "" }
+        }
+        return a
+      })
+    })
+    
+    // Sync unassignment to Supabase
+    try {
+      await syncUnassignmentToSupabase(flight)
+    } catch (error) {
+      console.error("[LoadPlan] Error syncing unassignment to Supabase:", error)
+    }
   }
 
   const getFlightsByStaff = (staffName: string) => {
-    const assignedFlights = flightAssignments
-      .filter((fa) => fa.name.toLowerCase() === staffName.toLowerCase())
-      .map((fa) => fa.flight)
+    const normalized = staffName.toLowerCase()
+    const assignedFlights = flightAssignments.filter((fa) => fa.name.toLowerCase() === normalized)
+    
+    console.log(`[LoadPlan] getFlightsByStaff("${staffName}") - found ${assignedFlights.length} assignments:`, 
+      assignedFlights.map(fa => ({ flight: fa.flight, name: fa.name }))
+    )
 
-    return loadPlans.filter((plan) => assignedFlights.includes(plan.flight))
+    // Helper to extract numeric flight number for comparison
+    const extractFlightNum = (flight: string): number => {
+      const match = flight.match(/EK0?(\d+)/i)
+      return match ? parseInt(match[1], 10) : 0
+    }
+
+    const loadPlanMatches = loadPlans.filter((plan) => {
+      const planNum = extractFlightNum(plan.flight)
+      return assignedFlights.some((fa) => extractFlightNum(fa.flight) === planNum)
+    })
+
+    // Include assignments that don't have a load plan by synthesizing minimal rows
+    const missingFlights = assignedFlights
+      .filter((fa) => {
+        const faNum = extractFlightNum(fa.flight)
+        return !loadPlans.some((lp) => extractFlightNum(lp.flight) === faNum)
+      })
+      .map<LoadPlan>((fa) => ({
+        flight: fa.flight,
+        date: "",
+        acftType: fa.sector || "",
+        acftReg: "",
+        pax: fa.originDestination || "",
+        std: fa.std || "",
+        uldVersion: "",
+        ttlPlnUld: "",
+      }))
+
+    return [...loadPlanMatches, ...missingFlights]
   }
 
   const addSentBCR = (bcr: SentBCR) => {
