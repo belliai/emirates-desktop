@@ -230,7 +230,7 @@ flowchart TD
 ```
 
 ## RTF handling
-- RTF is not parsed directly. Uploads are converted to DOCX via `/api/convert-rtf-to-docx` (server pandoc). If that path fails, the client falls back to `pandoc-wasm`.
-- Server path: requires `pandoc` on PATH (Docker image includes it). On Vercel, this path may be unavailable.
-- Client fallback: `pandoc-wasm` runs in-browser with a 20s timeout; errors surface to the user if both paths fail.
-- After conversion, the existing DOCX pipeline runs: `mammoth` text extraction → `parseHeader` / `parseShipments` → reports.
+- RTF files are parsed directly in the browser using `rtf.js` library (`lib/lists/rtf-parser.ts`).
+- No server-side conversion required - works on any machine without external dependencies.
+- The `extractTextFromRTF` function renders RTF to HTML elements, then extracts plain text.
+- After extraction, the standard pipeline runs: `parseHeader` / `parseShipments` → reports.

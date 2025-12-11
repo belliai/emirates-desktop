@@ -149,9 +149,6 @@ importers:
       next-themes:
         specifier: latest
         version: 0.4.6(react-dom@19.0.1(react@19.0.1))(react@19.0.1)
-      pandoc-wasm:
-        specifier: ^0.0.2
-        version: 0.0.2
       pdfjs-dist:
         specifier: latest
         version: 5.4.449
@@ -176,6 +173,9 @@ importers:
       recharts:
         specifier: latest
         version: 3.5.1(@types/react@19.0.1)(react-dom@19.0.1(react@19.0.1))(react-is@19.2.0)(react@19.0.1)(redux@5.0.1)
+      rtf.js:
+        specifier: ^3.0.9
+        version: 3.0.9
       sonner:
         specifier: latest
         version: 2.0.7(react-dom@19.0.1(react@19.0.1))(react@19.0.1)
@@ -2059,9 +2059,6 @@ packages:
   pako@2.1.0:
     resolution: {integrity: sha512-w+eufiZ1WuJYgPXbV/PO3NCMEc3xqylkKHzp8bxp1uW4qaSNQUkwmLLEc3kKsfz8lpV1F8Ht3U1Cm+9Srog2ug==}
 
-  pandoc-wasm@0.0.2:
-    resolution: {integrity: sha512-/EFTqPxfhI9R657ZpKpSTnRNdXQutuKB84EarWAC+W3VMVQIRFJv/7EkQilL+0+MlFbdNE+S5yMNOkvXf3zeKg==}
-
   path-is-absolute@1.0.1:
     resolution: {integrity: sha512-AVbw3UJ2e9bq64vSaS9Am0fje1Pa8pbGqTTsmXfaIiMpnr5DlDhfJOuLj9Sf95ZPVDAUerDfEk88MPmPe7UCQg==}
     engines: {node: '>=0.10.0'}
@@ -2264,6 +2261,9 @@ packages:
   rgbcolor@1.0.1:
     resolution: {integrity: sha512-9aZLIrhRaD97sgVhtJOW6ckOEh6/GnvQtdVNfdZ6s67+3/XwLS9lBcQYzEEhYVeUowN7pRzMLsyGhK2i/xvWbw==}
     engines: {node: '>= 0.8.15'}
+
+  rtf.js@3.0.9:
+    resolution: {integrity: sha512-I1GpDat4i548WzmeZXv27f/743984fvEeeBS8BC01/Sop17pMlUl3M7DYcdcB3PUvOZTrFIMxGZx8qw7cSMAKQ==}
 
   safe-buffer@5.1.2:
     resolution: {integrity: sha512-Gd2UZBJDkXlY7GbJxfsE8/nvKkUEU1G38c1siN6QP6a9PT9MmHB8GnpscSmMJSoF8LOIrt8ud/wPtojys4G6+g==}
@@ -4295,8 +4295,6 @@ snapshots:
 
   pako@2.1.0: {}
 
-  pandoc-wasm@0.0.2: {}
-
   path-is-absolute@1.0.1: {}
 
   pdfjs-dist@5.4.449:
@@ -4504,6 +4502,10 @@ snapshots:
 
   rgbcolor@1.0.1:
     optional: true
+
+  rtf.js@3.0.9:
+    dependencies:
+      codepage: 1.15.0
 
   safe-buffer@5.1.2: {}
 

@@ -5,8 +5,7 @@ import { ChevronRight, Plane, Calendar, Package, Users, Clock, FileText, Upload,
 import Swal from "sweetalert2"
 import LoadPlanDetailScreen from "./load-plan-detail-screen"
 import type { LoadPlanDetail } from "./load-plan-types"
-import { extractTextFromFile, extractTextFromDOCX } from "@/lib/lists/file-extractors"
-import { convertRtfToDocxWasm } from "@/lib/lists/rtf-to-docx-wasm"
+import { extractTextFromFile, extractTextFromDOCX, extractImagesFromDOCX } from "@/lib/lists/file-extractors"
 import { UploadModal } from "./lists/upload-modal"
 import { Button } from "@/components/ui/button"
 import { useLoadPlans, type LoadPlan, type ShiftType, type PeriodType, type WaveType } from "@/lib/load-plan-context"
@@ -461,53 +460,6 @@ export default function LoadPlansScreen({ onLoadPlanSelect }: { onLoadPlanSelect
     setPendingDeletePlan(null)
   }
 
-  // Convert RTF -> DOCX using server API first, then WASM fallback.
-  const convertRtfFileToDocx = async (file: File): Promise<File> => {
-    const errors: string[] = []
-
-    // Try server API (pandoc in backend)
-    try {
-      const formData = new FormData()
-      formData.append("file", file)
-
-      const response = await fetch("/api/convert-rtf-to-docx", {
-        method: "POST",
-        body: formData,
-      })
-
-      if (!response.ok) {
-        let message = response.statusText
-        try {
-          const details = await response.json()
-          message = details?.details || details?.error || message
-        } catch {
-          // ignore parse error
-        }
-        throw new Error(message)
-      }
-
-      const blob = await response.blob()
-      return new File([blob], file.name.replace(/\.rtf$/i, ".docx"), {
-        type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-      })
-    } catch (apiError: any) {
-      const message =
-        apiError instanceof Error ? apiError.message : "Unknown server error"
-      errors.push(`API: ${message}`)
-    }
-
-    // Fallback to client-side pandoc-wasm
-    try {
-      console.log("[RTF] Falling back to pandoc-wasm for:", file.name)
-      return await convertRtfToDocxWasm(file)
-    } catch (wasmError: any) {
-      const message =
-        wasmError instanceof Error ? wasmError.message : "Unknown WASM error"
-      errors.push(`WASM: ${message}`)
-      throw new Error(`Failed to convert RTF to DOCX. ${errors.join(" | ")}`)
-    }
-  }
-
   const handleFileUpload = async (files: File | File[]) => {
     setError(null)
     setIsProcessing(true)
@@ -542,37 +494,26 @@ export default function LoadPlansScreen({ onLoadPlanSelect }: { onLoadPlanSelect
         setProgress(fileProgress)
 
         try {
-          const isRTF = f.name.toLowerCase().endsWith(".rtf")
           const isDocx = f.name.toLowerCase().endsWith(".docx") || f.name.toLowerCase().endsWith(".doc")
 
-          let workingFile: File = f
-
-          if (isRTF) {
-            console.log("[RTF] Converting RTF to DOCX (API then WASM fallback):", f.name)
-            workingFile = await convertRtfFileToDocx(f)
-          }
-
-          let content: string
-          if (isRTF || isDocx) {
-            content = await extractTextFromDOCX(workingFile)
-          } else {
-            content = await extractTextFromFile(f)
-          }
+          // Extract text from file (handles RTF, DOCX, PDF, TXT, MD)
+          const content = await extractTextFromFile(f)
 
           let header = parseHeader(content)
           if (!header.flightNumber) {
             const filenameMatch = f.name.match(/EK\s*[-]?\s*(\d{4})/i)
             if (filenameMatch) {
               header.flightNumber = `EK${filenameMatch[1]}`
-            } else if (!isRTF && !isDocx) {
+            } else if (!isDocx) {
               failedFiles.push(f.name)
               continue
             }
           }
 
-          if ((isRTF || isDocx) && !header.isCritical) {
+          // Only check for critical images in DOCX files (RTF uses rtf.js which doesn't support image extraction for OCR)
+          if (isDocx && !header.isCritical) {
             try {
-              const isCriticalFromOCR = await detectCriticalFromFileImages(workingFile)
+              const isCriticalFromOCR = await detectCriticalFromFileImages(f)
               if (isCriticalFromOCR) {
                 header.isCritical = true
               }

@@ -1,7 +1,9 @@
 /**
  * Extract text content from different file formats.
- * Uses mammoth for DOCX and pdfjs-dist for PDF parsing.
+ * Uses mammoth for DOCX, pdfjs-dist for PDF, and rtf.js for RTF parsing.
  */
+
+import { extractTextFromRTF } from "./rtf-parser"
 
 /**
  * Extract images from DOCX file
@@ -245,9 +247,9 @@ export async function extractTextFromFile(file: File): Promise<string> {
     return text
   }
 
-  // RTF conversion is handled via pandoc API; avoid parsing here.
+  // RTF files - parse directly using rtf.js
   if (fileName.endsWith('.rtf')) {
-    throw new Error("RTF parsing is not supported locally. Convert via the RTF->DOCX API first.")
+    return await extractTextFromRTF(file)
   }
   
   // For DOCX files

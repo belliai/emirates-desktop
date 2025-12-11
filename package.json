@@ -54,7 +54,7 @@
     "next": "15.1.9",
     "next-themes": "latest",
     "pdfjs-dist": "latest",
-    "pandoc-wasm": "^0.0.2",
+    "rtf.js": "^3.0.9",
     "react": "19.0.1",
     "react-chartjs-2": "latest",
     "react-day-picker": "latest",

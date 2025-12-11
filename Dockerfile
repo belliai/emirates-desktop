@@ -1,11 +1,6 @@
 # ./Dockerfile
 FROM node:22-bullseye
 
-# Install pandoc
-RUN apt-get update && \
-    apt-get install -y pandoc && \
-    rm -rf /var/lib/apt/lists/*
-
 WORKDIR /app
 
 # Enable pnpm via corepack
