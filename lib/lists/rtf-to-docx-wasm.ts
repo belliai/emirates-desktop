@@ -16,6 +16,13 @@ const PANDOC_ASSET_MAP: Record<string, string> = {
   "pandoc-data.metadata": "/pandoc-data.metadata",
 }
 
+function getRequestUrl(input: RequestInfo | URL): string | null {
+  if (typeof input === "string") return input
+  if (input instanceof URL) return input.toString()
+  if (typeof Request !== "undefined" && input instanceof Request) return input.url
+  return null
+}
+
 function getDecoder(): TextDecoder {
   return new TextDecoder("utf-8")
 }
@@ -28,13 +35,10 @@ async function loadPandoc(): Promise<WasmPandoc> {
 
       // Redirect pandoc asset requests to our self-hosted copies under /public.
       const mappedFetch: typeof fetch = (input: RequestInfo | URL, init?: RequestInit) => {
-        if (typeof input === "string") {
-          const hit = Object.keys(PANDOC_ASSET_MAP).find((asset) =>
-            input.includes(asset)
-          )
-          if (hit) {
-            return originalFetch(PANDOC_ASSET_MAP[hit], init)
-          }
+        const url = getRequestUrl(input)
+        if (url) {
+          const hit = Object.keys(PANDOC_ASSET_MAP).find((asset) => url.includes(asset))
+          if (hit) return originalFetch(PANDOC_ASSET_MAP[hit], init)
         }
         return originalFetch(input as RequestInfo, init)
       }
