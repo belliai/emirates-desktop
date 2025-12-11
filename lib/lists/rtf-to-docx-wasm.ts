@@ -9,6 +9,7 @@ type WasmPandoc = {
 
 let pandocInstance: WasmPandoc | null = null
 let loadPromise: Promise<WasmPandoc> | null = null
+let fetchPatched = false
 
 const PANDOC_ASSET_MAP: Record<string, string> = {
   "pandoc-wasm.wasm.gz": "/pandoc-wasm.wasm.gz",
@@ -31,19 +32,22 @@ async function loadPandoc(): Promise<WasmPandoc> {
   if (pandocInstance) return pandocInstance
   if (!loadPromise) {
     loadPromise = (async () => {
-      const originalFetch = globalThis.fetch
+      if (!fetchPatched) {
+        const originalFetch = globalThis.fetch
 
-      // Redirect pandoc asset requests to our self-hosted copies under /public.
-      const mappedFetch: typeof fetch = (input: RequestInfo | URL, init?: RequestInit) => {
-        const url = getRequestUrl(input)
-        if (url) {
-          const hit = Object.keys(PANDOC_ASSET_MAP).find((asset) => url.includes(asset))
-          if (hit) return originalFetch(PANDOC_ASSET_MAP[hit], init)
+        // Redirect pandoc asset requests to our self-hosted copies under /public.
+        const mappedFetch: typeof fetch = (input: RequestInfo | URL, init?: RequestInit) => {
+          const url = getRequestUrl(input)
+          if (url) {
+            const hit = Object.keys(PANDOC_ASSET_MAP).find((asset) => url.includes(asset))
+            if (hit) return originalFetch(PANDOC_ASSET_MAP[hit], init)
+          }
+          return originalFetch(input as RequestInfo, init)
         }
-        return originalFetch(input as RequestInfo, init)
-      }
 
-      globalThis.fetch = mappedFetch
+        globalThis.fetch = mappedFetch
+        fetchPatched = true
+      }
       try {
         // `pandoc-wasm` exposes a default loader that returns an object with `convert`.
         const mod: any = await import("pandoc-wasm")
@@ -57,8 +61,6 @@ async function loadPandoc(): Promise<WasmPandoc> {
         }
         pandocInstance = instance
         return instance
-      } finally {
-        globalThis.fetch = originalFetch
       }
     })()
   }
