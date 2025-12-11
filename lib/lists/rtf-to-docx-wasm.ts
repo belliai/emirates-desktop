@@ -48,20 +48,18 @@ async function loadPandoc(): Promise<WasmPandoc> {
         globalThis.fetch = mappedFetch
         fetchPatched = true
       }
-      try {
-        // `pandoc-wasm` exposes a default loader that returns an object with `convert`.
-        const mod: any = await import("pandoc-wasm")
-        const createPandoc = mod?.default ?? mod
-        if (typeof createPandoc !== "function") {
-          throw new Error("pandoc-wasm module did not expose a loader function.")
-        }
-        const instance = await createPandoc()
-        if (!instance?.convert) {
-          throw new Error("pandoc-wasm failed to initialize.")
-        }
-        pandocInstance = instance
-        return instance
+      // `pandoc-wasm` exposes a default loader that returns an object with `convert`.
+      const mod: any = await import("pandoc-wasm")
+      const createPandoc = mod?.default ?? mod
+      if (typeof createPandoc !== "function") {
+        throw new Error("pandoc-wasm module did not expose a loader function.")
       }
+      const instance = await createPandoc()
+      if (!instance?.convert) {
+        throw new Error("pandoc-wasm failed to initialize.")
+      }
+      pandocInstance = instance
+      return instance
     })()
   }
   return loadPromise
