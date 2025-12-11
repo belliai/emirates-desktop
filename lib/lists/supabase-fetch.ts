@@ -118,6 +118,10 @@ function transformToShipment(item: LoadPlanItemRow, loadPlan: LoadPlanRow): Ship
     specialNotes: item.special_notes ? item.special_notes.split("\n") : [],
     isRampTransfer: item.is_ramp_transfer || false,
     sector: item.sector || loadPlan.sector || "",
+    // Outgoing flight info from the load plan this shipment belongs to
+    outFlight: loadPlan.flight_number || "",
+    outStd: loadPlan.std_time || "",
+    outDepDate: formatDateForDisplay(loadPlan.flight_date),
   }
 }
 

@@ -81,8 +81,11 @@ export function generateSpecialCargoReport(header: LoadPlanHeader, shipments: Sh
       }
     }
 
-    const outFlightNo = header.flightNumber.replace(/^EK/i, "")
-    const depDate = formatDateForReport(header.date)
+    // Use shipment's outgoing flight info if available (from database), otherwise fall back to header
+    const outFlightSource = shipment.outFlight || header.flightNumber
+    const outFlightNo = outFlightSource.replace(/^EK/i, "")
+    const depDate = shipment.outDepDate || formatDateForReport(header.date)
+    const std = shipment.outStd || header.std
 
     const row: SpecialCargoReportRow = {
       serialNo: shipment.serialNo,
@@ -94,7 +97,7 @@ export function generateSpecialCargoReport(header: LoadPlanHeader, shipments: Sh
       inBrdPt: shipment.origin,
       outOffPt: shipment.destination,
       depDate,
-      std: header.std,
+      std,
       outPcs: shipment.pieces,
       outWt: shipment.weight,
       volume: shipment.volume,
@@ -180,7 +183,11 @@ export function generateVUNList(header: LoadPlanHeader, shipments: Shipment[]): 
             ? "BLK - ULD"
             : "ULD - BLK"
 
-    const outFlightNo = header.flightNumber.replace(/^EK/i, "")
+    // Use shipment's outgoing flight info if available (from database), otherwise fall back to header
+    const outFlightSource = shipment.outFlight || header.flightNumber
+    const outFlightNo = outFlightSource.replace(/^EK/i, "")
+    const outStd = shipment.outStd || header.std
+    const outDepDate = shipment.outDepDate || formatDateForReport(header.date)
 
     const row: VUNListRow = {
       serialNo: shipment.serialNo,
@@ -202,8 +209,8 @@ export function generateVUNList(header: LoadPlanHeader, shipments: Shipment[]): 
       outSu: "",
       outBrdPt: "DXB",
       outOffPt: shipment.destination,
-      outDepDate: formatDateForReport(header.date),
-      outStd: header.std,
+      outDepDate,
+      outStd,
       outPcs: shipment.pieces,
       outWt: shipment.weight,
       outVol: shipment.volume,
@@ -252,8 +259,11 @@ export function generateQRTList(header: LoadPlanHeader, shipments: Shipment[]): 
       shc: shipment.shc,
     })
 
-    const outFlightNo = header.flightNumber.replace(/^EK/i, "")
-    const depDate = formatDateForReport(header.date)
+    // Use shipment's outgoing flight info if available (from database), otherwise fall back to header
+    const outFlightSource = shipment.outFlight || header.flightNumber
+    const outFlightNo = outFlightSource.replace(/^EK/i, "")
+    const depDate = shipment.outDepDate || formatDateForReport(header.date)
+    const std = shipment.outStd || header.std
 
     const row: QRTListRow = {
       serialNo: shipment.serialNo,
@@ -264,7 +274,7 @@ export function generateQRTList(header: LoadPlanHeader, shipments: Shipment[]): 
       flightNo: outFlightNo,
       outOffPt: shipment.destination,
       depDate,
-      std: header.std,
+      std,
       pcs: shipment.pieces,
       weight: shipment.weight,
       volume: shipment.volume,

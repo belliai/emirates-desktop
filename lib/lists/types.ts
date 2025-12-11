@@ -38,6 +38,9 @@ export interface Shipment {
   specialNotes: string[]
   isRampTransfer?: boolean
   sector?: string // Sector information (e.g., "DXBMXP", "DXBJFK")
+  outFlight?: string // Outgoing flight number from load plan header (e.g., "EK501")
+  outStd?: string // Outgoing STD from load plan header (e.g., "14:30")
+  outDepDate?: string // Outgoing departure date from load plan header
 }
 
 export interface SpecialCargoReportRow {

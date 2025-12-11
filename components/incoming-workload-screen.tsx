@@ -221,13 +221,11 @@ function determinePeriodAndWave(std: string): { period: PeriodType; wave: WaveTy
   return { period: "early-morning", wave: null, shiftType: "night" }
 }
 
-// Extract destination from pax field (e.g., "DXB/MAA/0/23/251" -> "DXB-MAA")
-function extractDestination(pax: string): string {
-  if (!pax) return "DXB-JFK"
+// Extract route from pax field (e.g., "DXB/MAA/0/23/251" -> "MAA")
+function extractRoute(pax: string): string {
+  if (!pax) return ""
   const parts = pax.split("/")
-  const origin = parts[0] || "DXB"
-  const destination = parts[1] || "JFK"
-  return `${origin}-${destination}`
+  return parts[1] || ""
 }
 
 // Calculate ULD breakdown from actual flight data
@@ -346,7 +344,7 @@ export default function IncomingWorkloadScreen() {
         flight: plan.flight,
         std: plan.std,
         date: plan.date,
-        destination: extractDestination(plan.pax),
+        route: extractRoute(plan.pax),
         uldBreakdown: originalBreakdown, // Keep for backward compatibility
         gcrBreakdown,
         pilPerBreakdown,
@@ -400,7 +398,7 @@ export default function IncomingWorkloadScreen() {
       const query = searchQuery.toLowerCase()
       filtered = filtered.filter((flight) => 
         flight.flight.toLowerCase().includes(query) ||
-        flight.destination.toLowerCase().includes(query) ||
+        flight.route.toLowerCase().includes(query) ||
         flight.std.toLowerCase().includes(query)
       )
     }
@@ -584,7 +582,7 @@ export default function IncomingWorkloadScreen() {
                     />
                   </div>
                   <div className="space-y-0.5">
-                    {["Flight", "STD", "Destination", "Planned ULDs"].map((col) => (
+                    {["Flight", "STD", "Route", "Planned ULDs"].map((col) => (
                       <button
                         key={col}
                         className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-gray-700 hover:bg-gray-50 rounded transition-colors text-left"
@@ -729,7 +727,7 @@ export default function IncomingWorkloadScreen() {
                       <select className="flex-1 px-2 py-1.5 text-xs border border-gray-200 rounded">
                         <option>STD Time</option>
                         <option>Flight Number</option>
-                        <option>Destination</option>
+                        <option>Route</option>
                       </select>
                       <button className="p-1.5 border border-gray-200 rounded hover:bg-gray-50">
                         <ArrowUpDown className="w-3 h-3 text-gray-500" />
@@ -744,7 +742,7 @@ export default function IncomingWorkloadScreen() {
                       <span>Display Fields</span>
                     </div>
                     <div className="flex flex-wrap gap-1">
-                      {["Flight", "STD", "Destination", "Planned ULDs"].map((field) => (
+                      {["Flight", "STD", "Route", "Planned ULDs"].map((field) => (
                         <span
                           key={field}
                           className="px-1.5 py-0.5 text-[10px] bg-[#D71A21]/10 text-[#D71A21] border border-[#D71A21]/20 rounded cursor-pointer hover:bg-[#D71A21]/20 transition-colors"
@@ -970,7 +968,7 @@ export default function IncomingWorkloadScreen() {
                   <th className="px-2 py-1 text-left font-semibold text-xs">
                     <div className="flex items-center gap-2">
                       <MapPin className="w-4 h-4 flex-shrink-0" />
-                      <span className="whitespace-nowrap">Destination</span>
+                      <span className="whitespace-nowrap">Route</span>
                     </div>
                   </th>
                   <th className="px-2 py-1 text-left font-semibold text-xs">
@@ -995,7 +993,7 @@ export default function IncomingWorkloadScreen() {
                         {flight.flight}
                       </td>
                       <td className="px-2 py-1 text-gray-900 text-xs whitespace-nowrap truncate">{flight.std}</td>
-                      <td className="px-2 py-1 text-gray-900 text-xs whitespace-nowrap truncate">{flight.destination}</td>
+                      <td className="px-2 py-1 text-gray-900 text-xs whitespace-nowrap truncate">{flight.route}</td>
                       <td className="px-2 py-1 text-gray-900 text-xs whitespace-nowrap truncate font-semibold">
                         {selectedWorkArea === "GCR" 
                           ? flight.gcrBreakdown.total 

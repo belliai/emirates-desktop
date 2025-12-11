@@ -184,8 +184,10 @@ export function ResultsDisplay({
                   <table className="w-full text-sm">
                     <thead className="bg-gray-50 border-b border-gray-200 sticky top-0">
                       <tr>
-                        <th className="px-3 py-2 text-left font-medium text-gray-700">Doc No.</th>
+                        <th className="px-3 py-2 text-left font-medium text-gray-700">Flt Out</th>
+                        <th className="px-3 py-2 text-left font-medium text-gray-700">AWB No.</th>
                         <th className="px-3 py-2 text-left font-medium text-gray-700">Route</th>
+                        <th className="px-3 py-2 text-left font-medium text-gray-700">STD</th>
                         <th className="px-3 py-2 text-left font-medium text-gray-700">Pcs</th>
                         <th className="px-3 py-2 text-left font-medium text-gray-700">Weight</th>
                         <th className="px-3 py-2 text-left font-medium text-gray-700">SHC</th>
@@ -200,10 +202,12 @@ export function ResultsDisplay({
                             key={idx} 
                             className={`border-b border-gray-100 ${row.hasHUM ? 'bg-yellow-50 hover:bg-yellow-100' : ''}`}
                           >
+                            <td className="px-3 py-2 text-gray-900">{row.carrier}{row.outFlightNo}</td>
                             <td className="px-3 py-2 text-gray-900">{row.docNo}</td>
                             <td className="px-3 py-2 text-gray-600">
                               {row.inBrdPt}-{row.outOffPt}
                             </td>
+                            <td className="px-3 py-2 text-gray-600">{row.std}</td>
                             <td className="px-3 py-2 text-gray-600">{row.outPcs}</td>
                             <td className="px-3 py-2 text-gray-600">{row.outWt}</td>
                             <td className="px-3 py-2 text-gray-600 text-xs">{row.shc}</td>
@@ -213,7 +217,7 @@ export function ResultsDisplay({
                         ))
                       ) : (
                         <tr>
-                          <td colSpan={7} className="px-3 py-8 text-center text-gray-500">
+                          <td colSpan={9} className="px-3 py-8 text-center text-gray-500">
                             No data available
                           </td>
                         </tr>
@@ -280,9 +284,11 @@ export function ResultsDisplay({
               <table className="w-full text-sm">
                 <thead className="bg-gray-50 border-b border-gray-200 sticky top-0">
                   <tr>
-                    <th className="px-3 py-2 text-left font-medium text-gray-700">Doc No.</th>
+                    <th className="px-3 py-2 text-left font-medium text-gray-700">Flt Out</th>
+                    <th className="px-3 py-2 text-left font-medium text-gray-700">AWB No.</th>
                     <th className="px-3 py-2 text-left font-medium text-gray-700">Type</th>
                     <th className="px-3 py-2 text-left font-medium text-gray-700">Route</th>
+                    <th className="px-3 py-2 text-left font-medium text-gray-700">STD</th>
                     <th className="px-3 py-2 text-left font-medium text-gray-700">Pcs</th>
                     <th className="px-3 py-2 text-left font-medium text-gray-700">Weight</th>
                     <th className="px-3 py-2 text-left font-medium text-gray-700">SHC</th>
@@ -293,11 +299,13 @@ export function ResultsDisplay({
                   {results.vunList.length > 0 ? (
                     results.vunList.map((row, idx) => (
                       <tr key={idx} className="border-b border-gray-100">
+                        <td className="px-3 py-2 text-gray-900">{row.outCarrier}{row.outFlightNo}</td>
                         <td className="px-3 py-2 text-gray-900">{row.docNo}</td>
                         <td className="px-3 py-2 text-gray-600 text-xs">{row.cargoType}</td>
                         <td className="px-3 py-2 text-gray-600">
                           {row.inBrdPt}-{row.outOffPt}
                         </td>
+                        <td className="px-3 py-2 text-gray-600">{row.outStd}</td>
                         <td className="px-3 py-2 text-gray-600">{row.outPcs}</td>
                         <td className="px-3 py-2 text-gray-600">{row.outWt}</td>
                         <td className="px-3 py-2 text-gray-600 text-xs font-semibold text-[#D71A21]">{row.shc}</td>
@@ -306,7 +314,7 @@ export function ResultsDisplay({
                     ))
                   ) : (
                     <tr>
-                      <td colSpan={7} className="px-3 py-8 text-center text-gray-500">
+                      <td colSpan={9} className="px-3 py-8 text-center text-gray-500">
                         No data available
                       </td>
                     </tr>
