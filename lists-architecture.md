@@ -230,6 +230,7 @@ flowchart TD
 ```
 
 ## RTF handling
-- RTF is not parsed directly. Uploads are converted to DOCX via `/api/convert-rtf-to-docx`, which shells out to `pandoc`.
-- Ensure `pandoc -v` succeeds on the host; otherwise RTF uploads will return a clear conversion error.
+- RTF is not parsed directly. Uploads are converted to DOCX via `/api/convert-rtf-to-docx` (server pandoc). If that path fails, the client falls back to `pandoc-wasm`.
+- Server path: requires `pandoc` on PATH (Docker image includes it). On Vercel, this path may be unavailable.
+- Client fallback: `pandoc-wasm` runs in-browser with a 20s timeout; errors surface to the user if both paths fail.
 - After conversion, the existing DOCX pipeline runs: `mammoth` text extraction → `parseHeader` / `parseShipments` → reports.

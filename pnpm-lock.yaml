@@ -149,6 +149,9 @@ importers:
       next-themes:
         specifier: latest
         version: 0.4.6(react-dom@19.0.1(react@19.0.1))(react@19.0.1)
+      pandoc-wasm:
+        specifier: ^0.0.2
+        version: 0.0.2
       pdfjs-dist:
         specifier: latest
         version: 5.4.449
@@ -2055,6 +2058,9 @@ packages:
 
   pako@2.1.0:
     resolution: {integrity: sha512-w+eufiZ1WuJYgPXbV/PO3NCMEc3xqylkKHzp8bxp1uW4qaSNQUkwmLLEc3kKsfz8lpV1F8Ht3U1Cm+9Srog2ug==}
+
+  pandoc-wasm@0.0.2:
+    resolution: {integrity: sha512-/EFTqPxfhI9R657ZpKpSTnRNdXQutuKB84EarWAC+W3VMVQIRFJv/7EkQilL+0+MlFbdNE+S5yMNOkvXf3zeKg==}
 
   path-is-absolute@1.0.1:
     resolution: {integrity: sha512-AVbw3UJ2e9bq64vSaS9Am0fje1Pa8pbGqTTsmXfaIiMpnr5DlDhfJOuLj9Sf95ZPVDAUerDfEk88MPmPe7UCQg==}
@@ -4288,6 +4294,8 @@ snapshots:
   pako@1.0.11: {}
 
   pako@2.1.0: {}
+
+  pandoc-wasm@0.0.2: {}
 
   path-is-absolute@1.0.1: {}
 
