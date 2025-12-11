@@ -28,6 +28,16 @@ function getDecoder(): TextDecoder {
   return new TextDecoder("utf-8")
 }
 
+async function prefetchPandocAssets(): Promise<void> {
+  const entries = Object.values(PANDOC_ASSET_MAP)
+  for (const url of entries) {
+    const res = await fetch(url, { method: "GET", cache: "force-cache" })
+    if (!res.ok) {
+      throw new Error(`Failed to fetch ${url}: ${res.status} ${res.statusText}`)
+    }
+  }
+}
+
 async function loadPandoc(): Promise<WasmPandoc> {
   if (pandocInstance) return pandocInstance
   if (!loadPromise) {
@@ -48,6 +58,10 @@ async function loadPandoc(): Promise<WasmPandoc> {
         globalThis.fetch = mappedFetch
         fetchPatched = true
       }
+
+      // Force-download assets so they show up in Network tab and fail fast if missing.
+      await prefetchPandocAssets()
+
       // `pandoc-wasm` exposes a default loader that returns an object with `convert`.
       const mod: any = await import("pandoc-wasm")
       const createPandoc = mod?.default ?? mod
