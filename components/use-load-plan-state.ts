@@ -2,16 +2,6 @@
 
 import { useState } from "react"
 import type { LoadPlanDetail, AWBRow, ULDSection } from "./load-plan-types"
-import type { AWBAssignmentData } from "./awb-assignment-modal"
-
-export type AWBAssignment = {
-  awbNo: string
-  sectorIndex: number
-  uldSectionIndex: number
-  awbIndex: number
-  assignmentData: AWBAssignmentData
-  isLoaded: boolean
-}
 
 export function useLoadPlanState(initialPlan: LoadPlanDetail) {
   // Clean AWB numbers from whitespace when initializing
@@ -30,16 +20,6 @@ export function useLoadPlanState(initialPlan: LoadPlanDetail) {
   }
   
   const [editedPlan, setEditedPlan] = useState<LoadPlanDetail>(cleanedPlan)
-  const [selectedAWB, setSelectedAWB] = useState<{
-    awb: AWBRow
-    sectorIndex: number
-    uldSectionIndex: number
-    awbIndex: number
-  } | null>(null)
-  const [showAssignmentModal, setShowAssignmentModal] = useState(false)
-  const [showLoadedModal, setShowLoadedModal] = useState(false)
-  const [loadedAWBNo, setLoadedAWBNo] = useState<string>("")
-  const [awbAssignments, setAwbAssignments] = useState<Map<string, AWBAssignment>>(new Map())
   const [hoveredUld, setHoveredUld] = useState<string | null>(null)
   // Map key: `${sectorIndex}-${uldSectionIndex}` -> string[] (ULD numbers)
   const [uldNumbers, setUldNumbers] = useState<Map<string, string[]>>(new Map())
@@ -224,16 +204,6 @@ export function useLoadPlanState(initialPlan: LoadPlanDetail) {
   return {
     editedPlan,
     setEditedPlan,
-    selectedAWB,
-    setSelectedAWB,
-    showAssignmentModal,
-    setShowAssignmentModal,
-    showLoadedModal,
-    setShowLoadedModal,
-    loadedAWBNo,
-    setLoadedAWBNo,
-    awbAssignments,
-    setAwbAssignments,
     hoveredUld,
     setHoveredUld,
     uldNumbers,

@@ -5,13 +5,12 @@ import React from "react"
 import { Plus, Trash2, CheckCircle } from "lucide-react"
 import BCRModal, { generateBCRData } from "./bcr-modal"
 import type { AWBComment } from "./bcr-modal"
-import AWBAssignmentModal, { LoadedStatusModal, type AWBAssignmentData } from "./awb-assignment-modal"
 import HandoverModal from "./handover-modal"
 import { AWBSplitOffloadModal } from "./awb-split-offload-modal"
 import { LoadPlanHeader } from "./load-plan-header"
 import { FlightHeaderRow } from "./flight-header-row"
 import { EditableField } from "./editable-field"
-import { useLoadPlanState, type AWBAssignment } from "./use-load-plan-state"
+import { useLoadPlanState } from "./use-load-plan-state"
 import { useLoadPlans } from "@/lib/load-plan-context"
 import type { LoadPlanDetail, AWBRow, ULDSection } from "./load-plan-types"
 import { ULDNumberModal, type ULDEntry } from "./uld-number-modal"
@@ -269,16 +268,6 @@ export default function LoadPlanDetailScreen({ loadPlan, onBack, onSave, onNavig
   const {
     editedPlan,
     setEditedPlan,
-    selectedAWB,
-    setSelectedAWB,
-    showAssignmentModal,
-    setShowAssignmentModal,
-    showLoadedModal,
-    setShowLoadedModal,
-    loadedAWBNo,
-    setLoadedAWBNo,
-    awbAssignments,
-    setAwbAssignments,
     hoveredUld,
     setHoveredUld,
     uldNumbers,
@@ -351,67 +340,6 @@ export default function LoadPlanDetailScreen({ loadPlan, onBack, onSave, onNavig
     onBack()
   }
 
-  const handleAWBRowClick = (
-    awb: AWBRow,
-    sectorIndex: number,
-    uldSectionIndex: number,
-    awbIndex: number,
-    assignment: AWBAssignment | undefined
-  ) => {
-    if (!isReadOnly) return
-    
-    // For Buildup Staff (with bulk checkboxes), right side shows Assignment modal
-    if (enableBulkCheckboxes) {
-      if (assignment?.isLoaded) {
-        setLoadedAWBNo(awb.awbNo)
-        setShowLoadedModal(true)
-      } else {
-        setSelectedAWB({ awb, sectorIndex, uldSectionIndex, awbIndex })
-        setShowAssignmentModal(true)
-      }
-      return
-    }
-    
-    // For regular Load Plans, use assignment modal
-    if (assignment?.isLoaded) {
-      setLoadedAWBNo(awb.awbNo)
-      setShowLoadedModal(true)
-    } else {
-      setSelectedAWB({ awb, sectorIndex, uldSectionIndex, awbIndex })
-      setShowAssignmentModal(true)
-    }
-  }
-
-  const handleAssignmentConfirm = (data: AWBAssignmentData) => {
-    if (!selectedAWB) return
-    
-    const key = `${selectedAWB.awb.awbNo}-${selectedAWB.sectorIndex}-${selectedAWB.uldSectionIndex}-${selectedAWB.awbIndex}`
-    setAwbAssignments((prev) => {
-      const updated = new Map(prev)
-      updated.set(key, {
-        awbNo: selectedAWB.awb.awbNo,
-        sectorIndex: selectedAWB.sectorIndex,
-        uldSectionIndex: selectedAWB.uldSectionIndex,
-        awbIndex: selectedAWB.awbIndex,
-        assignmentData: data,
-        isLoaded: data.isLoaded !== false,
-      })
-      return updated
-    })
-    setShowAssignmentModal(false)
-    setSelectedAWB(null)
-  }
-
-  const existingUlds = Array.from(new Set(
-    Array.from(awbAssignments.values())
-      .map(a => {
-        if (a.assignmentData.type === "single") return a.assignmentData.uld
-        if (a.assignmentData.type === "existing") return a.assignmentData.existingUld
-        return null
-      })
-      .filter((uld): uld is string => uld !== null)
-  ))
-
   const handleHandover = async () => {
     // Helper to extract numeric flight number for normalized comparison
     const extractFlightNum = (f: string): number => {
@@ -430,7 +358,7 @@ export default function LoadPlanDetailScreen({ loadPlan, onBack, onSave, onNavig
     const bcrData = generateBCRData(
       editedPlan, 
       awbComments, 
-      awbAssignments, 
+      undefined, 
       mergedUldEntries
     )
     
@@ -778,7 +706,6 @@ export default function LoadPlanDetailScreen({ loadPlan, onBack, onSave, onNavig
           {/* Single Combined Table for All Sectors */}
           <CombinedTable
             editedPlan={editedPlan}
-            awbAssignments={awbAssignments}
             hoveredUld={hoveredUld}
             uldEntries={mergedUldEntries}
             isReadOnly={isReadOnly}
@@ -792,13 +719,16 @@ export default function LoadPlanDetailScreen({ loadPlan, onBack, onSave, onNavig
             onToggleSelectAll={enableBulkCheckboxes ? handleToggleSelectAll : () => {}}
             onToggleULDSection={enableBulkCheckboxes ? handleToggleULDSection : () => {}}
             onToggleAWB={enableBulkCheckboxes ? handleToggleAWB : () => {}}
-            onAWBRowClick={handleAWBRowClick}
-            onAWBLeftSectionClick={(awb, sectorIndex, uldSectionIndex, awbIndex) => {
+            onAWBRowClick={(awb, sectorIndex, uldSectionIndex, awbIndex, uldType) => {
               setSelectedAWBForQuickAction({ awb, sectorIndex, uldSectionIndex, awbIndex })
               setShowQuickActionModal(true)
             }}
             onHoverUld={setHoveredUld}
             onULDSectionClick={(sectorIndex, uldSectionIndex, uld) => {
+              // Don't open ULD Numbers modal for BULK ULD types - BULK is view-only
+              if (uld && uld.toUpperCase().includes("BULK")) {
+                return
+              }
               setSelectedULDSection({ sectorIndex, uldSectionIndex, uld })
               setShowULDModal(true)
             }}
@@ -850,7 +780,7 @@ export default function LoadPlanDetailScreen({ loadPlan, onBack, onSave, onNavig
           bcrData={generateBCRData(
             editedPlan, 
             awbComments, 
-            awbAssignments, 
+            undefined, 
             mergedUldEntries // Pass full entries with checked state for future use
           )}
         />
@@ -863,43 +793,6 @@ export default function LoadPlanDetailScreen({ loadPlan, onBack, onSave, onNavig
           loadPlan={editedPlan}
           onHandover={handleHandover}
           onHandoverReport={handleHandoverReport}
-        />
-      )}
-
-      {isReadOnly && selectedAWB && (
-        <AWBAssignmentModal
-          isOpen={showAssignmentModal}
-          onClose={() => {
-            setShowAssignmentModal(false)
-            setSelectedAWB(null)
-          }}
-          awb={selectedAWB.awb}
-          existingUlds={existingUlds}
-          onConfirm={handleAssignmentConfirm}
-        />
-      )}
-
-      {isReadOnly && (
-        <LoadedStatusModal
-          isOpen={showLoadedModal}
-          onClose={() => {
-            setShowLoadedModal(false)
-            setLoadedAWBNo("")
-          }}
-          awbNo={loadedAWBNo}
-          onCancelLoading={() => {
-            setAwbAssignments((prev) => {
-              const updated = new Map(prev)
-              for (const [key, assignment] of updated.entries()) {
-                if (assignment.awbNo === loadedAWBNo) {
-                  updated.set(key, { ...assignment, isLoaded: false })
-                }
-              }
-              return updated
-            })
-            setShowLoadedModal(false)
-            setLoadedAWBNo("")
-          }}
         />
       )}
 
@@ -931,12 +824,6 @@ export default function LoadPlanDetailScreen({ loadPlan, onBack, onSave, onNavig
           awb={selectedAWBForQuickAction.awb}
           onMarkLoaded={handleMarkAWBLoaded}
           onMarkOffload={handleMarkAWBOffload}
-          onConfirmSplit={(splitGroups) => {
-            // Handle split logic for left side quick actions
-            console.log("Split groups from quick actions:", splitGroups)
-            setShowQuickActionModal(false)
-            setSelectedAWBForQuickAction(null)
-          }}
         />
       )}
 
@@ -1013,7 +900,6 @@ export default function LoadPlanDetailScreen({ loadPlan, onBack, onSave, onNavig
 // Combined Table Component - All sectors in one table
 interface CombinedTableProps {
   editedPlan: LoadPlanDetail
-  awbAssignments: Map<string, AWBAssignment>
   hoveredUld: string | null
   uldEntries: Map<string, ULDEntry[]>
   isReadOnly: boolean
@@ -1027,8 +913,7 @@ interface CombinedTableProps {
   onToggleSelectAll: () => void
   onToggleULDSection: (sectorIndex: number, uldSectionIndex: number) => void
   onToggleAWB: (assignmentKey: string) => void
-  onAWBRowClick: (awb: AWBRow, sectorIndex: number, uldSectionIndex: number, awbIndex: number, assignment: AWBAssignment | undefined) => void
-  onAWBLeftSectionClick: (awb: AWBRow, sectorIndex: number, uldSectionIndex: number, awbIndex: number) => void
+  onAWBRowClick: (awb: AWBRow, sectorIndex: number, uldSectionIndex: number, awbIndex: number, uldType: string) => void
   onHoverUld: (uld: string | null) => void
   onULDSectionClick: (sectorIndex: number, uldSectionIndex: number, uld: string) => void
   onUpdateAWBField: (sectorIndex: number, uldSectionIndex: number, awbIndex: number, field: keyof AWBRow, value: string) => void
@@ -1050,7 +935,6 @@ interface CombinedTableProps {
 
 function CombinedTable({
   editedPlan,
-  awbAssignments,
   hoveredUld,
   uldEntries,
   isReadOnly,
@@ -1065,7 +949,6 @@ function CombinedTable({
   onToggleULDSection,
   onToggleAWB,
   onAWBRowClick,
-  onAWBLeftSectionClick,
   onHoverUld,
   onULDSectionClick,
   onUpdateAWBField,
@@ -1334,15 +1217,6 @@ function CombinedTable({
                     {regular.map((item, index) => {
                       const { awb, sectorIndex, uldSectionIndex, awbIndex, uld } = item
                       const assignmentKey = `${awb.awbNo}-${sectorIndex}-${uldSectionIndex}-${awbIndex}`
-                      const assignment = awbAssignments.get(assignmentKey)
-                      const isLoaded = assignment?.isLoaded || false
-                      const assignmentUld = assignment?.assignmentData.type === "single" 
-                        ? assignment.assignmentData.uld 
-                        : assignment?.assignmentData.type === "existing"
-                        ? assignment.assignmentData.existingUld
-                        : null
-                      const isHovered = !!(hoveredUld && assignmentUld && hoveredUld === assignmentUld)
-                      const splitGroups = assignment?.assignmentData.type === "split" ? assignment.assignmentData.splitGroups : []
                       
                       // Get additional_data flag from awb item (from database)
                       // Use additional_data for styling (red if true, black if false)
@@ -1365,21 +1239,13 @@ function CombinedTable({
                             sectorIndex={sectorIndex}
                             uldSectionIndex={uldSectionIndex}
                             awbIndex={awbIndex}
-                            assignment={assignment}
                             assignmentKey={assignmentKey}
                             enableBulkCheckboxes={enableBulkCheckboxes}
                             isSelected={enableBulkCheckboxes ? selectedAWBKeys.has(assignmentKey) : false}
                             onToggleSelect={enableBulkCheckboxes ? () => onToggleAWB(assignmentKey) : () => {}}
-                            isLoaded={isLoaded}
-                            assignmentUld={assignmentUld}
-                            isHovered={isHovered}
-                            splitGroups={splitGroups || []}
                             isReadOnly={isReadOnly}
                             awbComments={awbComments}
-                            onRowClick={() => onAWBRowClick(awb, sectorIndex, uldSectionIndex, awbIndex, assignment)}
-                            onLeftSectionClick={() => onAWBLeftSectionClick(awb, sectorIndex, uldSectionIndex, awbIndex)}
-                            onMouseEnter={() => assignmentUld && onHoverUld(assignmentUld)}
-                            onMouseLeave={() => onHoverUld(null)}
+                            onRowClick={() => onAWBRowClick(awb, sectorIndex, uldSectionIndex, awbIndex, uld)}
                             onUpdateField={(field, value) => onUpdateAWBField(sectorIndex, uldSectionIndex, awbIndex, field, value)}
                             onAddRowAfter={() => onAddNewAWBRow(sectorIndex, uldSectionIndex, awbIndex)}
                             onDeleteRow={() => onDeleteAWBRow(sectorIndex, uldSectionIndex, awbIndex)}
@@ -1388,6 +1254,7 @@ function CombinedTable({
                             calculatedConnectionTime={calculatedConnectionTime}
                             additional_data={isAdditionalData}
                             changeInfo={loadPlanChanges.get(parseInt(awb.ser) || 0)}
+                            uldType={uld}
                           />
                           {shouldShowULD && (
                             <ULDRow
@@ -1423,11 +1290,6 @@ function CombinedTable({
                         {rampTransfer.map((item, index) => {
                           const { awb, sectorIndex, uldSectionIndex, awbIndex, uld } = item
                           const assignmentKey = `${awb.awbNo}-${sectorIndex}-${uldSectionIndex}-${awbIndex}`
-                          const assignment = awbAssignments.get(assignmentKey)
-                          
-                          // Get revision from awb item (from database)
-                          // If awb.revision is undefined/null, it means revision = 1 (original)
-                          const itemRevision = (awb.revision !== undefined && awb.revision !== null && !isNaN(Number(awb.revision))) ? Number(awb.revision) : 1
                           
                           // Check if we need to show ULD row after this AWB
                           const nextItem = rampTransfer[index + 1]
@@ -1446,15 +1308,13 @@ function CombinedTable({
                                 sectorIndex={sectorIndex}
                                 uldSectionIndex={uldSectionIndex}
                                 awbIndex={awbIndex}
-                                assignment={assignment}
                                 assignmentKey={assignmentKey}
                                 enableBulkCheckboxes={enableBulkCheckboxes}
                                 isSelected={enableBulkCheckboxes ? selectedAWBKeys.has(assignmentKey) : false}
                                 onToggleSelect={enableBulkCheckboxes ? () => onToggleAWB(assignmentKey) : () => {}}
                                 isReadOnly={isReadOnly}
                                 awbComments={awbComments}
-                                onRowClick={() => onAWBRowClick(awb, sectorIndex, uldSectionIndex, awbIndex, assignment)}
-                                onLeftSectionClick={() => onAWBLeftSectionClick(awb, sectorIndex, uldSectionIndex, awbIndex)}
+                                onRowClick={() => onAWBRowClick(awb, sectorIndex, uldSectionIndex, awbIndex, uld)}
                                 onUpdateField={(field, value) => onUpdateAWBField(sectorIndex, uldSectionIndex, awbIndex, field, value)}
                                 onAddRowAfter={() => onAddNewAWBRow(sectorIndex, uldSectionIndex, awbIndex)}
                                 onDeleteRow={() => onDeleteAWBRow(sectorIndex, uldSectionIndex, awbIndex)}
@@ -1464,6 +1324,7 @@ function CombinedTable({
                                 calculatedConnectionTime={calculatedConnectionTime}
                                 additional_data={isRampAdditionalData}
                                 changeInfo={loadPlanChanges.get(parseInt(awb.ser) || 0)}
+                                uldType={uld}
                               />
                               {shouldShowULD && (
                                 <ULDRow
@@ -1513,7 +1374,6 @@ function CombinedTable({
                         sectorIndex={-1} // Deleted items don't belong to any sector
                         uldSectionIndex={-1}
                         awbIndex={index}
-                        assignment={undefined}
                         assignmentKey={`deleted-${serialNo}-${index}`}
                         enableBulkCheckboxes={false}
                         isSelected={false}
@@ -1521,7 +1381,6 @@ function CombinedTable({
                         isReadOnly={isReadOnly}
                         awbComments={awbComments}
                         onRowClick={() => {}}
-                        onLeftSectionClick={() => {}}
                         onUpdateField={() => {}}
                         hoveredUld={hoveredUld}
                         isQRTList={isQRTList}
@@ -1624,21 +1483,13 @@ interface AWBRowProps {
   sectorIndex: number
   uldSectionIndex: number
   awbIndex: number
-  assignment?: AWBAssignment
   assignmentKey: string
   enableBulkCheckboxes: boolean
   isSelected: boolean
   onToggleSelect: () => void
-  isLoaded?: boolean
-  assignmentUld?: string | null
-  isHovered?: boolean
-  splitGroups?: Array<{ id: string; no: string; pieces: string; uld?: string }>
   isReadOnly: boolean
   awbComments?: AWBComment[]
   onRowClick?: () => void
-  onLeftSectionClick?: () => void
-  onMouseEnter?: () => void
-  onMouseLeave?: () => void
   onUpdateField: (field: keyof AWBRow, value: string) => void
   onAddRowAfter?: () => void
   onDeleteRow?: () => void
@@ -1646,9 +1497,9 @@ interface AWBRowProps {
   hoveredUld?: string | null
   isQRTList?: boolean
   calculatedConnectionTime?: string // Calculated connection time for QRT List
-  revision?: number // Revision number of the load plan (deprecated, use additional_data instead)
   additional_data?: boolean // Flag indicating if this item is additional data (new item added in subsequent upload)
   changeInfo?: LoadPlanChange // Change information for this AWB (added, modified, deleted)
+  uldType?: string // ULD type string to determine if AWB Actions modal should open
 }
 
 function AWBRow({
@@ -1657,15 +1508,9 @@ function AWBRow({
   enableBulkCheckboxes,
   isSelected,
   onToggleSelect,
-  isLoaded,
-  isHovered,
-  splitGroups,
   isReadOnly,
   awbComments,
   onRowClick,
-  onLeftSectionClick,
-  onMouseEnter,
-  onMouseLeave,
   onUpdateField,
   onAddRowAfter,
   onDeleteRow,
@@ -1673,12 +1518,12 @@ function AWBRow({
   hoveredUld,
   isQRTList = false,
   calculatedConnectionTime = "0",
-  revision = 1,
   additional_data = false,
   changeInfo,
+  uldType,
 }: AWBRowProps) {
-  const [hoveredSection, setHoveredSection] = useState<"left" | "right" | null>(null)
-  
+  // Note: BULK AWBs can still open AWB Actions modal - only ULD Number modal is blocked for BULK
+  const isBulkULD = false // AWB Actions modal is always allowed
   // Extract remaining pieces from offload comments
   const getRemainingPieces = (): string | null => {
     if (!awbComments) return null
@@ -1772,11 +1617,14 @@ function AWBRow({
   return (
     <>
       <tr
-        className={`border-b border-gray-100 ${isLoaded ? "bg-gray-200 opacity-60" : isRampTransfer ? "bg-gray-50 hover:bg-gray-50" : ""} ${isHovered ? "border-l-4 border-l-red-500" : ""} ${isDeleted ? "opacity-60" : ""}`}
-        onMouseEnter={onMouseEnter}
-        onMouseLeave={() => {
-          onMouseLeave?.()
-          setHoveredSection(null)
+        className={`border-b border-gray-100 ${isRampTransfer ? "bg-gray-50 hover:bg-gray-50" : ""} ${isDeleted ? "opacity-60" : ""} ${isReadOnly && onRowClick && !isBulkULD ? "cursor-pointer hover:bg-gray-50" : ""}`}
+        data-uld-type={uldType || "none"}
+        data-is-bulk={isBulkULD ? "true" : "false"}
+        onClick={() => {
+          // Don't open AWB Actions modal for BULK ULD types
+          if (isReadOnly && onRowClick && !isBulkULD) {
+            onRowClick()
+          }
         }}
       >
         {/* Checkbox column */}
@@ -1819,15 +1667,7 @@ function AWBRow({
           return (
             <td
               key={key}
-              className={`px-2 py-1 ${isReadOnly && enableBulkCheckboxes ? "cursor-pointer" : ""} ${hoveredSection === "left" && isReadOnly && enableBulkCheckboxes ? "bg-blue-50" : ""}`}
-              onMouseEnter={() => isReadOnly && enableBulkCheckboxes && setHoveredSection("left")}
-              onMouseLeave={() => setHoveredSection(null)}
-              onClick={(e) => {
-                if (isReadOnly && enableBulkCheckboxes && onLeftSectionClick) {
-                  e.stopPropagation()
-                  onLeftSectionClick()
-                }
-              }}
+              className="px-2 py-1"
             >
               <EditableField
                 value={displayValue}
@@ -1862,18 +1702,11 @@ function AWBRow({
           return (
             <td
               key={key}
-              className={`px-2 py-1 ${isUldNumberField ? "bg-yellow-50" : ""} ${isReadOnly && enableBulkCheckboxes && !isEditableQRTField ? "cursor-pointer" : ""} ${hoveredSection === "right" && isReadOnly && enableBulkCheckboxes && !isEditableQRTField ? "bg-gray-50" : ""}`}
-              onMouseEnter={() => isReadOnly && enableBulkCheckboxes && !isEditableQRTField && setHoveredSection("right")}
-              onMouseLeave={() => setHoveredSection(null)}
+              className={`px-2 py-1 ${isUldNumberField ? "bg-yellow-50" : ""}`}
               onClick={(e) => {
                 // Don't trigger row click for editable QRT field
                 if (isEditableQRTField) {
                   e.stopPropagation()
-                  return
-                }
-                if (isReadOnly && enableBulkCheckboxes && onRowClick) {
-                  e.stopPropagation()
-                  onRowClick()
                 }
               }}
             >
@@ -1955,30 +1788,6 @@ function AWBRow({
           </td>
         </tr>
       )}
-      {/* Split Groups */}
-      {splitGroups && splitGroups.length > 0 && splitGroups.map((group) => {
-        const groupUld = group.uld
-        const isGroupHovered = hoveredUld === groupUld && groupUld
-        return (
-          <tr
-            key={`split-${group.id}`}
-            className={`border-b border-gray-100 bg-gray-50 ${isGroupHovered ? "border-l-4 border-l-red-500" : ""}`}
-            onMouseEnter={() => groupUld && onMouseEnter?.()}
-            onMouseLeave={onMouseLeave}
-          >
-            {enableBulkCheckboxes && <td className="px-2 py-1"></td>}
-            <td className={`px-2 py-1 pl-8 text-xs ${baseTextColorClass}`}>
-              <span className={baseTextColorClass}>└─</span>
-            </td>
-            <td className={`px-2 py-1 text-xs font-medium ${baseTextColorClass}`}>{awb.awbNo.replace(/\s+/g, "")}</td>
-            <td className={`px-2 py-1 text-xs ${baseTextColorClass}`}>{awb.orgDes}</td>
-            <td className={`px-2 py-1 text-xs font-semibold ${baseTextColorClass}`}>{group.pieces || "-"}</td>
-            <td className={`px-2 py-1 text-xs ${baseTextColorClass}`}>{groupUld || "-"}</td>
-            <td className={`px-2 py-1 text-xs font-mono ${baseTextColorClass}`}>{group.no || "-"}</td>
-            <td colSpan={isQRTList ? 15 : 14} className="px-2 py-1"></td>
-          </tr>
-        )
-      })}
     </>
   )
 }
@@ -2006,6 +1815,8 @@ interface ULDRowProps {
 function ULDRow({ uld, uldEntries, isReadOnly, enableBulkCheckboxes, sectionKeys, isAllSelected, isSomeSelected, onToggleSection, onUpdate, onAddAWB, onDelete, onClick, isRampTransfer, isQRTList = false }: ULDRowProps) {
   const { count, types } = parseULDSection(uld)
   const checkedEntries = uldEntries.filter(e => e.checked)
+  // BULK ULD sections are view-only - don't allow opening ULD Numbers modal
+  const isBulkULD = uld ? uld.toUpperCase().includes("BULK") : false
   const hasCheckedEntries = checkedEntries.length > 0
   
   // Left side: Show checked entries as {type}{number}EK format
@@ -2060,8 +1871,8 @@ function ULDRow({ uld, uldEntries, isReadOnly, enableBulkCheckboxes, sectionKeys
             </div>
           )}
           <div 
-            className={`flex-1 ${isReadOnly ? "cursor-pointer hover:bg-gray-50 rounded px-2 py-1 transition-colors" : ""}`}
-            onClick={isReadOnly ? onClick : undefined}
+            className={`flex-1 ${isReadOnly && !isBulkULD ? "cursor-pointer hover:bg-gray-50 rounded px-2 py-1 transition-colors" : ""}`}
+            onClick={isReadOnly && !isBulkULD ? onClick : undefined}
           >
             <EditableField
               value={uld}

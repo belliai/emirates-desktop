@@ -32,7 +32,7 @@ function getStatusColor(status: CompletionStatus): string {
 }
 
 function calculateTotalPlannedULDs(loadPlanDetail: LoadPlanDetail): number {
-  let entriesMap: Map<string, { checked: boolean }[]> = new Map()
+  let entriesMap: Map<string, { checked: boolean; type?: string }[]> = new Map()
   if (typeof window !== "undefined") {
     try {
       entriesMap = getULDEntriesFromStorage(loadPlanDetail.flight, loadPlanDetail.sectors)
@@ -47,10 +47,14 @@ function calculateTotalPlannedULDs(loadPlanDetail: LoadPlanDetail): number {
         const key = `${sectorIndex}-${uldSectionIndex}`
         const entries = entriesMap.get(key)
         if (entries && entries.length > 0) {
-          total += entries.length
+          // Exclude BULK entries from count
+          const nonBulkEntries = entries.filter(e => (e as { type?: string }).type?.toUpperCase() !== "BULK")
+          total += nonBulkEntries.length
         } else {
-          const { count } = parseULDSection(uldSection.uld)
-          total += count
+          // Exclude BULK from parseULDSection count
+          const { expandedTypes } = parseULDSection(uldSection.uld)
+          const nonBulkCount = expandedTypes.filter(t => t.toUpperCase() !== "BULK").length
+          total += nonBulkCount
         }
       }
     })
@@ -65,7 +69,9 @@ function calculateTotalMarkedULDs(flightNumber: string, loadPlanDetail: LoadPlan
     let markedCount = 0
     entriesMap.forEach((entries) => {
       entries.forEach((entry) => {
-        if (entry.checked) markedCount++
+        // Exclude BULK entries from marked count
+        const entryType = (entry as { type?: string }).type?.toUpperCase()
+        if (entry.checked && entryType !== "BULK") markedCount++
       })
     })
     return markedCount
