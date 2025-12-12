@@ -646,3 +646,63 @@ export async function deleteLoadPlanFromSupabase(flightNumber: string): Promise<
   }
 }
 
+/**
+ * Update assigned_to and assigned_by for a load plan in Supabase
+ * @param flightNumber - Flight number (e.g., "EK0801" or "EK801")
+ * @param assignedTo - staff_no of the operator (COA) being assigned
+ * @param assignedBy - staff_no of the supervisor (CHS) making the assignment
+ */
+export async function updateLoadPlanAssignment(
+  flightNumber: string,
+  assignedTo: number,
+  assignedBy: number
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const isSupabaseConfigured = 
+      process.env.NEXT_PUBLIC_SUPABASE_URL && 
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY &&
+      process.env.NEXT_PUBLIC_SUPABASE_URL !== "https://placeholder.supabase.co" &&
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY !== "placeholder-anon-key"
+
+    if (!isSupabaseConfigured) {
+      console.log("[LoadPlans] Supabase not configured")
+      return { success: false, error: "Supabase not configured" }
+    }
+
+    const supabase = createClient()
+    const flightNo = flightNumber.replace(/^EK0?/, "")
+
+    console.log(`[LoadPlans] Updating load_plans: flight=${flightNumber}, assigned_to=${assignedTo}, assigned_by=${assignedBy}`)
+
+    // Find the load plan first
+    const { data: existing, error: findError } = await supabase
+      .from("load_plans")
+      .select("id, flight_number")
+      .or(`flight_number.eq.${flightNumber},flight_number.eq.EK${flightNo},flight_number.eq.EK0${flightNo}`)
+      .limit(1)
+      .single()
+
+    if (findError || !existing) {
+      console.log(`[LoadPlans] No load plan found for ${flightNumber}`)
+      return { success: false, error: "Load plan not found" }
+    }
+
+    // Update by ID
+    const { error: updateError } = await supabase
+      .from("load_plans")
+      .update({ assigned_to: assignedTo, assigned_by: assignedBy })
+      .eq("id", existing.id)
+
+    if (updateError) {
+      console.error("[LoadPlans] Update error:", updateError.message)
+      return { success: false, error: updateError.message }
+    }
+
+    console.log(`[LoadPlans] ✅ Updated load_plans for ${existing.flight_number}`)
+    return { success: true }
+  } catch (error) {
+    console.error("[LoadPlans] Error:", error)
+    return { success: false, error: error instanceof Error ? error.message : "Unknown error" }
+  }
+}
+
