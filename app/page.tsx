@@ -16,12 +16,11 @@ import PerformanceScreen from "@/components/performance-screen"
 import CustomReportsScreen from "@/components/custom-reports-screen"
 import LoadPlansScreen from "@/components/load-plans-screen"
 import BuildupStaffScreen from "@/components/buildup-staff-screen"
-import FlightAssignmentScreen from "@/components/flight-assignment-screen"
+import AllocationAssignmentScreen from "@/components/allocation-assignment-screen"
 import SituationalAwarenessScreen from "@/components/situational-awareness-screen"
 import WorkAreaScreen from "@/components/work-area-screen"
 import FlightsViewScreen from "@/components/flights-view-screen"
 import ShiftSummaryReportScreen from "@/components/shift-summary-report-screen"
-import BUPAllocationListScreen from "@/components/bup-allocation-list-screen"
 import ScreeningSummaryScreen from "@/components/screening-summary-screen"
 import IncomingWorkloadScreen from "@/components/incoming-workload-screen"
 import QRTListScreen from "@/components/qrt-list-screen"
@@ -55,6 +54,7 @@ function AppContent() {
     | "uld-management"
     | "buildup-staff"
     | "flight-assignment"
+    | "allocations"
     | "shift-summary-report"
     | "situational-awareness"
     | "flights-view"
@@ -72,7 +72,6 @@ function AppContent() {
   const [isSettingsMode, setIsSettingsMode] = useState(false)
   const [selectedULD, setSelectedULD] = useState<(ULD & { flightNumber: string; uldIndex: number }) | null>(null)
   const [buildupStaffParams, setBuildupStaffParams] = useState<{ staff?: string } | null>(null)
-  const [flightAssignmentParams, setFlightAssignmentParams] = useState<{ supervisor?: string } | null>(null)
   const { updateULDStatus, addMultipleStatusUpdates } = useFlights()
 
   const handleULDSelect = (uld: ULD, flightNumber: string, uldIndex: number) => {
@@ -93,16 +92,14 @@ function AppContent() {
   }
 
   const handleNavigate = (screen: string, params?: any) => {
-    setCurrentScreen(screen as any)
-    if (screen === "buildup-staff" && params?.staff) {
+    const target =
+      screen === "flight-assignment" || screen === "bup-allocation-list" ? "allocations" : screen
+
+    setCurrentScreen(target as any)
+    if (target === "buildup-staff" && params?.staff) {
       setBuildupStaffParams({ staff: params.staff })
-      setFlightAssignmentParams(null)
-    } else if (screen === "flight-assignment" && params?.supervisor) {
-      setFlightAssignmentParams({ supervisor: params.supervisor })
-      setBuildupStaffParams(null)
     } else {
       setBuildupStaffParams(null)
-      setFlightAssignmentParams(null)
     }
   }
 
@@ -131,14 +128,12 @@ function AppContent() {
           if (staff.job_code === "COA") {
             // Route to buildup-staff screen for this staff member
             setBuildupStaffParams({ staff: staff.staff_no.toString() })
-            setFlightAssignmentParams(null)
             setCurrentScreen("buildup-staff")
             return
           } else if (staff.job_code === "CHS") {
             // Route to flight-assignment screen for this supervisor
-            setFlightAssignmentParams({ supervisor: staff.staff_no.toString() })
             setBuildupStaffParams(null)
-            setCurrentScreen("flight-assignment")
+            setCurrentScreen("allocations")
             return
           }
         }
@@ -193,7 +188,9 @@ function AppContent() {
       case "flights-view":
         return <FlightsViewScreen />
       case "bup-allocation-list":
-        return <BUPAllocationListScreen onNavigate={handleNavigate} />
+      case "flight-assignment":
+      case "allocations":
+        return <AllocationAssignmentScreen />
       case "screening":
         return <ScreeningSummaryScreen />
       case "work-area-gcr":
@@ -212,8 +209,6 @@ function AppContent() {
         return <ThresholdAlertsScreen />
       case "custom-reports":
         return <CustomReportsScreen />
-      case "flight-assignment":
-        return <FlightAssignmentScreen initialSupervisor={flightAssignmentParams?.supervisor} />
       case "shift-summary-report":
         return <ShiftSummaryReportScreen />
       case "bcr":
