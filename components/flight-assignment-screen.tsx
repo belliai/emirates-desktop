@@ -130,6 +130,8 @@ export default function FlightAssignmentScreen({ initialSupervisor }: FlightAssi
   const [waveFilter, setWaveFilter] = useState<WaveType>("all")
   const addFilterRef = useRef<HTMLDivElement>(null)
   const viewOptionsRef = useRef<HTMLDivElement>(null)
+  const tableContainerRef = useRef<HTMLDivElement>(null)
+  const savedScrollPositionRef = useRef<number | null>(null)
 
   // Create a set of flight numbers that have actual uploaded load plans
   const loadPlanFlights = useMemo(() => {
@@ -277,12 +279,21 @@ export default function FlightAssignmentScreen({ initialSupervisor }: FlightAssi
       )
     }
 
-    // Sort by STD descending (most recent first)
-    // Note: We don't have date info in FlightAssignment, so we'll sort by STD time only
+    // Sort: Unassigned flights first (by STD descending), then assigned flights at bottom (by STD descending)
+    // A flight is "assigned" when both name AND sector are filled
     return filtered.sort((a, b) => {
+      const aIsAssigned = !!(a.name && a.sector)
+      const bIsAssigned = !!(b.name && b.sector)
+      
+      // Assigned flights go to the bottom
+      if (aIsAssigned !== bIsAssigned) {
+        return aIsAssigned ? 1 : -1
+      }
+      
+      // Within the same group, sort by STD descending (most recent first)
       const hoursA = parseStdToHours(a.std)
       const hoursB = parseStdToHours(b.std)
-      return hoursB - hoursA // Descending - latest time first
+      return hoursB - hoursA
     })
   }, [flightAssignments, shiftFilter, periodFilter, waveFilter, searchQuery])
 
@@ -424,14 +435,30 @@ export default function FlightAssignmentScreen({ initialSupervisor }: FlightAssi
   }, [supervisorOptions, selectedSupervisorId])
 
   const handleNameChange = (flight: string, name: string) => {
+    // Save scroll position before the update so user view doesn't follow assigned flight
+    if (tableContainerRef.current) {
+      savedScrollPositionRef.current = tableContainerRef.current.scrollTop
+    }
     // Update the context so Buildup Staff can filter
     updateFlightAssignment(flight, name)
   }
 
   const handleSectorChange = (flight: string, sector: string) => {
+    // Save scroll position before the update so user view doesn't follow assigned flight
+    if (tableContainerRef.current) {
+      savedScrollPositionRef.current = tableContainerRef.current.scrollTop
+    }
     // Update sector in context assignments
     updateFlightAssignmentSector(flight, sector)
   }
+
+  // Restore scroll position after assignments change (to prevent view from following assigned flight)
+  useEffect(() => {
+    if (savedScrollPositionRef.current !== null && tableContainerRef.current) {
+      tableContainerRef.current.scrollTop = savedScrollPositionRef.current
+      savedScrollPositionRef.current = null
+    }
+  }, [filteredAssignments])
 
   // Calculate pending flights by category (based on flight number ranges)
   const pendingByCategory: Record<string, { count: number; color: string }> = {}
@@ -755,7 +782,7 @@ export default function FlightAssignmentScreen({ initialSupervisor }: FlightAssi
             )}
           </div>
         </div>
-        <div className="mx-2 rounded-lg border border-gray-200 overflow-x-auto">
+        <div ref={tableContainerRef} className="mx-2 rounded-lg border border-gray-200 overflow-x-auto overflow-y-auto max-h-[calc(100vh-280px)]">
           <div className="bg-white">
             <table className="w-full">
               <thead>
