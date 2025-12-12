@@ -221,11 +221,10 @@ function determinePeriodAndWave(std: string): { period: PeriodType; wave: WaveTy
   return { period: "early-morning", wave: null, shiftType: "night" }
 }
 
-// Extract route from pax field (e.g., "DXB/MAA/0/23/251" -> "MAA")
-function extractRoute(pax: string): string {
-  if (!pax) return ""
-  const parts = pax.split("/")
-  return parts[1] || ""
+// Get route from pax field directly (e.g., "DXB/MAA/0/23/251" or "DXB/MXP")
+// This matches how it's displayed in Load Plans screen
+function getRoute(pax: string): string {
+  return pax || ""
 }
 
 // Calculate ULD breakdown from actual flight data
@@ -344,7 +343,7 @@ export default function IncomingWorkloadScreen() {
         flight: plan.flight,
         std: plan.std,
         date: plan.date,
-        route: extractRoute(plan.pax),
+        route: getRoute(plan.pax),
         uldBreakdown: originalBreakdown, // Keep for backward compatibility
         gcrBreakdown,
         pilPerBreakdown,
