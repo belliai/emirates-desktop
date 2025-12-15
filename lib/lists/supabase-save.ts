@@ -292,10 +292,15 @@ export async function saveListsDataToSupabase({
     // Ensure required fields are not null
     const flightNumber = results.header.flightNumber?.trim() || "UNKNOWN"
     
+    // Detect if this is a REVISED (CORRECT VERSION) or ADDITIONAL load plan
+    const isCorrectVersion = results.header.isCorrectVersion === true
+    console.log(`[v0] Load plan mode: ${isCorrectVersion ? 'REVISED (CORRECT VERSION)' : 'ADDITIONAL'}`)
+    
     console.log("[v0] Parsed data for load_plan:", {
       flight_number: flightNumber,
       flight_date: flightDateStr,
       date_original: results.header.date,
+      isCorrectVersion,
     })
 
     // Check if load plan with this flight_number already exists
@@ -764,24 +769,30 @@ export async function saveListsDataToSupabase({
           }
           
           // Items that exist but not in new shipments - RECORD AS DELETED
-          // These items will remain in the database with their original revision
-          // But we record them as 'deleted' in load_plan_changes so they can be displayed with strikethrough
-          existingItemsMap.forEach((existingItem, itemKey) => {
-            if (!newShipmentsMap.has(itemKey)) {
-              // Item exists but not in new shipments - keep it in database, but record as deleted
-              changesToSave.push({
-                changeType: 'deleted',
-                itemType: 'awb',
-                originalItemId: existingItem.id,
-                serialNumber: existingItem.serial_number,
-                originalData: existingItem,
-              })
-              
-              if (existingItem.serial_number === 1) {
-                console.log(`[v0] Item 001 exists but not in new shipments - will be kept in database and recorded as deleted`)
+          // Only record deleted items if this is a REVISED load plan (CORRECT VERSION)
+          // For ADDITIONAL load plans, we just add new items without marking existing as deleted
+          if (isCorrectVersion) {
+            // These items will remain in the database with their original revision
+            // But we record them as 'deleted' in load_plan_changes so they can be displayed with strikethrough
+            existingItemsMap.forEach((existingItem, itemKey) => {
+              if (!newShipmentsMap.has(itemKey)) {
+                // Item exists but not in new shipments - keep it in database, but record as deleted
+                changesToSave.push({
+                  changeType: 'deleted',
+                  itemType: 'awb',
+                  originalItemId: existingItem.id,
+                  serialNumber: existingItem.serial_number,
+                  originalData: existingItem,
+                })
+                
+                if (existingItem.serial_number === 1) {
+                  console.log(`[v0] Item 001 exists but not in new shipments - will be kept in database and recorded as deleted`)
+                }
               }
-            }
-          })
+            })
+          } else {
+            console.log("[v0] ADDITIONAL mode: skipping deleted items recording - existing items will remain unchanged")
+          }
           
           console.log(`[v0] 🔍 Step 2: Categorized items:`, {
             toUpdate: itemsToUpdate.length,
@@ -901,7 +912,9 @@ export async function saveListsDataToSupabase({
     }
 
     // 5. Update existing items that have changes
-    if (itemsToUpdate.length > 0) {
+    // Only update existing items in REVISED mode (CORRECT VERSION)
+    // In ADDITIONAL mode, we only insert new items and keep existing items unchanged
+    if (isCorrectVersion && itemsToUpdate.length > 0) {
       console.log(`[v0] 🔍 Step 5: Updating ${itemsToUpdate.length} existing items with changes`)
       
       // Fetch existing items to preserve additional_data values
@@ -956,6 +969,8 @@ export async function saveListsDataToSupabase({
       }
       
       console.log(`[v0] ✅ Step 5 Complete: Updated ${itemsToUpdate.length} items`)
+    } else if (!isCorrectVersion && itemsToUpdate.length > 0) {
+      console.log(`[v0] ADDITIONAL mode: skipping ${itemsToUpdate.length} item updates - existing items will remain unchanged`)
     }
 
     // 6. Insert new items (items that don't exist in existing)
@@ -1138,7 +1153,7 @@ export async function saveListsDataToSupabase({
       
       let { error: itemsError } = await supabase.from("load_plan_items").insert(loadPlanItems)
       
-      // Log if item 001 was inserted
+      // Log if item 001 was inserted (only relevant for new load plans or REVISED mode)
       const item001 = loadPlanItems.find(item => item.serial_number === 1)
       if (item001) {
         console.log(`[v0] ✅ Item 001 included in insert batch:`, {
@@ -1147,9 +1162,13 @@ export async function saveListsDataToSupabase({
           origin_destination: item001.origin_destination,
           weight: item001.weight,
         })
+      } else if (!isCorrectVersion && existingLoadPlanId) {
+        // In ADDITIONAL mode, item 001 typically already exists - this is expected
+        console.log(`[v0] ℹ️ ADDITIONAL mode: Item 001 not in insert batch (likely already exists in database)`)
+        console.log(`[v0] Items being inserted (new items only):`, loadPlanItems.map(item => item.serial_number).slice(0, 10))
       } else {
-        console.error(`[v0] ❌ Item 001 NOT found in items to insert!`)
-        console.error(`[v0] Available serial numbers in batch:`, loadPlanItems.map(item => item.serial_number).slice(0, 10))
+        console.warn(`[v0] ⚠️ Item 001 not found in items to insert`)
+        console.log(`[v0] Available serial numbers in batch:`, loadPlanItems.map(item => item.serial_number).slice(0, 10))
       }
 
       // If error occurs, it might be because additional_data or is_ramp_transfer field doesn't exist yet
@@ -1213,7 +1232,7 @@ export async function saveListsDataToSupabase({
       } else {
         console.log(`[v0] ✅ Successfully inserted ${loadPlanItems.length} load_plan_items`)
         
-        // Verify item 001 was inserted
+        // Verify item 001 was inserted (only check if it was expected to be in the batch)
         const insertedItem001 = loadPlanItems.find(item => item.serial_number === 1)
         if (insertedItem001) {
           console.log(`[v0] ✅ Item 001 successfully inserted:`, {
@@ -1223,8 +1242,9 @@ export async function saveListsDataToSupabase({
             weight: insertedItem001.weight,
             revision: insertedItem001.revision,
           })
-        } else {
-          console.error(`[v0] ❌ Item 001 was NOT in the inserted items!`)
+        } else if (!isCorrectVersion && existingLoadPlanId) {
+          // In ADDITIONAL mode, item 001 typically already exists - this is expected
+          console.log(`[v0] ℹ️ ADDITIONAL mode: Item 001 already exists, only new items were inserted`)
         }
       }
     }
