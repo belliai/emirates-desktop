@@ -3,6 +3,11 @@ import { extractImagesFromDOCX } from "./file-extractors"
 import { detectCriticalFromImages } from "./ocr-detector"
 
 export function parseHeader(content: string): LoadPlanHeader {
+  // Detect "CORRECT VERSION" - indicates revised load plan (not additional)
+  // Check first 10 lines for the pattern like "***** CORRECT VERSION *****"
+  const firstLines = content.split("\n").slice(0, 10).join("\n")
+  const isCorrectVersion = /\*+\s*CORRECT\s+VERSION\s*\*+/i.test(firstLines)
+  
   const flightMatch = content.match(/EK\s*(\d{4})/i)
   const flightNumber = flightMatch ? `EK${flightMatch[1]}` : ""
 
@@ -139,6 +144,7 @@ export function parseHeader(content: string): LoadPlanHeader {
     uldVersion: uldVersion || undefined,
     headerWarning: headerWarning || undefined,
     isCritical: isCritical === true ? true : undefined, // Explicitly set to true or undefined
+    isCorrectVersion: isCorrectVersion === true ? true : undefined, // true if "CORRECT VERSION" header found (revised mode)
   }
 }
 

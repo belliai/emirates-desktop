@@ -11,6 +11,7 @@ export interface LoadPlanHeader {
   uldVersion?: string
   headerWarning?: string
   isCritical?: boolean // Flag to indicate if document has CRITICAL stamp
+  isCorrectVersion?: boolean // Flag to indicate if document has "CORRECT VERSION" header (revised mode)
 }
 
 export interface Shipment {

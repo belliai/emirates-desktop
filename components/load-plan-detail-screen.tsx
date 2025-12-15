@@ -1025,39 +1025,17 @@ function CombinedTable({
     })
   })
   
-  // CRITICAL: Sort ALL items GLOBALLY by additional_data DESC first (red on top), then by serial_number
-  // Priority 1: additional_data DESC (true/red first)
-  // Priority 2: serial_number ASC (lower number first)
-  allItems.sort((a, b) => {
-    const aAdditional = a.awb?.additional_data === true
-    const bAdditional = b.awb?.additional_data === true
-    
-    // FIRST PRIORITY: additional_data DESC (true first/red on top)
-    if (aAdditional !== bAdditional) {
-      return bAdditional ? 1 : -1 // DESC: additional_data = true first (red on top)
-    }
-    
-    // SECOND PRIORITY: serial_number ASC (lower number first)
-    const aSer = parseInt(a.awb.ser) || 0
-    const bSer = parseInt(b.awb.ser) || 0
-    return aSer - bSer
-  })
-  
-  // Separate red items (additional_data = true) and original items (additional_data = false)
-  const redItems = allItems.filter(item => item.awb?.additional_data === true)
-  const originalItems = allItems.filter(item => !(item.awb?.additional_data === true))
-  
-  // Group red items by sector
-  const redItemsBySector = new Map<string, {
+  // Group ALL items by sector (keeping red and original together in same sector)
+  const itemsBySector = new Map<string, {
     regular: FlatItem[]
     rampTransfer: FlatItem[]
   }>()
   
-  redItems.forEach((item) => {
-    if (!redItemsBySector.has(item.sectorName)) {
-      redItemsBySector.set(item.sectorName, { regular: [], rampTransfer: [] })
+  allItems.forEach((item) => {
+    if (!itemsBySector.has(item.sectorName)) {
+      itemsBySector.set(item.sectorName, { regular: [], rampTransfer: [] })
     }
-    const group = redItemsBySector.get(item.sectorName)!
+    const group = itemsBySector.get(item.sectorName)!
     if (item.isRampTransfer) {
       group.rampTransfer.push(item)
     } else {
@@ -1065,29 +1043,31 @@ function CombinedTable({
     }
   })
   
-  // Group original items by sector
-  const originalItemsBySector = new Map<string, {
-    regular: FlatItem[]
-    rampTransfer: FlatItem[]
-  }>()
-  
-  originalItems.forEach((item) => {
-    if (!originalItemsBySector.has(item.sectorName)) {
-      originalItemsBySector.set(item.sectorName, { regular: [], rampTransfer: [] })
+  // Sort items within each sector: red items (additional_data = true) first, then by serial_number
+  itemsBySector.forEach((group) => {
+    const sortFn = (a: FlatItem, b: FlatItem) => {
+      const aAdditional = a.awb?.additional_data === true
+      const bAdditional = b.awb?.additional_data === true
+      
+      // FIRST PRIORITY: additional_data DESC (true first/red on top)
+      if (aAdditional !== bAdditional) {
+        return bAdditional ? 1 : -1 // DESC: additional_data = true first (red on top)
+      }
+      
+      // SECOND PRIORITY: serial_number ASC (lower number first)
+      const aSer = parseInt(a.awb.ser) || 0
+      const bSer = parseInt(b.awb.ser) || 0
+      return aSer - bSer
     }
-    const group = originalItemsBySector.get(item.sectorName)!
-    if (item.isRampTransfer) {
-      group.rampTransfer.push(item)
-    } else {
-      group.regular.push(item)
-    }
+    group.regular.sort(sortFn)
+    group.rampTransfer.sort(sortFn)
   })
   
   // Convert to format for rendering
   const sectorOrder = editedPlan.sectors.map(s => s.sector || "UNKNOWN")
   
-  // Prepare red sectors (sectors with red items)
-  const redSectors = Array.from(redItemsBySector.entries()).map(([sectorName, group]) => ({
+  // Prepare sectors for rendering (single list, each sector appears once)
+  const sortedSectors = Array.from(itemsBySector.entries()).map(([sectorName, group]) => ({
     sectorName,
     regular: group.regular.map(item => ({
       awb: item.awb,
@@ -1111,35 +1091,6 @@ function CombinedTable({
     if (bIndex === -1) return -1
     return aIndex - bIndex
   })
-  
-  // Prepare original sectors (sectors with original items)
-  const originalSectors = Array.from(originalItemsBySector.entries()).map(([sectorName, group]) => ({
-    sectorName,
-    regular: group.regular.map(item => ({
-      awb: item.awb,
-      sectorIndex: item.sectorIndex,
-      uldSectionIndex: item.uldSectionIndex,
-      awbIndex: item.awbIndex,
-      uld: item.uld,
-    })),
-    rampTransfer: group.rampTransfer.map(item => ({
-      awb: item.awb,
-      sectorIndex: item.sectorIndex,
-      uldSectionIndex: item.uldSectionIndex,
-      awbIndex: item.awbIndex,
-      uld: item.uld,
-    })),
-  })).sort((a, b) => {
-    const aIndex = sectorOrder.indexOf(a.sectorName)
-    const bIndex = sectorOrder.indexOf(b.sectorName)
-    if (aIndex === -1 && bIndex === -1) return 0
-    if (aIndex === -1) return 1
-    if (bIndex === -1) return -1
-    return aIndex - bIndex
-  })
-  
-  // Combine: red sectors first, then original sectors
-  const sortedSectors = [...redSectors, ...originalSectors]
   
   return (
     <>
