@@ -543,7 +543,7 @@ export default function IncomingWorkloadScreen() {
         {/* Header */}
         <div className="mb-4 px-2">
           <h2 className="text-lg font-semibold text-gray-900">Anticipated Incoming Workload</h2>
-          <p className="text-sm text-gray-500 mt-1">Flights in Upload Load Plans without Flights in Build-up Allocation, D-12</p>
+          <p className="text-sm text-gray-500 mt-1">Flights in Upload Load Plans without Flights in Flight Assignment, D-12</p>
         </div>
 
         {/* Filters */}

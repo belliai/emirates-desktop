@@ -8,7 +8,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
 import { useLoadPlans, type ShiftType, type PeriodType, type WaveType } from "@/lib/load-plan-context"
-import { getOperators, cacheStaffMobiles, getMobileForStaff, parseStaffName, type BuildupStaff } from "@/lib/buildup-staff"
+import { getOperators, getSupervisors, cacheStaffMobiles, getMobileForStaff, parseStaffName, type BuildupStaff } from "@/lib/buildup-staff"
 import { determinePeriodAndWave, parseTimeToMinutes, normalizeRoutingToOriginDestination, getOriginDestinationColor, getFlightRegion } from "@/lib/flight-allocation-helpers"
 import { getLoadPlanDetailFromSupabase } from "@/lib/load-plans-supabase"
 import type { LoadPlanDetail } from "./load-plan-types"
@@ -137,6 +137,8 @@ export default function AllocationAssignmentScreen() {
   const [periodFilter, setPeriodFilter] = useState<PeriodType>("all")
   const [waveFilter, setWaveFilter] = useState<WaveType>("all")
   const [operators, setOperators] = useState<BuildupStaff[]>([])
+  const [supervisors, setSupervisors] = useState<BuildupStaff[]>([])
+  const [selectedSupervisorId, setSelectedSupervisorId] = useState<string>("")
   const [showAddFilterDropdown, setShowAddFilterDropdown] = useState(false)
   const [showViewOptions, setShowViewOptions] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
@@ -183,12 +185,17 @@ export default function AllocationAssignmentScreen() {
   }, [shiftFilter])
 
   useEffect(() => {
-    async function loadOperators() {
-      const ops = await getOperators()
+    async function loadStaff() {
+      const [ops, sups] = await Promise.all([getOperators(), getSupervisors()])
       setOperators(ops)
+      setSupervisors(sups)
       cacheStaffMobiles(ops)
+      // Set first supervisor as default
+      if (sups.length > 0) {
+        setSelectedSupervisorId(sups[0].staff_no.toString())
+      }
     }
-    loadOperators()
+    loadStaff()
   }, [])
 
   useEffect(() => {
@@ -430,22 +437,26 @@ export default function AllocationAssignmentScreen() {
     }
   })
 
-  const handleAssignStaff = (flightNo: string, staffName: string) => {
+  const handleAssignStaff = (flightNo: string, staffName: string, operatorStaffNo: number) => {
     const normalizedName = staffName.toLowerCase()
     const mobile = getMobileForStaff(normalizedName) || ""
 
     // Find the actual load plan flight key (with leading zeros) if it exists
-    // This is critical: load plans use "EK0500" but we might have "500" as flightNo
     const matchingLoadPlan = loadPlans.find((lp) => {
       const match = lp.flight.match(/EK0?(\d+)/)
       if (!match) return false
       return parseInt(match[1], 10) === parseInt(flightNo, 10)
     })
 
-    // Use the actual load plan flight key if found, otherwise construct with padding
     const flightKey = matchingLoadPlan?.flight || `EK${flightNo.padStart(4, "0")}`
 
-    updateFlightAssignment(flightKey, normalizedName)
+    // Get supervisor staff_no from dropdown
+    const supervisorStaffNo = selectedSupervisorId ? parseInt(selectedSupervisorId, 10) : undefined
+
+    console.log(`[AllocationAssignment] Assigning: flight=${flightKey}, assigned_to=${operatorStaffNo}, assigned_by=${supervisorStaffNo}`)
+
+    // Pass staff_no values to update load_plans table
+    updateFlightAssignment(flightKey, normalizedName, operatorStaffNo, supervisorStaffNo)
     updateBupAllocationStaff(flightNo, normalizedName, mobile)
   }
 
@@ -805,7 +816,7 @@ export default function AllocationAssignmentScreen() {
                           <StaffSelector
                             currentStaff={row.staff}
                             operatorOptions={operatorOptions}
-                            onSelect={(name) => handleAssignStaff(row.flightNo, name)}
+                            onSelect={(name, staffNo) => handleAssignStaff(row.flightNo, name, staffNo)}
                           />
                         </td>
                         <td className="px-3 py-3 whitespace-nowrap text-sm text-gray-700">
@@ -846,7 +857,7 @@ export default function AllocationAssignmentScreen() {
 type StaffSelectorProps = {
   currentStaff: string
   operatorOptions: OperatorOption[]
-  onSelect: (name: string) => void
+  onSelect: (name: string, staffNo: number) => void
 }
 
 function StaffSelector({ currentStaff, operatorOptions, onSelect }: StaffSelectorProps) {
@@ -884,7 +895,7 @@ function StaffSelector({ currentStaff, operatorOptions, onSelect }: StaffSelecto
                   key={op.staff_no}
                   value={op.displayName}
                   onSelect={() => {
-                    onSelect(op.displayName)
+                    onSelect(op.displayName, op.staff_no)
                     setOpen(false)
                     setSearch("")
                   }}

@@ -4,6 +4,7 @@ import { createContext, useContext, useState, ReactNode } from "react"
 import { useNotifications } from "./notification-context"
 import { getSupervisors, findStaffByName, generateMobileNumber } from "./buildup-staff"
 import { createClient } from "./supabase/client"
+import { updateLoadPlanAssignment } from "./load-plans-supabase"
 
 export type LoadPlan = {
   flight: string
@@ -61,7 +62,7 @@ type LoadPlanContextType = {
   bupAllocations: BUPAllocation[]
   setLoadPlans: (plans: LoadPlan[]) => void
   addLoadPlan: (plan: LoadPlan) => void
-  updateFlightAssignment: (flight: string, name: string) => void
+  updateFlightAssignment: (flight: string, name: string, assignedToStaffNo?: number, assignedByStaffNo?: number) => void
   updateFlightAssignmentSector: (flight: string, sector: string) => void
   sendToFlightAssignment: (flight: string) => void
   getFlightsByStaff: (staffName: string) => LoadPlan[]
@@ -297,7 +298,7 @@ export function LoadPlanProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  const updateFlightAssignment = async (flight: string, name: string) => {
+  const updateFlightAssignment = async (flight: string, name: string, assignedToStaffNo?: number, assignedByStaffNo?: number) => {
     let previousAssignment: FlightAssignment | undefined
     let wasAssigned = false
     let isNewAssignment = false
@@ -338,12 +339,21 @@ export function LoadPlanProvider({ children }: { children: ReactNode }) {
       ]
     })
 
-    // Sync assignment to Supabase for mobile app
+    // Sync assignment to Supabase for mobile app (bup_allocations table)
     if (name) {
       try {
         await syncAssignmentToSupabase(flight, name)
       } catch (error) {
         console.error("[LoadPlan] Error syncing assignment to Supabase:", error)
+      }
+    }
+
+    // Sync assigned_to and assigned_by to load_plans table
+    if (assignedToStaffNo && assignedByStaffNo) {
+      console.log(`[LoadPlan] Syncing to load_plans: assigned_to=${assignedToStaffNo}, assigned_by=${assignedByStaffNo}`)
+      const result = await updateLoadPlanAssignment(flight, assignedToStaffNo, assignedByStaffNo)
+      if (!result.success) {
+        console.error(`[LoadPlan] Failed to update load_plans:`, result.error)
       }
     }
 
