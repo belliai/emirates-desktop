@@ -696,12 +696,12 @@ export async function deleteLoadPlanFromSupabase(flightNumber: string): Promise<
  * Update assigned_to and assigned_by for a load plan in Supabase
  * @param flightNumber - Flight number (e.g., "EK0801" or "EK801")
  * @param assignedTo - staff_no of the operator (COA) being assigned
- * @param assignedBy - staff_no of the supervisor (CHS) making the assignment
+ * @param assignedBy - staff_no of the supervisor (CHS) making the assignment (0 or undefined means no login)
  */
 export async function updateLoadPlanAssignment(
   flightNumber: string,
   assignedTo: number,
-  assignedBy: number
+  assignedBy: number | undefined
 ): Promise<{ success: boolean; error?: string }> {
   try {
     const isSupabaseConfigured = 
@@ -718,8 +718,6 @@ export async function updateLoadPlanAssignment(
     const supabase = createClient()
     const flightNo = flightNumber.replace(/^EK0?/, "")
 
-    console.log(`[LoadPlans] Updating load_plans: flight=${flightNumber}, assigned_to=${assignedTo}, assigned_by=${assignedBy}`)
-
     // Find the load plan first
     const { data: existing, error: findError } = await supabase
       .from("load_plans")
@@ -733,10 +731,21 @@ export async function updateLoadPlanAssignment(
       return { success: false, error: "Load plan not found" }
     }
 
-    // Update by ID
+    // Update by ID - only update assigned_by if provided (user is logged in)
+    const updateData: { assigned_to: number; assigned_by?: number | null } = {
+      assigned_to: assignedTo,
+    }
+    
+    // If assignedBy is provided and not 0, set it; otherwise leave it as null
+    if (assignedBy && assignedBy !== 0) {
+      updateData.assigned_by = assignedBy
+    } else {
+      updateData.assigned_by = null
+    }
+
     const { error: updateError } = await supabase
       .from("load_plans")
-      .update({ assigned_to: assignedTo, assigned_by: assignedBy })
+      .update(updateData)
       .eq("id", existing.id)
 
     if (updateError) {
