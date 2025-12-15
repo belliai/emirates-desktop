@@ -15,7 +15,7 @@ import { useLoadPlans } from "@/lib/load-plan-context"
 import type { LoadPlanDetail, AWBRow, ULDSection } from "./load-plan-types"
 import { ULDNumberModal, type ULDEntry } from "./uld-number-modal"
 import { parseULDSection, formatULDSection, formatULDSectionFromEntries, formatULDSectionFromCheckedEntries } from "@/lib/uld-parser"
-import { getULDEntriesFromStorage, saveULDEntriesToStorage } from "@/lib/uld-storage"
+import { getULDEntriesFromStorage, saveULDEntriesToStorage, getULDEntriesFromSupabase, saveULDEntriesToSupabase } from "@/lib/uld-storage"
 import type { WorkArea, PilPerSubFilter } from "@/lib/work-area-filter-utils"
 import { shouldIncludeULDSection } from "@/lib/work-area-filter-utils"
 import { getLoadPlanChanges, type LoadPlanChange } from "@/lib/load-plan-diff"
@@ -161,11 +161,28 @@ export default function LoadPlanDetailScreen({ loadPlan, onBack, onSave, onNavig
   const [loadPlanId, setLoadPlanId] = useState<string | null>(null)
   const [deletedItems, setDeletedItems] = useState<AWBRow[]>([]) // Deleted items from original load plan
   
-  // Load ULD entries from localStorage on mount (supports both old format string[] and new format ULDEntry[])
-  // Uses utility function to ensure checked state is preserved
+  // Load ULD entries from localStorage initially (for immediate display)
+  // Then fetch from Supabase to ensure we have the latest data synced across devices
   const [uldEntriesFromStorage, setUldEntriesFromStorage] = useState<Map<string, ULDEntry[]>>(() => {
     return getULDEntriesFromStorage(loadPlan.flight, loadPlan.sectors)
   })
+  
+  // Fetch ULD entries from Supabase on mount (for cross-device sync)
+  useEffect(() => {
+    const fetchULDEntriesFromDB = async () => {
+      try {
+        const entries = await getULDEntriesFromSupabase(loadPlan.flight, loadPlan.sectors)
+        if (entries.size > 0) {
+          setUldEntriesFromStorage(entries)
+          console.log(`[LoadPlanDetail] Loaded ${entries.size} ULD sections from Supabase for ${loadPlan.flight}`)
+        }
+      } catch (error) {
+        console.error(`[LoadPlanDetail] Error fetching ULD entries from Supabase:`, error)
+      }
+    }
+    
+    fetchULDEntriesFromDB()
+  }, [loadPlan.flight])
   
   // Fetch load plan changes on mount
   useEffect(() => {
