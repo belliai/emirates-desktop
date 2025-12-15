@@ -739,3 +739,82 @@ export async function updateLoadPlanAssignment(
   }
 }
 
+// BUP Allocation type for desktop
+export type BUPAllocationFromSupabase = {
+  carrier: string
+  flightNo: string
+  etd: string
+  routing: string
+  staff: string
+  mobile: string
+  acType: string
+  regnNo: string
+  shiftType?: string
+  period?: string
+  wave?: string | null
+  date?: string | null
+}
+
+/**
+ * Fetch BUP allocations from Supabase
+ * Used to load persisted flight assignments on app startup
+ */
+export async function getBupAllocationsFromSupabase(): Promise<BUPAllocationFromSupabase[]> {
+  try {
+    const isSupabaseConfigured = 
+      process.env.NEXT_PUBLIC_SUPABASE_URL && 
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY &&
+      process.env.NEXT_PUBLIC_SUPABASE_URL !== "https://placeholder.supabase.co" &&
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY !== "placeholder-anon-key"
+
+    if (!isSupabaseConfigured) {
+      console.log("[BupAllocations] Supabase not configured, returning empty array")
+      return []
+    }
+
+    const supabase = createClient()
+    
+    const { data: allocations, error } = await supabase
+      .from("bup_allocations")
+      .select("*")
+      .order("etd", { ascending: true })
+
+    if (error) {
+      console.error("[BupAllocations] Error fetching allocations:", {
+        code: error.code,
+        message: error.message,
+        details: error.details,
+        hint: error.hint
+      })
+      return []
+    }
+
+    if (!allocations || allocations.length === 0) {
+      console.log("[BupAllocations] No BUP allocations found in database")
+      return []
+    }
+
+    // Transform to BUPAllocationFromSupabase format
+    const transformed: BUPAllocationFromSupabase[] = allocations.map((alloc: any) => ({
+      carrier: alloc.carrier || "EK",
+      flightNo: alloc.flight_no || "",
+      etd: alloc.etd || "",
+      routing: alloc.routing || "",
+      staff: alloc.staff || "",
+      mobile: alloc.mobile || "",
+      acType: alloc.ac_type || alloc.aircraft_type || "",
+      regnNo: alloc.regn_no || alloc.aircraft_registration || "",
+      shiftType: alloc.shift_type,
+      period: alloc.period,
+      wave: alloc.wave,
+      date: alloc.date || alloc.flight_date,
+    }))
+
+    console.log(`[BupAllocations] Successfully fetched ${transformed.length} BUP allocations from Supabase`)
+    return transformed
+  } catch (error) {
+    console.error("[BupAllocations] Error fetching BUP allocations:", error)
+    return []
+  }
+}
+
