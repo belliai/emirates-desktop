@@ -32,11 +32,13 @@ import SettingsScreening from "@/components/settings-screening"
 import { FlightProvider, useFlights } from "@/lib/flight-context"
 import { LoadPlanProvider } from "@/lib/load-plan-context"
 import { NotificationProvider } from "@/lib/notification-context"
+import { UserProvider, useUser } from "@/lib/user-context"
 import type { ULD } from "@/lib/flight-data"
 import { findStaffByStaffNo } from "@/lib/buildup-staff"
 
 function AppContent() {
   const [isLoggedIn, setIsLoggedIn] = useState(false)
+  const { setCurrentUser } = useUser()
   const [currentScreen, setCurrentScreen] = useState<
     | "desktop"
     | "history"
@@ -125,6 +127,10 @@ function AppContent() {
       try {
         const staff = await findStaffByStaffNo(staffId)
         if (staff) {
+          // Store the logged-in user in context
+          setCurrentUser(staff)
+          console.log(`[App] User logged in: ${staff.name} (Staff No: ${staff.staff_no}, Job Code: ${staff.job_code})`)
+          
           if (staff.job_code === "COA") {
             // Route to buildup-staff screen for this staff member
             setBuildupStaffParams({ staff: staff.staff_no.toString() })
@@ -263,12 +269,14 @@ function AppContent() {
 
 export default function Page() {
   return (
-    <NotificationProvider>
-      <FlightProvider>
-        <LoadPlanProvider>
-          <AppContent />
-        </LoadPlanProvider>
-      </FlightProvider>
-    </NotificationProvider>
+    <UserProvider>
+      <NotificationProvider>
+        <FlightProvider>
+          <LoadPlanProvider>
+            <AppContent />
+          </LoadPlanProvider>
+        </FlightProvider>
+      </NotificationProvider>
+    </UserProvider>
   )
 }

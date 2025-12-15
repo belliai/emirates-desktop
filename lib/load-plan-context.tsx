@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useState, ReactNode } from "react"
 import { useNotifications } from "./notification-context"
-import { getSupervisors, findStaffByName, generateMobileNumber } from "./buildup-staff"
+import { getSupervisors, findStaffByName, findStaffByStaffNo, generateMobileNumber } from "./buildup-staff"
 import { createClient } from "./supabase/client"
 import { updateLoadPlanAssignment } from "./load-plans-supabase"
 
@@ -349,11 +349,24 @@ export function LoadPlanProvider({ children }: { children: ReactNode }) {
     }
 
     // Sync assigned_to and assigned_by to load_plans table
-    if (assignedToStaffNo && assignedByStaffNo) {
-      console.log(`[LoadPlan] Syncing to load_plans: assigned_to=${assignedToStaffNo}, assigned_by=${assignedByStaffNo}`)
-      const result = await updateLoadPlanAssignment(flight, assignedToStaffNo, assignedByStaffNo)
-      if (!result.success) {
-        console.error(`[LoadPlan] Failed to update load_plans:`, result.error)
+    // Only update if assignedToStaffNo is provided (assignedByStaffNo can be undefined/null if no login)
+    if (assignedToStaffNo) {
+      try {
+        // Fetch names for logging
+        const assignedToStaff = await findStaffByStaffNo(assignedToStaffNo)
+        const assignedByStaff = assignedByStaffNo ? await findStaffByStaffNo(assignedByStaffNo) : null
+        
+        const assignedToName = assignedToStaff?.name || `Staff No ${assignedToStaffNo}`
+        const assignedByName = assignedByStaff?.name || (assignedByStaffNo ? `Staff No ${assignedByStaffNo}` : "No login")
+        
+        console.log(`[LoadPlan] ${flight} is assigned to ${assignedToName} (Staff No: ${assignedToStaffNo}), assigned by ${assignedByName}${assignedByStaffNo ? ` (Staff No: ${assignedByStaffNo})` : ""}`)
+        
+        const result = await updateLoadPlanAssignment(flight, assignedToStaffNo, assignedByStaffNo || 0)
+        if (!result.success) {
+          console.error(`[LoadPlan] Failed to update load_plans:`, result.error)
+        }
+      } catch (error) {
+        console.error("[LoadPlan] Error syncing assignment:", error)
       }
     }
 

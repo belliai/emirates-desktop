@@ -8,12 +8,13 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
 import { useLoadPlans, type ShiftType, type PeriodType, type WaveType } from "@/lib/load-plan-context"
-import { getOperators, getSupervisors, cacheStaffMobiles, getMobileForStaff, parseStaffName, type BuildupStaff } from "@/lib/buildup-staff"
+import { getOperators, getSupervisors, cacheStaffMobiles, getMobileForStaff, parseStaffName, findStaffByStaffNo, type BuildupStaff } from "@/lib/buildup-staff"
 import { determinePeriodAndWave, parseTimeToMinutes, normalizeRoutingToOriginDestination, getOriginDestinationColor, getFlightRegion } from "@/lib/flight-allocation-helpers"
 import { getLoadPlanDetailFromSupabase } from "@/lib/load-plans-supabase"
 import type { LoadPlanDetail } from "./load-plan-types"
 import { parseULDSection } from "@/lib/uld-parser"
 import { getULDEntriesFromStorage } from "@/lib/uld-storage"
+import { useUser } from "@/lib/user-context"
 
 type CompletionStatus = "green" | "amber" | "red"
 
@@ -128,6 +129,7 @@ function normalizeFlightKey(flight: string): string {
 
 export default function AllocationAssignmentScreen() {
   const { loadPlans, flightAssignments, bupAllocations, updateFlightAssignment, updateFlightAssignmentSector, updateBupAllocationStaff } = useLoadPlans()
+  const { currentUser } = useUser()
   const [shiftFilter, setShiftFilter] = useState<ShiftType>(() => {
     if (typeof window === "undefined") return "current"
     const saved = localStorage.getItem("allocations-shift-filter") as ShiftType | null
@@ -144,7 +146,17 @@ export default function AllocationAssignmentScreen() {
   const [searchQuery, setSearchQuery] = useState("")
   const addFilterRef = useRef<HTMLDivElement>(null)
   const viewOptionsRef = useRef<HTMLDivElement>(null)
+  const tableContainerRef = useRef<HTMLDivElement>(null)
+  const savedScrollPositionRef = useRef<number | null>(null)
   const [loadPlanDetailsCache, setLoadPlanDetailsCache] = useState<Map<string, LoadPlanDetail>>(new Map())
+
+  // Restore scroll position after assignments change (to prevent view from following assigned flight)
+  useEffect(() => {
+    if (savedScrollPositionRef.current !== null && tableContainerRef.current) {
+      tableContainerRef.current.scrollTop = savedScrollPositionRef.current
+      savedScrollPositionRef.current = null
+    }
+  }, [flightAssignments])
 
   // Fetch load plan details for completion calculation
   useEffect(() => {
@@ -437,7 +449,12 @@ export default function AllocationAssignmentScreen() {
     }
   })
 
-  const handleAssignStaff = (flightNo: string, staffName: string, operatorStaffNo: number) => {
+  const handleAssignStaff = async (flightNo: string, staffName: string, operatorStaffNo: number) => {
+    // Save scroll position before the update so user view doesn't follow assigned flight
+    if (tableContainerRef.current) {
+      savedScrollPositionRef.current = tableContainerRef.current.scrollTop
+    }
+
     const normalizedName = staffName.toLowerCase()
     const mobile = getMobileForStaff(normalizedName) || ""
 
@@ -450,17 +467,35 @@ export default function AllocationAssignmentScreen() {
 
     const flightKey = matchingLoadPlan?.flight || `EK${flightNo.padStart(4, "0")}`
 
-    // Get supervisor staff_no from dropdown
-    const supervisorStaffNo = selectedSupervisorId ? parseInt(selectedSupervisorId, 10) : undefined
+    // Get assigned_by from logged-in user (if logged in), otherwise leave as undefined (null in DB)
+    const assignedByStaffNo = currentUser?.staff_no
 
-    console.log(`[AllocationAssignment] Assigning: flight=${flightKey}, assigned_to=${operatorStaffNo}, assigned_by=${supervisorStaffNo}`)
+    // Fetch operator and supervisor names for logging
+    let operatorName = staffName
+    let assignedByName = currentUser?.name || "No login"
+
+    try {
+      const operatorStaff = await findStaffByStaffNo(operatorStaffNo)
+      if (operatorStaff) {
+        operatorName = operatorStaff.name
+      }
+    } catch (error) {
+      console.error("[AllocationAssignment] Error fetching operator name:", error)
+    }
+
+    console.log(`[AllocationAssignment] ${flightKey} is assigned to ${operatorName} (Staff No: ${operatorStaffNo}), assigned by ${assignedByName}${assignedByStaffNo ? ` (Staff No: ${assignedByStaffNo})` : ""}`)
 
     // Pass staff_no values to update load_plans table
-    updateFlightAssignment(flightKey, normalizedName, operatorStaffNo, supervisorStaffNo)
+    updateFlightAssignment(flightKey, normalizedName, operatorStaffNo, assignedByStaffNo)
     updateBupAllocationStaff(flightNo, normalizedName, mobile)
   }
 
   const handleSectorChange = (flightNo: string, sector: string) => {
+    // Save scroll position before the update so user view doesn't follow assigned flight
+    if (tableContainerRef.current) {
+      savedScrollPositionRef.current = tableContainerRef.current.scrollTop
+    }
+
     // Find the actual load plan flight key (with leading zeros) if it exists
     const matchingLoadPlan = loadPlans.find((lp) => {
       const match = lp.flight.match(/EK0?(\d+)/)
