@@ -173,6 +173,7 @@ export async function getLoadPlansFromSupabase(): Promise<LoadPlan[]> {
         std: formatTime(plan.std_time),
         uldVersion: plan.uld_version || "",
         ttlPlnUld: plan.total_planned_uld || "",
+        workAreas: plan.work_areas || ["GCR"], // Default to GCR if not set
       }
     })
 

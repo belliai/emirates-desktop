@@ -15,6 +15,7 @@ export type LoadPlan = {
   std: string
   uldVersion: string
   ttlPlnUld: string
+  workAreas?: string[] // Pre-computed work areas: ["GCR"], ["PIL", "PER"], or ["GCR", "PIL", "PER"]
 }
 
 export type FlightAssignment = {

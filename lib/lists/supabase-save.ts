@@ -1,5 +1,59 @@
 import { createClient } from "@/lib/supabase/client"
 import type { ListsResults, LoadPlanHeader, Shipment } from "./types"
+import { PIL_PER_SHC_CODES } from "@/lib/work-area-filter-utils"
+
+/**
+ * Compute work areas from shipments based on their SHC codes
+ * Returns an array like ["GCR"], ["PIL", "PER"], or ["GCR", "PIL", "PER"]
+ */
+function computeWorkAreasFromShipments(shipments: Shipment[]): string[] {
+  if (!shipments || shipments.length === 0) {
+    return ["GCR"] // Default to GCR if no shipments
+  }
+
+  let hasGCR = false
+  let hasPIL = false
+  let hasPER = false
+
+  for (const shipment of shipments) {
+    const shc = shipment.shc?.trim().toUpperCase() || ""
+    
+    if (!shc) {
+      // No SHC means GCR
+      hasGCR = true
+      continue
+    }
+
+    // Check if SHC matches any PIL/PER codes
+    const isPilPer = PIL_PER_SHC_CODES.some(code => shc === code.toUpperCase())
+    
+    if (isPilPer) {
+      // Check if it's PIL specifically (contains "PIL" in SHC)
+      if (shc.includes("PIL")) {
+        hasPIL = true
+      } else {
+        // It's PER (PIL/PER code but not containing "PIL")
+        hasPER = true
+      }
+    } else {
+      // Not PIL/PER, so it's GCR
+      hasGCR = true
+    }
+  }
+
+  // Build the work areas array
+  const workAreas: string[] = []
+  if (hasGCR) workAreas.push("GCR")
+  if (hasPIL) workAreas.push("PIL")
+  if (hasPER) workAreas.push("PER")
+  
+  // Default to GCR if nothing matched (shouldn't happen, but safety)
+  if (workAreas.length === 0) {
+    workAreas.push("GCR")
+  }
+
+  return workAreas
+}
 
 export interface SaveListsDataParams {
   results: ListsResults
@@ -355,6 +409,10 @@ export async function saveListsDataToSupabase({
     }
 
     // 1. Prepare insert/update data
+    // Compute work areas from shipments' SHC codes
+    const workAreas = computeWorkAreasFromShipments(shipments)
+    console.log("[v0] Computed work areas:", workAreas)
+    
     const loadPlanData: any = {
       flight_number: flightNumber,
       flight_date: flightDateStr,
@@ -372,6 +430,7 @@ export async function saveListsDataToSupabase({
       sector: results.header.sector || null,
       header_warning: results.header.headerWarning || null,
       revision: newRevision,
+      work_areas: workAreas, // Pre-computed work areas for filtering
     }
     
     // Log header data for debugging

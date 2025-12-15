@@ -305,6 +305,34 @@ export default function LoadPlansScreen({ onLoadPlanSelect }: { onLoadPlanSelect
       )
     }
 
+    // Filter by work area (GCR / PIL/PER)
+    if (selectedWorkArea !== "All") {
+      filtered = filtered.filter((plan) => {
+        const planWorkAreas = plan.workAreas || ["GCR"]
+        
+        if (selectedWorkArea === "GCR") {
+          // Show plans that have GCR work area
+          return planWorkAreas.includes("GCR")
+        } else if (selectedWorkArea === "PIL and PER") {
+          // Show plans that have PIL or PER work areas
+          const hasPilPer = planWorkAreas.includes("PIL") || planWorkAreas.includes("PER")
+          
+          // Apply PIL/PER sub-filter if specified
+          if (hasPilPer && pilPerSubFilter && pilPerSubFilter !== "Both") {
+            if (pilPerSubFilter === "PIL only") {
+              return planWorkAreas.includes("PIL")
+            } else if (pilPerSubFilter === "PER only") {
+              return planWorkAreas.includes("PER")
+            }
+          }
+          
+          return hasPilPer
+        }
+        
+        return true
+      })
+    }
+
     // Sort based on selected column and direction
     return filtered.sort((a, b) => {
       let comparison = 0
@@ -340,7 +368,7 @@ export default function LoadPlansScreen({ onLoadPlanSelect }: { onLoadPlanSelect
       // Apply sort direction
       return sortDirection === "asc" ? comparison : -comparison
     })
-  }, [loadPlans, shiftFilter, periodFilter, waveFilter, searchQuery, sortColumn, sortDirection])
+  }, [loadPlans, shiftFilter, periodFilter, waveFilter, searchQuery, sortColumn, sortDirection, selectedWorkArea, pilPerSubFilter])
 
   // Determine if wave filter should be shown
   const showWaveFilter = periodFilter === "late-morning" || periodFilter === "afternoon"
