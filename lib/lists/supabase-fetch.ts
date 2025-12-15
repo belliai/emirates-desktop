@@ -69,7 +69,13 @@ function parseOriginDestination(originDestination: string | null): { origin: str
 }
 
 /**
+ * Dubai/GST timezone constant (UTC+4)
+ */
+const DISPLAY_TIMEZONE = "Asia/Dubai"
+
+/**
  * Format date from YYYY-MM-DD to display format
+ * Displays in Dubai/GST timezone
  */
 function formatDateForDisplay(dateStr: string | null): string {
   if (!dateStr) return ""
@@ -78,9 +84,17 @@ function formatDateForDisplay(dateStr: string | null): string {
     const date = new Date(dateStr)
     if (isNaN(date.getTime())) return dateStr
     
-    const day = date.getDate()
-    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-    const month = months[date.getMonth()]
+    // Use Intl.DateTimeFormat to get parts in Dubai timezone
+    const formatter = new Intl.DateTimeFormat("en-US", {
+      timeZone: DISPLAY_TIMEZONE,
+      day: "numeric",
+      month: "short",
+    })
+    
+    const parts = formatter.formatToParts(date)
+    const day = parts.find(p => p.type === "day")?.value || ""
+    const month = parts.find(p => p.type === "month")?.value || ""
+    
     return `${day} ${month}`
   } catch {
     return dateStr

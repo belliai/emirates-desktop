@@ -3,17 +3,60 @@ import type { LoadPlan } from "@/lib/load-plan-context"
 import type { LoadPlanDetail } from "@/components/load-plan-types"
 
 /**
+ * Dubai/GST timezone constant (UTC+4)
+ * All date displays in the app use this timezone
+ */
+const DISPLAY_TIMEZONE = "Asia/Dubai"
+
+/**
+ * Get date parts in Dubai timezone
+ * Returns day, month, year, hours, minutes, seconds in GST
+ */
+function getDatePartsInDubai(date: Date): {
+  day: number
+  month: number
+  year: number
+  hours: number
+  minutes: number
+  seconds: number
+} {
+  // Use Intl.DateTimeFormat to get parts in Dubai timezone
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    timeZone: DISPLAY_TIMEZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  })
+  
+  const parts = formatter.formatToParts(date)
+  const getPart = (type: string) => parseInt(parts.find(p => p.type === type)?.value || "0", 10)
+  
+  return {
+    day: getPart("day"),
+    month: getPart("month") - 1, // Convert to 0-indexed for consistency with Date.getMonth()
+    year: getPart("year"),
+    hours: getPart("hour"),
+    minutes: getPart("minute"),
+    seconds: getPart("second"),
+  }
+}
+
+/**
  * Format date from YYYY-MM-DD to DDMMM format (e.g., "2024-10-12" -> "12Oct")
+ * Displays in Dubai/GST timezone
  */
 function formatDateForDisplay(dateStr: string | null): string {
   if (!dateStr) return ""
   
   try {
     const date = new Date(dateStr)
-    const day = date.getDate()
+    const { day, month } = getDatePartsInDubai(date)
     const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-    const month = monthNames[date.getMonth()]
-    return `${day}${month}`
+    return `${day}${monthNames[month]}`
   } catch {
     return dateStr
   }
@@ -29,40 +72,34 @@ function formatTime(timeStr: string | null): string {
 
 /**
  * Format datetime to display format (for prepared_on)
+ * Displays in Dubai/GST timezone
  */
 function formatDateTime(dateTimeStr: string | null): string {
   if (!dateTimeStr) return ""
   
   try {
     const date = new Date(dateTimeStr)
-    const day = date.getDate()
+    const { day, month, year, hours, minutes, seconds } = getDatePartsInDubai(date)
     const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-    const month = monthNames[date.getMonth()]
-    const year = date.getFullYear().toString().substring(2)
-    const hours = date.getHours().toString().padStart(2, "0")
-    const minutes = date.getMinutes().toString().padStart(2, "0")
-    const seconds = date.getSeconds().toString().padStart(2, "0")
-    return `${day}-${month}-${year} ${hours}:${minutes}:${seconds}`
+    const yearStr = year.toString().substring(2)
+    return `${day}-${monthNames[month]}-${yearStr} ${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`
   } catch {
     return dateTimeStr
   }
 }
 
 /**
- * Format arrival date time to display format (e.g., "12Oct0024 13:29/")
+ * Format arrival date time to display format (e.g., "12Oct2024 13:29/")
+ * Displays in Dubai/GST timezone
  */
 function formatArrivalDateTime(dateTimeStr: string | null): string {
   if (!dateTimeStr) return ""
   
   try {
     const date = new Date(dateTimeStr)
-    const day = date.getDate().toString().padStart(2, "0")
+    const { day, month, year, hours, minutes } = getDatePartsInDubai(date)
     const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-    const month = monthNames[date.getMonth()]
-    const year = date.getFullYear().toString()
-    const hours = date.getHours().toString().padStart(2, "0")
-    const minutes = date.getMinutes().toString().padStart(2, "0")
-    return `${day}${month}${year} ${hours}:${minutes}/`
+    return `${day.toString().padStart(2, "0")}${monthNames[month]}${year} ${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}/`
   } catch {
     return dateTimeStr
   }

@@ -2,14 +2,50 @@ import type { SpecialCargoReportRow, VUNListRow, QRTListRow } from "./types"
 import { formatDateForReport } from "./parser"
 
 /**
- * Determines the current shift based on the current time
+ * Dubai/GST timezone constant (UTC+4)
+ * All date displays and shift calculations use this timezone
+ */
+const DISPLAY_TIMEZONE = "Asia/Dubai"
+
+/**
+ * Get current date/time parts in Dubai timezone
+ */
+function getDatePartsInDubai(date: Date = new Date()): {
+  day: number
+  month: number
+  year: number
+  hours: number
+  minutes: number
+} {
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    timeZone: DISPLAY_TIMEZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  })
+  
+  const parts = formatter.formatToParts(date)
+  const getPart = (type: string) => parseInt(parts.find(p => p.type === type)?.value || "0", 10)
+  
+  return {
+    day: getPart("day"),
+    month: getPart("month") - 1, // 0-indexed
+    year: getPart("year"),
+    hours: getPart("hour"),
+    minutes: getPart("minute"),
+  }
+}
+
+/**
+ * Determines the current shift based on the current time in Dubai/GST
  * DAY shift: 13:00-23:59
  * NIGHT shift: 00:00-12:59
  */
 function getCurrentShift(): "DAY" | "NIGHT" {
-  const now = new Date()
-  const hours = now.getHours()
-  const minutes = now.getMinutes()
+  const { hours, minutes } = getDatePartsInDubai()
   const totalMinutes = hours * 60 + minutes
 
   // DAY shift: 13:00 (780 minutes) to 23:59 (1439 minutes)
@@ -26,22 +62,19 @@ function getCurrentShift(): "DAY" | "NIGHT" {
  * DAY shift: "SPECIAL CARGO REPORT DATED [DATE] (1300 - 2359Hrs)"
  * NIGHT shift: "SPECIAL CARGO REPORT DATED [DATE] (0800 - 1259Hrs)"
  * 
- * The date used is today's date, not the reportDate parameter
+ * The date used is today's date in Dubai/GST timezone
  */
 export function generateSpecialCargoReportHeader(reportDate: string): string {
   const shift = getCurrentShift()
-  const now = new Date()
+  const { day, month, year } = getDatePartsInDubai()
   
   // Get today's date in format "DD MONTH YYYY"
-  const day = now.getDate().toString().padStart(2, "0")
   const monthNames = [
     "JANUARY", "FEBRUARY", "MARCH", "APRIL", "MAY", "JUNE",
     "JULY", "AUGUST", "SEPTEMBER", "OCTOBER", "NOVEMBER", "DECEMBER"
   ]
-  const month = monthNames[now.getMonth()]
-  const year = now.getFullYear()
   
-  const formattedDate = `${day} ${month} ${year}`
+  const formattedDate = `${day.toString().padStart(2, "0")} ${monthNames[month]} ${year}`
   
   if (shift === "DAY") {
     return `SPECIAL CARGO REPORT DATED ${formattedDate} (1300 - 2359Hrs)`

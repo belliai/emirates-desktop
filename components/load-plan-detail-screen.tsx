@@ -219,19 +219,37 @@ export default function LoadPlanDetailScreen({ loadPlan, onBack, onSave, onNavig
     fetchChanges()
   }, [loadPlan.flight, loadPlan.revision])
   
-  // Helper function to format arrival date time to display format (e.g., "12Oct0024 13:29/")
+  // Helper function to format arrival date time to display format (e.g., "12Oct2024 13:29/")
+  // Displays in Dubai/GST timezone (UTC+4)
   const formatArrivalDateTime = (dateTimeStr: string | null): string => {
     if (!dateTimeStr) return ""
     
     try {
       const date = new Date(dateTimeStr)
-      const day = date.getDate().toString().padStart(2, "0")
+      const DISPLAY_TIMEZONE = "Asia/Dubai"
+      
+      // Use Intl.DateTimeFormat to get parts in Dubai timezone
+      const formatter = new Intl.DateTimeFormat("en-US", {
+        timeZone: DISPLAY_TIMEZONE,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+      })
+      
+      const parts = formatter.formatToParts(date)
+      const getPart = (type: string) => parts.find(p => p.type === type)?.value || ""
+      
+      const day = getPart("day")
+      const monthIndex = parseInt(getPart("month"), 10) - 1
+      const year = getPart("year")
+      const hours = getPart("hour")
+      const minutes = getPart("minute")
+      
       const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-      const month = monthNames[date.getMonth()]
-      const year = date.getFullYear().toString()
-      const hours = date.getHours().toString().padStart(2, "0")
-      const minutes = date.getMinutes().toString().padStart(2, "0")
-      return `${day}${month}${year} ${hours}:${minutes}/`
+      return `${day}${monthNames[monthIndex]}${year} ${hours}:${minutes}/`
     } catch {
       return dateTimeStr
     }

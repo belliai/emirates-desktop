@@ -132,7 +132,9 @@ function BCRRow({ bcr, onClick }: BCRRowProps) {
   const formatDate = (dateString: string) => {
     try {
       const date = new Date(dateString)
+      // Display in Dubai/GST timezone (UTC+4)
       return date.toLocaleString('en-US', {
+        timeZone: 'Asia/Dubai',
         month: 'short',
         day: 'numeric',
         hour: '2-digit',

@@ -25,7 +25,8 @@ export function NotificationBadge({ staffNo, className }: NotificationBadgeProps
     if (minutes < 1) return "Just now"
     if (minutes < 60) return `${minutes}m ago`
     if (hours < 24) return `${hours}h ago`
-    return date.toLocaleDateString()
+    // Display in Dubai/GST timezone (UTC+4)
+    return date.toLocaleDateString('en-US', { timeZone: 'Asia/Dubai' })
   }
 
   return (

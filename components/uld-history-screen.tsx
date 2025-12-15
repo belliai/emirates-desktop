@@ -49,15 +49,31 @@ export default function ULDHistoryScreen({
     }
   }
 
+  // Dubai/GST timezone constant (UTC+4)
+  const DISPLAY_TIMEZONE = "Asia/Dubai"
+
   const formatDate = (date: Date) => {
-    const month = String(date.getMonth() + 1).padStart(2, "0")
-    const day = String(date.getDate()).padStart(2, "0")
+    const formatter = new Intl.DateTimeFormat("en-US", {
+      timeZone: DISPLAY_TIMEZONE,
+      month: "2-digit",
+      day: "2-digit",
+    })
+    const parts = formatter.formatToParts(date)
+    const month = parts.find(p => p.type === "month")?.value || ""
+    const day = parts.find(p => p.type === "day")?.value || ""
     return `${month}/${day}`
   }
 
   const formatTime = (date: Date) => {
-    const hours = String(date.getHours()).padStart(2, "0")
-    const minutes = String(date.getMinutes()).padStart(2, "0")
+    const formatter = new Intl.DateTimeFormat("en-US", {
+      timeZone: DISPLAY_TIMEZONE,
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    })
+    const parts = formatter.formatToParts(date)
+    const hours = parts.find(p => p.type === "hour")?.value || ""
+    const minutes = parts.find(p => p.type === "minute")?.value || ""
     return `${hours}:${minutes}`
   }
 

@@ -128,19 +128,39 @@ export default function DesktopScreen({ onULDSelect }: DesktopScreenProps) {
   })
   const [showColumnFilters, setShowColumnFilters] = useState(false)
 
+  // Dubai/GST timezone constant (UTC+4)
+  const DISPLAY_TIMEZONE = "Asia/Dubai"
+
   const formatDateDisplay = (date: Date) => {
+    // Get date strings in Dubai timezone for comparison
+    const formatter = new Intl.DateTimeFormat("en-US", {
+      timeZone: DISPLAY_TIMEZONE,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    })
+    
     const today = new Date()
     const yesterday = new Date(today)
     yesterday.setDate(yesterday.getDate() - 1)
 
-    if (date.toDateString() === today.toDateString()) {
+    const dateStr = formatter.format(date)
+    const todayStr = formatter.format(today)
+    const yesterdayStr = formatter.format(yesterday)
+
+    if (dateStr === todayStr) {
       return "Today"
-    } else if (date.toDateString() === yesterday.toDateString()) {
+    } else if (dateStr === yesterdayStr) {
       return "Yesterday"
     } else {
-      const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
-      const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-      return `${days[date.getDay()]}, ${months[date.getMonth()]} ${date.getDate()}`
+      // Format with day of week, month, and date in Dubai timezone
+      const displayFormatter = new Intl.DateTimeFormat("en-US", {
+        timeZone: DISPLAY_TIMEZONE,
+        weekday: "short",
+        month: "short",
+        day: "numeric",
+      })
+      return displayFormatter.format(date)
     }
   }
 
