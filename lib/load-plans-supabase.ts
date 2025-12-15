@@ -176,12 +176,21 @@ export async function getLoadPlanDetailFromSupabase(flightNumber: string): Promi
       .single()
 
     if (loadPlanError || !loadPlan) {
-      console.error("[LoadPlans] Error fetching load plan detail:", {
+      // Log full error object for debugging
+      console.error("[LoadPlans] Error fetching load plan detail:", JSON.stringify(loadPlanError, null, 2))
+      console.error("[LoadPlans] Flight number queried:", flightNumber)
+      console.error("[LoadPlans] Error details:", {
         code: loadPlanError?.code,
         message: loadPlanError?.message,
         details: loadPlanError?.details,
         hint: loadPlanError?.hint
       })
+      
+      // Check if it's a "no rows found" error (common with .single())
+      if (loadPlanError?.code === 'PGRST116') {
+        console.log(`[LoadPlans] No load plan found for flight: ${flightNumber}`)
+        return null
+      }
       
       // Check if it's an RLS/permission error
       if (loadPlanError && (loadPlanError.code === '42501' || loadPlanError.message?.includes('permission denied') || loadPlanError.message?.includes('row-level security'))) {

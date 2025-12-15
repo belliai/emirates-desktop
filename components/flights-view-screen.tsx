@@ -184,6 +184,7 @@ function calculateTotalPlannedULDs(loadPlanDetail: LoadPlanDetail, workAreaFilte
   
   // Count from ULD sections, using entries.length if entries exist for that section
   // Otherwise use parseULDSection count
+  // IMPORTANT: Exclude BULK entries from count (BULK is view-only, not part of completion)
   let total = 0
   loadPlanDetail.sectors.forEach((sector, sectorIndex) => {
     sector.uldSections.forEach((uldSection, uldSectionIndex) => {
@@ -195,12 +196,14 @@ function calculateTotalPlannedULDs(loadPlanDetail: LoadPlanDetail, workAreaFilte
         const entries = entriesMap.get(key)
         
         if (entries && entries.length > 0) {
-          // Use entries.length if entries exist (reflects additions/subtractions via modal)
-          total += entries.length
+          // Exclude BULK entries from count
+          const nonBulkEntries = entries.filter(e => (e as { type?: string }).type?.toUpperCase() !== "BULK")
+          total += nonBulkEntries.length
         } else {
-          // Use parseULDSection count if no entries exist for this section
-          const { count } = parseULDSection(uldSection.uld)
-          total += count
+          // Exclude BULK from parseULDSection count
+          const { expandedTypes } = parseULDSection(uldSection.uld)
+          const nonBulkCount = expandedTypes.filter(t => t.toUpperCase() !== "BULK").length
+          total += nonBulkCount
         }
       }
     })
@@ -235,6 +238,7 @@ function calculateTotalMarkedULDs(flightNumber: string, loadPlanDetail: LoadPlan
     let markedCount = 0
     
     // Count checked ULD entries, filtered by work area
+    // IMPORTANT: Exclude BULK entries from count (BULK is view-only, not part of completion)
     entriesMap.forEach((entries, key) => {
       // Parse sectorIndex and uldSectionIndex from key format: "sectorIndex-uldSectionIndex"
       const [sectorIndexStr, uldSectionIndexStr] = key.split('-')
@@ -250,9 +254,10 @@ function calculateTotalMarkedULDs(flightNumber: string, loadPlanDetail: LoadPlan
         const shouldInclude = shouldIncludeULDSection(uldSection, workAreaFilter || "All", pilPerSubFilter)
         
         if (shouldInclude) {
-          // Count only checked entries
+          // Count only checked entries, excluding BULK
           entries.forEach((entry) => {
-            if (entry.checked) {
+            const entryType = (entry as { type?: string }).type?.toUpperCase()
+            if (entry.checked && entryType !== "BULK") {
               markedCount++
             }
           })

@@ -80,16 +80,17 @@ export function formatULDSectionFromEntries(entries: Array<{ type: string; numbe
  * Example: entries with checked PMC entries -> "XX 02PMC XX"
  */
 export function formatULDSectionFromCheckedEntries(entries: Array<{ type: string; number: string; checked: boolean }>, originalSection: string): string {
-  // Only include checked entries with numbers
-  const checkedEntriesWithNumbers = entries.filter(e => e.checked && e.number.trim() !== "")
+  // Include ALL checked entries (regardless of whether number is filled)
+  // This way, when user marks an entry as "final" without a number, it still counts
+  const checkedEntries = entries.filter(e => e.checked)
   
-  if (checkedEntriesWithNumbers.length === 0) {
+  if (checkedEntries.length === 0) {
     return originalSection
   }
   
-  // Group by type and count
+  // Group by type and count ALL checked entries
   const typeCounts: Record<string, number> = {}
-  checkedEntriesWithNumbers.forEach(entry => {
+  checkedEntries.forEach(entry => {
     typeCounts[entry.type] = (typeCounts[entry.type] || 0) + 1
   })
   

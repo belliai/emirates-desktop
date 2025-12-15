@@ -1819,16 +1819,19 @@ function ULDRow({ uld, uldEntries, isReadOnly, enableBulkCheckboxes, sectionKeys
   const isBulkULD = uld ? uld.toUpperCase().includes("BULK") : false
   const hasCheckedEntries = checkedEntries.length > 0
   
-  // Left side: Show checked entries as {type}{number}EK format
+  // Left side: Show checked entries
+  // - With number: {type}{number}EK (e.g., "PMC12e3EK")
+  // - Without number: just {type} (e.g., "AKE") to indicate it's marked as final
   const displayNumbers = checkedEntries
-    .filter(e => e.number.trim() !== "")
-    .map(e => `${e.type}${e.number.trim()}EK`)
+    .map(e => e.number.trim() !== "" ? `${e.type}${e.number.trim()}EK` : e.type)
     .join(", ")
   
-  // Right side: Use old formatULDSection format (XX 02PMC XX) with checked entries
+  // Right side: Always show Final section
+  // - If entries are checked with numbers: show dynamic count (XX 02PMC 01AKE XX)
+  // - If no entries checked or no numbers: show original ULD section (XX 1PMC 2AKE XX)
   const finalSection = hasCheckedEntries 
     ? formatULDSectionFromCheckedEntries(uldEntries, uld) 
-    : null
+    : uld // Always show original section when no entries are checked
   
   return (
     <tr className={isRampTransfer ? "bg-gray-50" : ""}>
