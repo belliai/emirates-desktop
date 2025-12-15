@@ -124,10 +124,13 @@ export async function getLoadPlansFromSupabase(): Promise<LoadPlan[]> {
 
     const supabase = createClient()
 
-    // Fetch load plans
+    // Fetch load plans with their items' work_areas
     const { data: loadPlans, error } = await supabase
       .from("load_plans")
-      .select("*")
+      .select(`
+        *,
+        load_plan_items(work_areas)
+      `)
       .order("flight_date", { ascending: false })
       .order("flight_number", { ascending: true })
 
@@ -164,6 +167,12 @@ export async function getLoadPlansFromSupabase(): Promise<LoadPlan[]> {
         pax = `${plan.route_origin}/${plan.route_destination}`
       }
       
+      // Aggregate unique work areas from items
+      const itemWorkAreas = (plan.load_plan_items || [])
+        .map((item: { work_areas: string | null }) => item.work_areas)
+        .filter((wa: string | null): wa is string => wa !== null && wa !== undefined)
+      const uniqueWorkAreas = Array.from(new Set(itemWorkAreas))
+      
       return {
         flight: plan.flight_number || "",
         date: formatDateForDisplay(plan.flight_date),
@@ -173,7 +182,7 @@ export async function getLoadPlansFromSupabase(): Promise<LoadPlan[]> {
         std: formatTime(plan.std_time),
         uldVersion: plan.uld_version || "",
         ttlPlnUld: plan.total_planned_uld || "",
-        workAreas: plan.work_areas || ["GCR"], // Default to GCR if not set
+        workAreas: uniqueWorkAreas.length > 0 ? uniqueWorkAreas : ["GCR"], // Default to GCR if no items
       }
     })
 
