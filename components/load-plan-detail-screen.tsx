@@ -131,9 +131,10 @@ interface LoadPlanDetailScreenProps {
   onULDUpdate?: () => void // Callback when ULD entries are updated (for progress bar recalculation)
   arrivalBayInfo?: BayInfoData // Bay info for QRT List arrival
   departureBayInfo?: DepartureBayInfoData // Bay info for QRT List departure
+  hideHandover?: boolean // Hide handover button (when handover is managed at a higher level, e.g., Buildup Staff screen)
 }
 
-export default function LoadPlanDetailScreen({ loadPlan, onBack, onSave, onNavigateToBuildupStaff, enableBulkCheckboxes = false, workAreaFilter, pilPerSubFilter, isQRTList = false, onULDUpdate, arrivalBayInfo, departureBayInfo }: LoadPlanDetailScreenProps) {
+export default function LoadPlanDetailScreen({ loadPlan, onBack, onSave, onNavigateToBuildupStaff, enableBulkCheckboxes = false, workAreaFilter, pilPerSubFilter, isQRTList = false, onULDUpdate, arrivalBayInfo, departureBayInfo, hideHandover = false }: LoadPlanDetailScreenProps) {
   const [showBCRModal, setShowBCRModal] = useState(false)
   const [showHandoverModal, setShowHandoverModal] = useState(false)
   const [awbComments, setAwbComments] = useState<AWBComment[]>([])
@@ -596,7 +597,7 @@ export default function LoadPlanDetailScreen({ loadPlan, onBack, onSave, onNavig
         onBack={onBack}
         isReadOnly={isReadOnly}
         onGenerateBCR={isReadOnly ? () => setShowBCRModal(true) : undefined}
-        onHandover={isReadOnly ? () => setShowHandoverModal(true) : undefined}
+        onHandover={isReadOnly && !hideHandover ? () => setShowHandoverModal(true) : undefined}
         onSave={onSave ? handleSave : undefined}
         revision={editedPlan.revision}
       />

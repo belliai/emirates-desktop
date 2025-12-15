@@ -1,7 +1,7 @@
 "use client"
 
 import React, { useState, useEffect, useMemo } from "react"
-import { ChevronRight, Plane, Calendar, Package, Users, Clock, FileText, Check, ChevronsUpDown } from "lucide-react"
+import { ChevronRight, Plane, Calendar, Package, Users, Clock, FileText, Check, ChevronsUpDown, Send, Loader2 } from "lucide-react"
 import { useLoadPlans, type LoadPlan } from "@/lib/load-plan-context"
 import LoadPlanDetailScreen from "./load-plan-detail-screen"
 import type { LoadPlanDetail } from "./load-plan-types"
@@ -21,13 +21,14 @@ interface BuildupStaffScreenProps {
 }
 
 export default function BuildupStaffScreen({ initialStaff, onNavigate }: BuildupStaffScreenProps = {}) {
-  const { loadPlans, getFlightsByStaff } = useLoadPlans()
+  const { loadPlans, getFlightsByStaff, sendToFlightAssignment, addSentBCR, flightAssignments } = useLoadPlans()
   const [operators, setOperators] = useState<BuildupStaff[]>([])
   const [selectedStaffId, setSelectedStaffId] = useState<string>(initialStaff || "")
   const [selectedLoadPlan, setSelectedLoadPlan] = useState<LoadPlanDetail | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [staffDropdownOpen, setStaffDropdownOpen] = useState(false)
   const [staffSearch, setStaffSearch] = useState("")
+  const [isHandingOver, setIsHandingOver] = useState(false)
   const { getNotificationsForStaff } = useNotifications()
   const { toast } = useToast()
   const shownNotificationIdsRef = React.useRef<Set<string>>(new Set())
@@ -160,14 +161,65 @@ export default function BuildupStaffScreen({ initialStaff, onNavigate }: Buildup
     }
   }
 
+  // Handle handover for all assigned flights
+  const handleHandoverAll = async () => {
+    if (assignedLoadPlans.length === 0) {
+      toast({
+        title: "No flights to handover",
+        description: "There are no flights assigned to this staff member.",
+        duration: 3000,
+      })
+      return
+    }
+
+    setIsHandingOver(true)
+    const staffName = getDisplayName().toLowerCase()
+    
+    try {
+      // Process each assigned flight
+      for (const loadPlan of assignedLoadPlans) {
+        console.log(`[BuildupStaffScreen] Handing over flight ${loadPlan.flight}`)
+        
+        // Clear the assignment (send back to flight assignment pool)
+        await sendToFlightAssignment(loadPlan.flight)
+        
+        // Add BCR record
+        addSentBCR({
+          flight: loadPlan.flight,
+          date: loadPlan.date,
+          loadPlan: loadPlan,
+          bcrData: {}, // Simplified - actual BCR data would come from load plan detail
+          sentAt: new Date().toISOString(),
+          sentBy: staffName,
+        })
+      }
+
+      toast({
+        title: "Handover Complete",
+        description: `Successfully handed over ${assignedLoadPlans.length} flight(s).`,
+        duration: 5000,
+      })
+    } catch (error) {
+      console.error("[BuildupStaffScreen] Error during handover:", error)
+      toast({
+        title: "Handover Error",
+        description: "An error occurred during handover. Please try again.",
+        duration: 5000,
+      })
+    } finally {
+      setIsHandingOver(false)
+    }
+  }
+
   if (selectedLoadPlan) {
     return (
       <LoadPlanDetailScreen
         loadPlan={selectedLoadPlan}
         onBack={() => setSelectedLoadPlan(null)}
-        // No onSave - makes it read-only with Handover and Generate BCR buttons
+        // No onSave - makes it read-only with Generate BCR button only
         onNavigateToBuildupStaff={handleNavigateToBuildupStaff}
         enableBulkCheckboxes={true}
+        hideHandover={true} // Handover button is on the Buildup Staff screen level, not per-flight
       />
     )
   }
@@ -179,6 +231,22 @@ export default function BuildupStaffScreen({ initialStaff, onNavigate }: Buildup
         <div className="flex justify-between items-center mb-4 px-2">
           <h2 className="text-lg font-semibold text-gray-900">Build-up Staff</h2>
           <div className="flex items-center gap-3">
+            {/* Handover All Flights Button */}
+            {assignedLoadPlans.length > 0 && (
+              <Button
+                variant="default"
+                onClick={handleHandoverAll}
+                disabled={isHandingOver}
+                className="flex items-center gap-2 bg-[#D71A21] hover:bg-[#B71518] text-white"
+              >
+                {isHandingOver ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Send className="w-4 h-4" />
+                )}
+                <span>{isHandingOver ? "Handing Over..." : `Handover All (${assignedLoadPlans.length})`}</span>
+              </Button>
+            )}
             {selectedStaffId && <NotificationBadge staffNo={selectedStaffId} />}
             <Popover 
               open={staffDropdownOpen} 
