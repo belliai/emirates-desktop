@@ -6,7 +6,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsive
 import { useLoadPlans, type LoadPlan, type ShiftType, type PeriodType, type WaveType } from "@/lib/load-plan-context"
 import { BUP_ALLOCATION_DATA } from "@/lib/bup-allocation-data"
 import type { WorkArea } from "@/lib/work-area-filter-utils"
-import { useWorkAreaFilter, WorkAreaFilterControls } from "./work-area-filter-controls"
+import { useWorkAreaFilter, WorkAreaFilterControls, WorkAreaFilterProvider } from "./work-area-filter-controls"
 
 // Parse ULD count from ttlPlnUld string (e.g., "06PMC/07AKE" -> {pmc: 6, ake: 7, total: 13})
 function parseULDCount(ttlPlnUld: string): { pmc: number; ake: number; total: number } {
@@ -296,7 +296,17 @@ function flightHasPilPerShc(ttlPlnUld: string): boolean {
   return false
 }
 
+// Wrapper component that provides the WorkAreaFilter context
 export default function IncomingWorkloadScreen() {
+  return (
+    <WorkAreaFilterProvider>
+      <IncomingWorkloadScreenContent />
+    </WorkAreaFilterProvider>
+  )
+}
+
+// Inner component that uses the shared WorkAreaFilter context
+function IncomingWorkloadScreenContent() {
   const { loadPlans } = useLoadPlans()
   const [showAddFilterDropdown, setShowAddFilterDropdown] = useState(false)
   const [showViewOptions, setShowViewOptions] = useState(false)

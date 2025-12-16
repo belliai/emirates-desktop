@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo, useRef } from "react"
 import { Download, Plus, Search, Clock, X, Settings2, ArrowUpDown, SlidersHorizontal } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { useWorkAreaFilter, WorkAreaFilterControls } from "./work-area-filter-controls"
+import { useWorkAreaFilter, WorkAreaFilterControls, WorkAreaFilterProvider } from "./work-area-filter-controls"
 
 // Filter types
 type Shift = "All" | "9am to 9pm" | "9pm to 9am"
@@ -148,7 +148,17 @@ const HARDCODED_STAFF: StaffPerformance[] = [
   },
 ]
 
+// Wrapper component that provides the WorkAreaFilter context
 export default function PerformanceScreen() {
+  return (
+    <WorkAreaFilterProvider>
+      <PerformanceScreenContent />
+    </WorkAreaFilterProvider>
+  )
+}
+
+// Inner component that uses the shared WorkAreaFilter context
+function PerformanceScreenContent() {
   // Work area filter hook
   const { selectedWorkArea, pilPerSubFilter } = useWorkAreaFilter()
   const [selectedShift, setSelectedShift] = useState<Shift>("All" as Shift)

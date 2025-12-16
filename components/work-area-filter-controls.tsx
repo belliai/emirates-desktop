@@ -1,9 +1,10 @@
 "use client"
 
-import { useWorkAreaFilter } from "@/hooks/use-work-area-filter"
+import { useWorkAreaFilterContext, WorkAreaFilterProvider } from "@/hooks/work-area-filter-context"
 import type { PilPerSubFilter } from "@/lib/work-area-filter-utils"
 
-export { useWorkAreaFilter }
+// Re-export for backward compatibility
+export { useWorkAreaFilterContext as useWorkAreaFilter, WorkAreaFilterProvider }
 
 type WorkAreaFilterControlsProps = {
   className?: string
@@ -17,7 +18,7 @@ export function WorkAreaFilterControls({ className = "" }: WorkAreaFilterControl
     toggleGcr,
     togglePilPer,
     setPilPerSubFilter,
-  } = useWorkAreaFilter()
+  } = useWorkAreaFilterContext()
 
   // Prevent toggling off if it's the only active chip
   const canToggleGcr = !isGcrActive || isPilPerActive

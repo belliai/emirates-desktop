@@ -10,10 +10,17 @@ function computeWorkAreaFromShc(shc: string | null | undefined): string {
   if (!shc || shc.trim() === "") return "GCR"
   
   const shcUpper = shc.trim().toUpperCase()
-  const isPilPer = PIL_PER_SHC_CODES.some(code => shcUpper === code.toUpperCase())
+  
+  // Check if it's a PIL/PER code using partial matching
+  const isPilPer = PIL_PER_SHC_CODES.some(code => shcUpper.includes(code.toUpperCase()))
   
   if (isPilPer) {
-    return shcUpper.includes("PIL") ? "PIL" : "PER"
+    // Check for live animal (PIL) codes
+    if (shcUpper.includes("PIL") || shcUpper.includes("AVI") || shcUpper.includes("LIV")) {
+      return "PIL"
+    }
+    // Otherwise it's perishable (PER)
+    return "PER"
   }
   return "GCR"
 }

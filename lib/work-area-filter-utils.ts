@@ -5,11 +5,19 @@ export type WorkArea = "All" | "GCR" | "PIL and PER"
 export type PilPerSubFilter = "Both" | "PIL only" | "PER only"
 
 // PIL/PER SHC codes that identify PIL and PER work areas
-export const PIL_PER_SHC_CODES = ["FRO", "FRI", "ACT", "CRT", "COL", "ERT", "PIL-ACT", "PIL-COL", "PEF-COL", "PER-COL"]
+// These codes indicate perishable (PER) or live animal (PIL) cargo
+export const PIL_PER_SHC_CODES = [
+  // Perishable codes
+  "FRO", "FRI", "ACT", "CRT", "COL", "ERT", "PER", "PEP", "PEF",
+  // Live animal codes
+  "PIL", "AVI", "LIV",
+  // Compound codes (for reference)
+  "PIL-ACT", "PIL-COL", "PEF-COL", "PER-COL", "PEP-COL"
+]
 
 /**
  * Check if an AWB has any PIL/PER SHC code
- * Case-insensitive matching, exact match required
+ * Case-insensitive matching, checks if SHC contains any of the PIL/PER codes
  */
 export function hasPilPerShcCode(awb: AWBRow): boolean {
   if (!awb.shc || awb.shc.trim() === "") {
@@ -17,11 +25,13 @@ export function hasPilPerShcCode(awb: AWBRow): boolean {
   }
   
   const shcUpper = awb.shc.trim().toUpperCase()
-  return PIL_PER_SHC_CODES.some(code => shcUpper === code.toUpperCase())
+  // Check if the SHC contains any of the PIL/PER codes (partial match)
+  return PIL_PER_SHC_CODES.some(code => shcUpper.includes(code.toUpperCase()))
 }
 
 /**
- * Check if an AWB has PIL SHC code (contains "PIL" in the SHC)
+ * Check if an AWB has PIL SHC code (Live Animals)
+ * PIL codes include: PIL, AVI (Aviation/Live Animals), LIV (Live Animals)
  * Used to distinguish between PIL and PER work areas
  */
 export function hasPilShcCode(awb: AWBRow): boolean {
@@ -30,15 +40,29 @@ export function hasPilShcCode(awb: AWBRow): boolean {
   }
   
   const shcUpper = awb.shc.trim().toUpperCase()
-  return shcUpper.includes("PIL")
+  // PIL = Perishable In Live, AVI = Aviation (Live Animals), LIV = Live Animals
+  return shcUpper.includes("PIL") || shcUpper.includes("AVI") || shcUpper.includes("LIV")
 }
 
 /**
- * Check if an AWB has PER SHC code (has PIL/PER codes but NOT "PIL")
- * Used to distinguish between PIL and PER work areas
+ * Check if an AWB has PER SHC code (perishable cargo, NOT live animals)
+ * PER codes include: PER, PEP, PEF, FRO, FRI, ACT, CRT, COL, ERT, PES (perishable fish, etc.)
+ * Used to distinguish between PIL (live animals) and PER (perishables) work areas
  */
 export function hasPerShcCode(awb: AWBRow): boolean {
-  return hasPilPerShcCode(awb) && !hasPilShcCode(awb)
+  if (!awb.shc || awb.shc.trim() === "") {
+    return false
+  }
+  
+  // If it's a PIL code (live animals), it's NOT a PER code
+  if (hasPilShcCode(awb)) {
+    return false
+  }
+  
+  const shcUpper = awb.shc.trim().toUpperCase()
+  // Check for perishable indicators (excludes live animals which are handled by hasPilShcCode)
+  const perCodes = ["PER", "PEP", "PEF", "FRO", "FRI", "ACT", "CRT", "COL", "ERT", "PES", "ECC"]
+  return perCodes.some(code => shcUpper.includes(code))
 }
 
 /**

@@ -9,7 +9,7 @@ import { useLoadPlans, type LoadPlan } from "@/lib/load-plan-context"
 import { getLoadPlansFromSupabase, getLoadPlanDetailFromSupabase } from "@/lib/load-plans-supabase"
 import { parseULDSection } from "@/lib/uld-parser"
 import { getULDEntriesFromStorage } from "@/lib/uld-storage"
-import { useWorkAreaFilter, WorkAreaFilterControls } from "./work-area-filter-controls"
+import { useWorkAreaFilter, WorkAreaFilterControls, WorkAreaFilterProvider } from "./work-area-filter-controls"
 import type { WorkArea, PilPerSubFilter } from "@/lib/work-area-filter-utils"
 import { shouldIncludeULDSection } from "@/lib/work-area-filter-utils"
 
@@ -302,13 +302,23 @@ function calculateFlightCompletion(loadPlan: LoadPlan, loadedAWBCount?: number):
   }
 }
 
+// Wrapper component that provides the WorkAreaFilter context
 export default function FlightsViewScreen() {
+  return (
+    <WorkAreaFilterProvider>
+      <FlightsViewScreenContent />
+    </WorkAreaFilterProvider>
+  )
+}
+
+// Inner component that uses the shared WorkAreaFilter context
+function FlightsViewScreenContent() {
   const { loadPlans, setLoadPlans } = useLoadPlans()
   const [selectedLoadPlan, setSelectedLoadPlan] = useState<LoadPlanDetail | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [flightCompletions, setFlightCompletions] = useState<Map<string, FlightCompletion>>(new Map())
   const [loadPlanDetailsCache, setLoadPlanDetailsCache] = useState<Map<string, LoadPlanDetail>>(new Map())
-  // Work area filter hook
+  // Work area filter hook - now uses shared context
   const { selectedWorkArea, pilPerSubFilter } = useWorkAreaFilter()
   const [selectedShift, setSelectedShift] = useState<Shift>("All" as Shift)
   const [selectedModule, setSelectedModule] = useState<Module>("All")

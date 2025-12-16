@@ -5,7 +5,7 @@ import { ChevronDown, ChevronRight, Plus, SlidersHorizontal } from "lucide-react
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from "recharts"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { useWorkAreaFilter, WorkAreaFilterControls } from "./work-area-filter-controls"
+import { useWorkAreaFilter, WorkAreaFilterControls, WorkAreaFilterProvider } from "./work-area-filter-controls"
 
 // Data from CSV
 const bdnData = {
@@ -235,7 +235,17 @@ const workAreaData = {
   // Add more work areas as needed
 }
 
+// Wrapper component that provides the WorkAreaFilter context
 export default function BDNDashboardScreen() {
+  return (
+    <WorkAreaFilterProvider>
+      <BDNDashboardScreenContent />
+    </WorkAreaFilterProvider>
+  )
+}
+
+// Inner component that uses the shared WorkAreaFilter context
+function BDNDashboardScreenContent() {
   const [isTableOpen, setIsTableOpen] = useState(false)
   const [isScreeningTableOpen, setIsScreeningTableOpen] = useState(false)
   const [screeningFilter, setScreeningFilter] = useState<"overall" | "usaCaScreening" | "usaCaNoScreening" | "otherSectorScreening">("overall")

@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button"
 import { useLoadPlans, type LoadPlan, type ShiftType, type PeriodType, type WaveType } from "@/lib/load-plan-context"
 import { getLoadPlansFromSupabase, getLoadPlanDetailFromSupabase, deleteLoadPlanFromSupabase } from "@/lib/load-plans-supabase"
 import { parseHeader, parseShipments, detectCriticalFromFileImages } from "@/lib/lists/parser"
-import { useWorkAreaFilter, WorkAreaFilterControls } from "./work-area-filter-controls"
+import { useWorkAreaFilter, WorkAreaFilterControls, WorkAreaFilterProvider } from "./work-area-filter-controls"
 import { saveListsDataToSupabase } from "@/lib/lists/supabase-save"
 import type { ListsResults } from "@/lib/lists/types"
 import { generateSpecialCargoReport, generateVUNList, generateQRTList } from "@/lib/lists/report-generators"
@@ -183,7 +183,17 @@ function DeleteConfirmationModal({
 }
 
 
+// Wrapper component that provides the WorkAreaFilter context
 export default function LoadPlansScreen({ onLoadPlanSelect }: { onLoadPlanSelect?: (loadPlan: LoadPlan) => void }) {
+  return (
+    <WorkAreaFilterProvider>
+      <LoadPlansScreenContent onLoadPlanSelect={onLoadPlanSelect} />
+    </WorkAreaFilterProvider>
+  )
+}
+
+// Inner component that uses the shared WorkAreaFilter context
+function LoadPlansScreenContent({ onLoadPlanSelect }: { onLoadPlanSelect?: (loadPlan: LoadPlan) => void }) {
   const { loadPlans, addLoadPlan, setLoadPlans } = useLoadPlans()
   const [selectedLoadPlan, setSelectedLoadPlan] = useState<LoadPlanDetail | null>(null)
   const [savedDetails, setSavedDetails] = useState<Map<string, LoadPlanDetail>>(new Map())

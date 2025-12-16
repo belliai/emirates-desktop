@@ -361,12 +361,15 @@ export default function LoadPlanDetailScreen({ loadPlan, onBack, onSave, onNavig
       updated.set(key, entries)
       // Save to localStorage using utility function to ensure checked state is preserved
       saveULDEntriesToStorage(loadPlan.flight, updated)
-      // Notify parent component to recalculate progress bar
-      if (onULDUpdate) {
-        onULDUpdate()
-      }
       return updated
     })
+    
+    // Notify parent component to recalculate progress bar
+    // IMPORTANT: Call this OUTSIDE the state setter to avoid "setState during render" error
+    if (onULDUpdate) {
+      // Use setTimeout to defer the callback to the next tick, avoiding render conflicts
+      setTimeout(() => onULDUpdate(), 0)
+    }
   }
 
   const handleSave = () => {
