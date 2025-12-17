@@ -1,12 +1,18 @@
 "use client"
 
-import React, { useState, useMemo, useRef } from "react"
+import React, { useState, useMemo, useRef, useEffect } from "react"
 import { EditableField } from "./editable-field"
 import { ExcelCell } from "./excel-cell"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
-import { Copy, FileText, Plus, Search, Clock, X, Settings2, ArrowUpDown, SlidersHorizontal } from "lucide-react"
+import { Copy, FileText, Plus, Search, Clock, X, Settings2, ArrowUpDown, SlidersHorizontal, Loader2 } from "lucide-react"
 import UWSDelayReportModal from "./uws-delay-report-modal"
+import { 
+  fetchShiftSummaryData, 
+  getFlightAllocationsForShift,
+  type StaffDetail as SupabaseStaffDetail,
+  type FlightAllocation
+} from "@/lib/shift-summary-supabase"
 
 // Filter types
 type WorkArea = "GCR" | "PIL and PER"
@@ -580,6 +586,67 @@ export default function ShiftSummaryReportScreen() {
     attachments: "",
   })
 
+  // Loading state for live data
+  const [isLoading, setIsLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
+
+  // Fetch live data from Supabase on mount
+  useEffect(() => {
+    async function loadShiftSummaryData() {
+      setIsLoading(true)
+      setLoadError(null)
+      try {
+        console.log("[ShiftSummary] Fetching live data from Supabase...")
+        const data = await fetchShiftSummaryData()
+        
+        // Update staff data if we got data from Supabase
+        if (data.positionals.length > 0) {
+          setPositionals(data.positionals)
+        }
+        if (data.ekOnFloor.length > 0) {
+          setEkOnFloor(data.ekOnFloor)
+        }
+        
+        // Update BUP flights from flight allocations
+        if (data.flightAllocations.length > 0) {
+          const mappedFlights: FlightData[] = data.flightAllocations.map((alloc, index) => ({
+            no: index + 1,
+            flight: alloc.flight,
+            etd: alloc.etd,
+            dst: alloc.dst,
+            staff: alloc.staff,
+            builtPmc: alloc.builtPmc,
+            builtAlf: alloc.builtAlf,
+            builtAke: alloc.builtAke,
+            thruPmc: alloc.thruPmc,
+            thruAlf: alloc.thruAlf,
+            thruAke: alloc.thruAke,
+          }))
+          setBupFlights(mappedFlights)
+          
+          // Update efficiency based on ULD totals
+          const totalUlds = data.uldTotals.builtTotal + data.uldTotals.thruTotal
+          if (totalUlds > 0) {
+            setShiftEfficiency(prev => ({
+              ...prev,
+              totalUld: totalUlds,
+              efficiency: prev.totalHours > 0 ? parseFloat((totalUlds / prev.totalHours).toFixed(2)) : 0,
+            }))
+          }
+        }
+        
+        console.log("[ShiftSummary] Live data loaded successfully")
+      } catch (error) {
+        console.error("[ShiftSummary] Error loading live data:", error)
+        setLoadError("Failed to load data from database. Showing sample data.")
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    loadShiftSummaryData()
+  }, [])
+
   // Planned ULDs - Editable inputs (from Plan vs Advance)
   const [planned1300_1600, setPlanned1300_1600] = useState<ULDBreakdown>({
     pmcAmf: 244,
@@ -913,6 +980,21 @@ TOTAL\t${totalPending.pmcAmf}\t${totalPending.alfPla}\t${totalPending.akeRke}\t$
       />
     <div className="min-h-screen bg-gray-50 p-4">
       <div className="max-w-full space-y-4">
+        {/* Loading indicator */}
+        {isLoading && (
+          <div className="fixed top-4 right-4 z-50 bg-white rounded-lg shadow-lg px-4 py-2 flex items-center gap-2 border border-gray-200">
+            <Loader2 className="w-4 h-4 animate-spin text-blue-500" />
+            <span className="text-sm text-gray-600">Loading live data...</span>
+          </div>
+        )}
+        
+        {/* Error message */}
+        {loadError && (
+          <div className="bg-yellow-50 border border-yellow-200 rounded-lg px-4 py-2 text-sm text-yellow-700">
+            {loadError}
+          </div>
+        )}
+        
         {/* Header */}
         <div className="mb-4">
           <div className="flex items-start justify-between">
