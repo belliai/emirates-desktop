@@ -880,6 +880,35 @@ function LoadPlansScreenContent({ onLoadPlanSelect }: { onLoadPlanSelect?: (load
       if (saveResult.success) {
         console.log(`[LoadPlansScreen] Successfully applied changes for ${pendingDiff.flightNumber}`)
         
+        // Refresh load plans list immediately
+        try {
+          const supabaseLoadPlans = await getLoadPlansFromSupabase()
+          if (supabaseLoadPlans.length > 0) {
+            setLoadPlans(supabaseLoadPlans)
+            
+            // Also refresh the detail view if currently viewing this flight
+            if (selectedLoadPlan && selectedLoadPlan.flight === pendingDiff.flightNumber) {
+              // Find the updated load plan to get its ID
+              const updatedLoadPlan = supabaseLoadPlans.find(lp => lp.flight === pendingDiff.flightNumber)
+              if (updatedLoadPlan && updatedLoadPlan.id) {
+                console.log(`[LoadPlansScreen] Refreshing detail view for ${pendingDiff.flightNumber}`)
+                const refreshedDetail = await getLoadPlanDetailFromSupabase(updatedLoadPlan.id)
+                if (refreshedDetail) {
+                  setSelectedLoadPlan(refreshedDetail)
+                  // Also update the saved details cache
+                  setSavedDetails(prev => {
+                    const newMap = new Map(prev)
+                    newMap.set(pendingDiff.flightNumber, refreshedDetail)
+                    return newMap
+                  })
+                }
+              }
+            }
+          }
+        } catch (refreshError) {
+          console.error("[LoadPlansScreen] Error refreshing load plans:", refreshError)
+        }
+        
         // Show success notification
         Swal.fire({
           title: "Changes Applied",
@@ -911,21 +940,11 @@ function LoadPlansScreenContent({ onLoadPlanSelect }: { onLoadPlanSelect?: (load
         })
         setPendingDiff(nextDiff)
       } else {
-        // All files reviewed, close modal and refresh
+        // All files reviewed, close modal
         setShowReviewModal(false)
         setPendingDiff(null)
         setPendingFiles([])
         setCurrentReviewIndex(0)
-        
-        // Refresh load plans
-        try {
-          const supabaseLoadPlans = await getLoadPlansFromSupabase()
-          if (supabaseLoadPlans.length > 0) {
-            setLoadPlans(supabaseLoadPlans)
-          }
-        } catch (refreshError) {
-          console.error("[LoadPlansScreen] Error refreshing load plans:", refreshError)
-        }
       }
     } catch (err) {
       console.error("[LoadPlansScreen] Error applying changes:", err)
