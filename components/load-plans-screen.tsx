@@ -883,16 +883,50 @@ function LoadPlansScreenContent({ onLoadPlanSelect }: { onLoadPlanSelect?: (load
         // Refresh load plans list immediately
         try {
           const supabaseLoadPlans = await getLoadPlansFromSupabase()
+          console.log(`[LoadPlansScreen] Fetched ${supabaseLoadPlans.length} load plans from Supabase`)
+          
           if (supabaseLoadPlans.length > 0) {
             setLoadPlans(supabaseLoadPlans)
             
+            // Debug: log current state
+            console.log(`[LoadPlansScreen] DEBUG:`, {
+              selectedLoadPlanFlight: selectedLoadPlan?.flight,
+              pendingDiffFlightNumber: pendingDiff.flightNumber,
+              selectedLoadPlanId: selectedLoadPlan?.id,
+              isMatch: selectedLoadPlan?.flight === pendingDiff.flightNumber,
+            })
+            
             // Also refresh the detail view if currently viewing this flight
-            if (selectedLoadPlan && selectedLoadPlan.flight === pendingDiff.flightNumber) {
+            // Use includes() for more flexible matching (handles "EK0817" vs "EK 0817")
+            const flightMatches = selectedLoadPlan && (
+              selectedLoadPlan.flight === pendingDiff.flightNumber ||
+              selectedLoadPlan.flight?.includes(pendingDiff.flightNumber) ||
+              pendingDiff.flightNumber?.includes(selectedLoadPlan.flight || "")
+            )
+            
+            if (flightMatches) {
               // Find the updated load plan to get its ID
-              const updatedLoadPlan = supabaseLoadPlans.find(lp => lp.flight === pendingDiff.flightNumber)
+              const updatedLoadPlan = supabaseLoadPlans.find(lp => 
+                lp.flight === pendingDiff.flightNumber ||
+                lp.flight?.includes(pendingDiff.flightNumber) ||
+                pendingDiff.flightNumber?.includes(lp.flight || "")
+              )
+              
+              console.log(`[LoadPlansScreen] Found matching load plan:`, {
+                updatedLoadPlanId: updatedLoadPlan?.id,
+                updatedLoadPlanFlight: updatedLoadPlan?.flight,
+              })
+              
               if (updatedLoadPlan && updatedLoadPlan.id) {
                 console.log(`[LoadPlansScreen] Refreshing detail view for ${pendingDiff.flightNumber}`)
                 const refreshedDetail = await getLoadPlanDetailFromSupabase(updatedLoadPlan.id)
+                console.log(`[LoadPlansScreen] Refreshed detail:`, {
+                  hasDetail: !!refreshedDetail,
+                  detailFlight: refreshedDetail?.flight,
+                  sectorsCount: refreshedDetail?.sectors?.length,
+                  firstSectorItemsCount: refreshedDetail?.sectors?.[0]?.uldSections?.length,
+                })
+                
                 if (refreshedDetail) {
                   setSelectedLoadPlan(refreshedDetail)
                   // Also update the saved details cache
@@ -901,8 +935,11 @@ function LoadPlansScreenContent({ onLoadPlanSelect }: { onLoadPlanSelect?: (load
                     newMap.set(pendingDiff.flightNumber, refreshedDetail)
                     return newMap
                   })
+                  console.log(`[LoadPlansScreen] ✅ Detail view updated`)
                 }
               }
+            } else {
+              console.log(`[LoadPlansScreen] No matching flight for detail refresh - selectedLoadPlan.flight: "${selectedLoadPlan?.flight}", pendingDiff.flightNumber: "${pendingDiff.flightNumber}"`)
             }
           }
         } catch (refreshError) {
