@@ -12,9 +12,11 @@ import { useLoadPlans, type LoadPlan, type ShiftType, type PeriodType, type Wave
 import { getLoadPlansFromSupabase, getLoadPlanDetailFromSupabase, deleteLoadPlanFromSupabase } from "@/lib/load-plans-supabase"
 import { parseHeader, parseShipments, detectCriticalFromFileImages } from "@/lib/lists/parser"
 import { useWorkAreaFilter, WorkAreaFilterControls, WorkAreaFilterProvider } from "./work-area-filter-controls"
-import { saveListsDataToSupabase } from "@/lib/lists/supabase-save"
-import type { ListsResults } from "@/lib/lists/types"
+import { saveListsDataToSupabase, type LoadPlanUpdateMode } from "@/lib/lists/supabase-save"
+import type { ListsResults, LoadPlanHeader, Shipment } from "@/lib/lists/types"
 import { generateSpecialCargoReport, generateVUNList, generateQRTList } from "@/lib/lists/report-generators"
+import { LoadPlanModeModal, type LoadPlanMode } from "./load-plan-mode-modal"
+import { createClient } from "@/lib/supabase/client"
 
 // Parse STD time (e.g., "02:50", "09:35") to hours
 function parseStdToHours(std: string): number {
@@ -219,6 +221,16 @@ function LoadPlansScreenContent({ onLoadPlanSelect }: { onLoadPlanSelect?: (load
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc")
   const addFilterRef = useRef<HTMLDivElement>(null)
   const viewOptionsRef = useRef<HTMLDivElement>(null)
+  
+  // Mode modal state for updating existing load plans
+  const [showModeModal, setShowModeModal] = useState(false)
+  const [pendingModeSelection, setPendingModeSelection] = useState<{
+    file: File
+    header: LoadPlanHeader
+    shipments: Shipment[]
+    results: ListsResults
+    existingRevision: number
+  } | null>(null)
 
   // Fetch load plans from Supabase on mount
   useEffect(() => {
@@ -498,6 +510,136 @@ function LoadPlansScreenContent({ onLoadPlanSelect }: { onLoadPlanSelect?: (load
     setPendingDeletePlan(null)
   }
 
+  // Helper function to check if a load plan exists in the database
+  const checkExistingLoadPlan = async (flightNumber: string): Promise<{ exists: boolean; revision: number }> => {
+    try {
+      const supabase = createClient()
+      const { data: existingLoadPlan, error } = await supabase
+        .from("load_plans")
+        .select("id, revision")
+        .eq("flight_number", flightNumber)
+        .order("revision", { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      
+      if (error && error.code !== 'PGRST116') {
+        console.error("[LoadPlansScreen] Error checking existing load plan:", error)
+        return { exists: false, revision: 0 }
+      }
+      
+      if (existingLoadPlan) {
+        return { exists: true, revision: existingLoadPlan.revision || 1 }
+      }
+      return { exists: false, revision: 0 }
+    } catch {
+      return { exists: false, revision: 0 }
+    }
+  }
+
+  // Handle mode selection from modal
+  const handleModeConfirm = async (mode: LoadPlanMode) => {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/575642b1-aad2-456f-a784-18c6e328646a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'load-plans-screen.tsx:handleModeConfirm:entry',message:'handleModeConfirm called',data:{mode,hasPendingSelection:!!pendingModeSelection,pendingFlightNumber:pendingModeSelection?.header?.flightNumber},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
+    
+    if (!pendingModeSelection) {
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/575642b1-aad2-456f-a784-18c6e328646a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'load-plans-screen.tsx:handleModeConfirm:no-pending',message:'No pending selection - early return',data:{mode},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'E'})}).catch(()=>{});
+      // #endregion
+      return
+    }
+    
+    const { file, header, shipments, results, existingRevision } = pendingModeSelection
+    
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/575642b1-aad2-456f-a784-18c6e328646a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'load-plans-screen.tsx:handleModeConfirm:before-save',message:'About to call saveListsDataToSupabase',data:{mode,fileName:file.name,flightNumber:header.flightNumber,shipmentsCount:shipments?.length,existingRevision},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B'})}).catch(()=>{});
+    // #endregion
+    
+    setShowModeModal(false)
+    setIsProcessing(true)
+    setProgress(50)
+    
+    try {
+      // Save with the selected mode
+      const saveResult = await saveListsDataToSupabase({
+        results,
+        shipments: shipments || [],
+        fileName: file.name,
+        fileSize: file.size,
+        mode: mode as LoadPlanUpdateMode,
+      })
+      
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/575642b1-aad2-456f-a784-18c6e328646a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'load-plans-screen.tsx:handleModeConfirm:after-save',message:'saveListsDataToSupabase returned',data:{mode,success:saveResult.success,error:saveResult.error,loadPlanId:saveResult.loadPlanId},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B'})}).catch(()=>{});
+      // #endregion
+      
+      setProgress(90)
+      
+      // Refresh load plans from Supabase
+      try {
+        const supabaseLoadPlans = await getLoadPlansFromSupabase()
+        if (supabaseLoadPlans.length > 0) {
+          setLoadPlans(supabaseLoadPlans)
+        }
+      } catch {
+        // Error refreshing load plans
+      }
+      
+      setProgress(100)
+      
+      if (saveResult.success) {
+        // Show success message
+        Swal.fire({
+          title: "Load Plan Updated!",
+          html: `<div style="text-align: left; padding: 8px 0;">
+            <div style="display: flex; align-items: flex-start; gap: 12px; padding: 12px; background: #ecfdf5; border-left: 4px solid #10b981; border-radius: 6px;">
+              <div style="flex-shrink: 0; width: 24px; height: 24px; background: #10b981; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; font-size: 14px;">✓</div>
+              <div style="flex: 1;">
+                <p style="margin: 0; font-size: 14px; color: #065f46; font-weight: 500;">
+                  Flight <strong style="color: #047857;">${header.flightNumber}</strong> updated as <strong>${mode === "revised" ? "Revised" : "Additional"}</strong>
+                </p>
+                <p style="margin: 4px 0 0; font-size: 12px; color: #059669;">
+                  Revision ${existingRevision} → ${existingRevision + 1}
+                </p>
+              </div>
+            </div>
+          </div>`,
+          icon: "success",
+          confirmButtonText: "Got it",
+          confirmButtonColor: "#D71A21",
+        })
+      } else {
+        Swal.fire({
+          title: "Upload Failed",
+          text: saveResult.error || "Failed to save load plan",
+          icon: "error",
+          confirmButtonText: "Close",
+          confirmButtonColor: "#D71A21",
+        })
+      }
+    } catch (err) {
+      Swal.fire({
+        title: "Upload Failed",
+        text: err instanceof Error ? err.message : "An error occurred",
+        icon: "error",
+        confirmButtonText: "Close",
+        confirmButtonColor: "#D71A21",
+      })
+    } finally {
+      setIsProcessing(false)
+      setPendingModeSelection(null)
+      setShowUploadModal(false)
+    }
+  }
+
+  // Handle mode modal cancel
+  const handleModeCancel = () => {
+    setShowModeModal(false)
+    setPendingModeSelection(null)
+    setIsProcessing(false)
+    setShowUploadModal(false)
+  }
+
   const handleFileUpload = async (files: File | File[]) => {
     setError(null)
     setIsProcessing(true)
@@ -577,31 +719,59 @@ function LoadPlansScreenContent({ onLoadPlanSelect }: { onLoadPlanSelect?: (load
             shipments 
           }
 
-          // Save to Supabase (will save load plan even if no shipments)
-          const saveResult = await saveListsDataToSupabase({
-            results,
-            shipments: shipments || [], // Use empty array if no shipments
-            fileName: f.name,
-            fileSize: f.size,
-          })
+          // Check if load plan already exists in database
+          const { exists, revision } = await checkExistingLoadPlan(header.flightNumber)
           
-          // Log if no shipments but load plan was saved
-          if ((!shipments || shipments.length === 0) && saveResult.success) {
-            console.log(`[LoadPlansScreen] Load plan saved without shipments: ${header.flightNumber}`)
-          }
-
-          if (saveResult.success) {
-            // Check if flight already exists in current list
-            const exists = loadPlans.some((lp) => lp.flight === header.flightNumber)
-            if (exists) {
-              // Flight was updated (revision incremented)
-              totalSkippedCount++
-              skippedFlights.push(header.flightNumber)
+          if (exists) {
+            // Load plan exists - show modal to ask user for mode selection
+            // For single file uploads, show modal immediately
+            // For batch uploads, we'll process this file after modal confirmation
+            if (fileArray.length === 1) {
+              // Single file - show modal and wait for user selection
+              setPendingModeSelection({
+                file: f,
+                header,
+                shipments: shipments || [],
+                results,
+                existingRevision: revision,
+              })
+              setShowUploadModal(false) // Hide upload modal before showing mode modal
+              setShowModeModal(true)
+              setIsProcessing(false)
+              return // Exit and wait for modal response
             } else {
-              totalAddedCount++
+              // Batch upload with existing load plan - default to "additional" mode
+              // This avoids interrupting batch processing with multiple modals
+              const saveResult = await saveListsDataToSupabase({
+                results,
+                shipments: shipments || [],
+                fileName: f.name,
+                fileSize: f.size,
+                mode: "additional", // Default to additional for batch uploads
+              })
+              
+              if (saveResult.success) {
+                totalSkippedCount++
+                skippedFlights.push(header.flightNumber)
+              } else {
+                failedFiles.push(f.name)
+              }
             }
           } else {
-            failedFiles.push(f.name)
+            // New load plan - save without mode (first upload)
+            const saveResult = await saveListsDataToSupabase({
+              results,
+              shipments: shipments || [],
+              fileName: f.name,
+              fileSize: f.size,
+              // No mode for new load plans
+            })
+            
+            if (saveResult.success) {
+              totalAddedCount++
+            } else {
+              failedFiles.push(f.name)
+            }
           }
         } catch (fileError) {
           failedFiles.push(f.name)
@@ -1196,6 +1366,17 @@ function LoadPlansScreenContent({ onLoadPlanSelect }: { onLoadPlanSelect?: (load
         state={deleteModal}
         onClose={handleCloseDeleteModal}
         onConfirm={handleConfirmDelete}
+      />
+
+      {/* Load Plan Mode Selection Modal */}
+      <LoadPlanModeModal
+        open={showModeModal}
+        onOpenChange={setShowModeModal}
+        fileName={pendingModeSelection?.file.name || ""}
+        flightNumber={pendingModeSelection?.header.flightNumber || ""}
+        existingRevision={pendingModeSelection?.existingRevision || 1}
+        onConfirm={handleModeConfirm}
+        onCancel={handleModeCancel}
       />
     </div>
   )

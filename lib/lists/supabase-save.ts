@@ -25,11 +25,20 @@ function computeWorkAreaFromShc(shc: string | null | undefined): string {
   return "GCR"
 }
 
+export type LoadPlanUpdateMode = "revised" | "additional"
+
 export interface SaveListsDataParams {
   results: ListsResults
   shipments?: Shipment[]
   fileName: string
   fileSize: number
+  /** 
+   * Mode for updating existing load plans:
+   * - "revised": Replace/update existing items, mark deleted items
+   * - "additional": Only add new items, keep existing unchanged
+   * - undefined: First upload (no existing load plan)
+   */
+  mode?: LoadPlanUpdateMode
 }
 
 export interface SaveListsDataResult {
@@ -246,7 +255,12 @@ export async function saveListsDataToSupabase({
   shipments = [],
   fileName,
   fileSize,
+  mode,
 }: SaveListsDataParams): Promise<SaveListsDataResult> {
+  // #region agent log
+  fetch('http://127.0.0.1:7242/ingest/575642b1-aad2-456f-a784-18c6e328646a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'supabase-save.ts:saveListsDataToSupabase:entry',message:'Function called',data:{mode,fileName,shipmentsCount:shipments?.length,flightNumber:results?.header?.flightNumber},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C'})}).catch(()=>{});
+  // #endregion
+  
   try {
     const supabase = createClient()
 
@@ -262,15 +276,21 @@ export async function saveListsDataToSupabase({
     // Ensure required fields are not null
     const flightNumber = results.header.flightNumber?.trim() || "UNKNOWN"
     
-    // Detect if this is a REVISED (CORRECT VERSION) or ADDITIONAL load plan
-    const isCorrectVersion = results.header.isCorrectVersion === true
-    console.log(`[v0] Load plan mode: ${isCorrectVersion ? 'REVISED (CORRECT VERSION)' : 'ADDITIONAL'}`)
+    // Mode is now passed from the UI - user chooses between "revised" or "additional"
+    // If mode is undefined, this is a first upload (no existing load plan)
+    const isRevisedMode = mode === "revised"
+    
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/575642b1-aad2-456f-a784-18c6e328646a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'supabase-save.ts:saveListsDataToSupabase:mode-check',message:'Mode determined',data:{mode,isRevisedMode,flightNumber},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C'})}).catch(()=>{});
+    // #endregion
+    
+    console.log(`[v0] Load plan mode: ${mode ? (isRevisedMode ? 'REVISED' : 'ADDITIONAL') : 'NEW (first upload)'}`)
     
     console.log("[v0] Parsed data for load_plan:", {
       flight_number: flightNumber,
       flight_date: flightDateStr,
       date_original: results.header.date,
-      isCorrectVersion,
+      mode: mode || "new",
     })
 
     // Check if load plan with this flight_number already exists
@@ -734,9 +754,15 @@ export async function saveListsDataToSupabase({
           }
           
           // Items that exist but not in new shipments - RECORD AS DELETED
-          // Only record deleted items if this is a REVISED load plan (CORRECT VERSION)
+          // Only record deleted items if this is a REVISED load plan (user selected "revised" mode)
           // For ADDITIONAL load plans, we just add new items without marking existing as deleted
-          if (isCorrectVersion) {
+          // #region agent log
+          fetch('http://127.0.0.1:7242/ingest/575642b1-aad2-456f-a784-18c6e328646a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'supabase-save.ts:delete-logic',message:'About to check isRevisedMode for delete logic',data:{isRevisedMode,mode,existingItemsCount:existingItemsMap?.size,newShipmentsCount:newShipmentsMap?.size},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C'})}).catch(()=>{});
+          // #endregion
+          if (isRevisedMode) {
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/575642b1-aad2-456f-a784-18c6e328646a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'supabase-save.ts:revised-mode-branch',message:'REVISED mode - processing deletions',data:{isRevisedMode},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C'})}).catch(()=>{});
+            // #endregion
             // These items will remain in the database with their original revision
             // But we record them as 'deleted' in load_plan_changes so they can be displayed with strikethrough
             existingItemsMap.forEach((existingItem, itemKey) => {
@@ -879,9 +905,15 @@ export async function saveListsDataToSupabase({
     }
 
     // 5. Update existing items that have changes
-    // Only update existing items in REVISED mode (CORRECT VERSION)
+    // Only update existing items in REVISED mode (user selected "revised")
     // In ADDITIONAL mode, we only insert new items and keep existing items unchanged
-    if (isCorrectVersion && itemsToUpdate.length > 0) {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/575642b1-aad2-456f-a784-18c6e328646a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'supabase-save.ts:update-logic',message:'About to check isRevisedMode for update logic',data:{isRevisedMode,itemsToUpdateCount:itemsToUpdate?.length},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C'})}).catch(()=>{});
+    // #endregion
+    if (isRevisedMode && itemsToUpdate.length > 0) {
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/575642b1-aad2-456f-a784-18c6e328646a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'supabase-save.ts:revised-update-branch',message:'REVISED mode - updating items',data:{isRevisedMode,itemsToUpdateCount:itemsToUpdate?.length},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C'})}).catch(()=>{});
+      // #endregion
       console.log(`[v0] 🔍 Step 5: Updating ${itemsToUpdate.length} existing items with changes`)
       
       // Fetch existing items to preserve additional_data values
@@ -936,7 +968,7 @@ export async function saveListsDataToSupabase({
       }
       
       console.log(`[v0] ✅ Step 5 Complete: Updated ${itemsToUpdate.length} items`)
-    } else if (!isCorrectVersion && itemsToUpdate.length > 0) {
+    } else if (!isRevisedMode && itemsToUpdate.length > 0) {
       console.log(`[v0] ADDITIONAL mode: skipping ${itemsToUpdate.length} item updates - existing items will remain unchanged`)
     }
 
@@ -1129,7 +1161,7 @@ export async function saveListsDataToSupabase({
           origin_destination: item001.origin_destination,
           weight: item001.weight,
         })
-      } else if (!isCorrectVersion && existingLoadPlanId) {
+      } else if (!isRevisedMode && existingLoadPlanId) {
         // In ADDITIONAL mode, item 001 typically already exists - this is expected
         console.log(`[v0] ℹ️ ADDITIONAL mode: Item 001 not in insert batch (likely already exists in database)`)
         console.log(`[v0] Items being inserted (new items only):`, loadPlanItems.map(item => item.serial_number).slice(0, 10))
@@ -1209,7 +1241,7 @@ export async function saveListsDataToSupabase({
             weight: insertedItem001.weight,
             revision: insertedItem001.revision,
           })
-        } else if (!isCorrectVersion && existingLoadPlanId) {
+        } else if (!isRevisedMode && existingLoadPlanId) {
           // In ADDITIONAL mode, item 001 typically already exists - this is expected
           console.log(`[v0] ℹ️ ADDITIONAL mode: Item 001 already exists, only new items were inserted`)
         }
