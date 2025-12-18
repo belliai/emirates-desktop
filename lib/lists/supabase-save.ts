@@ -262,9 +262,9 @@ export async function saveListsDataToSupabase({
     // Ensure required fields are not null
     const flightNumber = results.header.flightNumber?.trim() || "UNKNOWN"
     
-    // Detect if this is a REVISED (CORRECT VERSION) or ADDITIONAL load plan
+    // Detect if this is a REVISED (contains "cor"/"corr" in header or filename) or ADDITIONAL load plan
     const isCorrectVersion = results.header.isCorrectVersion === true
-    console.log(`[v0] Load plan mode: ${isCorrectVersion ? 'REVISED (CORRECT VERSION)' : 'ADDITIONAL'}`)
+    console.log(`[v0] Load plan mode: ${isCorrectVersion ? 'REVISED (contains cor/corr)' : 'ADDITIONAL'}`)
     
     console.log("[v0] Parsed data for load_plan:", {
       flight_number: flightNumber,

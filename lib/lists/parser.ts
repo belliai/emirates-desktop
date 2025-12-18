@@ -2,11 +2,16 @@ import type { LoadPlanHeader, Shipment } from "./types"
 import { extractImagesFromDOCX } from "./file-extractors"
 import { detectCriticalFromImages } from "./ocr-detector"
 
-export function parseHeader(content: string): LoadPlanHeader {
-  // Detect "CORRECT VERSION" - indicates revised load plan (not additional)
-  // Check first 10 lines for the pattern like "***** CORRECT VERSION *****"
-  const firstLines = content.split("\n").slice(0, 10).join("\n")
-  const isCorrectVersion = /\*+\s*CORRECT\s+VERSION\s*\*+/i.test(firstLines)
+export function parseHeader(content: string, fileName?: string): LoadPlanHeader {
+  // Detect "cor" or "corr" in header or filename - indicates revised/correction load plan (not additional)
+  // Check first 20 lines for patterns like "COR", "CORR", "CORRECT VERSION", "CORRECTION", etc.
+  const firstLines = content.split("\n").slice(0, 20).join("\n").toLowerCase()
+  // Match "cor" or "corr" as standalone or part of words (e.g., CORRECT, CORRECTION, COR, CORR)
+  const hasCorInHeader = /\bcorr?\b|corr?ect/i.test(firstLines)
+  // Also check filename for "cor" or "corr" patterns
+  const fileNameLower = (fileName || "").toLowerCase()
+  const hasCorInFilename = /\bcorr?\b|corr?ect|[-_\s]cor[-_\s]|[-_\s]corr[-_\s]/i.test(fileNameLower)
+  const isCorrectVersion = hasCorInHeader || hasCorInFilename
   
   const flightMatch = content.match(/EK\s*(\d{4})/i)
   const flightNumber = flightMatch ? `EK${flightMatch[1]}` : ""
@@ -144,7 +149,7 @@ export function parseHeader(content: string): LoadPlanHeader {
     uldVersion: uldVersion || undefined,
     headerWarning: headerWarning || undefined,
     isCritical: isCritical === true ? true : undefined, // Explicitly set to true or undefined
-    isCorrectVersion: isCorrectVersion === true ? true : undefined, // true if "CORRECT VERSION" header found (revised mode)
+    isCorrectVersion: isCorrectVersion === true ? true : undefined, // true if "cor"/"corr" found in header or filename (revised mode)
   }
 }
 

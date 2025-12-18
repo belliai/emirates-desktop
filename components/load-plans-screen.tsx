@@ -537,7 +537,7 @@ function LoadPlansScreenContent({ onLoadPlanSelect }: { onLoadPlanSelect?: (load
           // Extract text from file (handles RTF, DOCX, PDF, TXT, MD)
           const content = await extractTextFromFile(f)
 
-          let header = parseHeader(content)
+          let header = parseHeader(content, f.name)
           if (!header.flightNumber) {
             const filenameMatch = f.name.match(/EK\s*[-]?\s*(\d{4})/i)
             if (filenameMatch) {

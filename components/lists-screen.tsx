@@ -137,7 +137,7 @@ export default function ListsScreen() {
         const content = await extractTextFromFile(f)
         console.log('[v0] Extracted content length:', content.length)
 
-        const header = parseHeader(content)
+        const header = parseHeader(content, f.name)
         if (!newHeader) {
           newHeader = header // Use first file's header
         }
