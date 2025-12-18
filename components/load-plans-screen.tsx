@@ -904,42 +904,46 @@ function LoadPlansScreenContent({ onLoadPlanSelect }: { onLoadPlanSelect?: (load
               pendingDiff.flightNumber?.includes(selectedLoadPlan.flight || "")
             )
             
-            if (flightMatches) {
-              // Find the updated load plan to get its ID
-              const updatedLoadPlan = supabaseLoadPlans.find(lp => 
-                lp.flight === pendingDiff.flightNumber ||
-                lp.flight?.includes(pendingDiff.flightNumber) ||
-                pendingDiff.flightNumber?.includes(lp.flight || "")
-              )
-              
-              console.log(`[LoadPlansScreen] Found matching load plan:`, {
-                updatedLoadPlanId: updatedLoadPlan?.id,
-                updatedLoadPlanFlight: updatedLoadPlan?.flight,
+            // Always refresh the saved details cache for this flight (so next view is fresh)
+            const updatedLoadPlan = supabaseLoadPlans.find(lp => 
+              lp.flight === pendingDiff.flightNumber ||
+              lp.flight?.includes(pendingDiff.flightNumber) ||
+              pendingDiff.flightNumber?.includes(lp.flight || "")
+            )
+            
+            console.log(`[LoadPlansScreen] Found matching load plan:`, {
+              updatedLoadPlanId: updatedLoadPlan?.id,
+              updatedLoadPlanFlight: updatedLoadPlan?.flight,
+            })
+            
+            if (updatedLoadPlan && updatedLoadPlan.id) {
+              console.log(`[LoadPlansScreen] Refreshing detail for ${pendingDiff.flightNumber}`)
+              const refreshedDetail = await getLoadPlanDetailFromSupabase(updatedLoadPlan.id)
+              console.log(`[LoadPlansScreen] Refreshed detail:`, {
+                hasDetail: !!refreshedDetail,
+                detailFlight: refreshedDetail?.flight,
+                sectorsCount: refreshedDetail?.sectors?.length,
+                firstSectorItemsCount: refreshedDetail?.sectors?.[0]?.uldSections?.length,
               })
               
-              if (updatedLoadPlan && updatedLoadPlan.id) {
-                console.log(`[LoadPlansScreen] Refreshing detail view for ${pendingDiff.flightNumber}`)
-                const refreshedDetail = await getLoadPlanDetailFromSupabase(updatedLoadPlan.id)
-                console.log(`[LoadPlansScreen] Refreshed detail:`, {
-                  hasDetail: !!refreshedDetail,
-                  detailFlight: refreshedDetail?.flight,
-                  sectorsCount: refreshedDetail?.sectors?.length,
-                  firstSectorItemsCount: refreshedDetail?.sectors?.[0]?.uldSections?.length,
+              if (refreshedDetail) {
+                // Update the saved details cache so next view shows fresh data
+                setSavedDetails(prev => {
+                  const newMap = new Map(prev)
+                  newMap.set(pendingDiff.flightNumber, refreshedDetail)
+                  return newMap
                 })
                 
-                if (refreshedDetail) {
+                // If currently viewing this flight, update the detail view too
+                if (flightMatches) {
                   setSelectedLoadPlan(refreshedDetail)
-                  // Also update the saved details cache
-                  setSavedDetails(prev => {
-                    const newMap = new Map(prev)
-                    newMap.set(pendingDiff.flightNumber, refreshedDetail)
-                    return newMap
-                  })
-                  console.log(`[LoadPlansScreen] ✅ Detail view updated`)
+                  console.log(`[LoadPlansScreen] ✅ Detail view updated (was viewing this flight)`)
+                } else {
+                  console.log(`[LoadPlansScreen] ✅ Detail cache updated (will be fresh when viewed)`)
                 }
               }
             } else {
-              console.log(`[LoadPlansScreen] No matching flight for detail refresh - selectedLoadPlan.flight: "${selectedLoadPlan?.flight}", pendingDiff.flightNumber: "${pendingDiff.flightNumber}"`)
+              console.log(`[LoadPlansScreen] Could not find matching load plan for refresh`)
             }
           }
         } catch (refreshError) {
