@@ -8,7 +8,7 @@
  * - User decides to accept or discard changes
  */
 
-import { createClient } from "@/utils/supabase/client"
+import { createClient } from "@/lib/supabase/client"
 import type { LoadPlanHeader, Shipment } from "./types"
 
 // Types for the diff/comparison result
