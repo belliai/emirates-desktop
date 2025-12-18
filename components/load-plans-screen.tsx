@@ -15,6 +15,8 @@ import { useWorkAreaFilter, WorkAreaFilterControls, WorkAreaFilterProvider } fro
 import { saveListsDataToSupabase } from "@/lib/lists/supabase-save"
 import type { ListsResults } from "@/lib/lists/types"
 import { generateSpecialCargoReport, generateVUNList, generateQRTList } from "@/lib/lists/report-generators"
+import { compareLoadPlanChanges, applyLoadPlanChanges, type LoadPlanDiff } from "@/lib/lists/load-plan-review"
+import { LoadPlanReviewModal } from "./load-plan-review-modal"
 
 // Parse STD time (e.g., "02:50", "09:35") to hours
 function parseStdToHours(std: string): number {
@@ -204,6 +206,13 @@ function LoadPlansScreenContent({ onLoadPlanSelect }: { onLoadPlanSelect?: (load
   const [progress, setProgress] = useState(0)
   const [error, setError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  
+  // Review modal state for Option B (In-Memory Review Before Commit)
+  const [showReviewModal, setShowReviewModal] = useState(false)
+  const [pendingDiff, setPendingDiff] = useState<LoadPlanDiff | null>(null)
+  const [isApplyingChanges, setIsApplyingChanges] = useState(false)
+  const [pendingFiles, setPendingFiles] = useState<Array<{ file: File; results: ListsResults; shipments: any[] }>>([])
+  const [currentReviewIndex, setCurrentReviewIndex] = useState(0)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [deleteModal, setDeleteModal] = useState<DeleteModalState>({ isOpen: false, type: "confirm", flight: "" })
   const [pendingDeletePlan, setPendingDeletePlan] = useState<LoadPlan | null>(null)
@@ -524,6 +533,7 @@ function LoadPlansScreenContent({ onLoadPlanSelect }: { onLoadPlanSelect?: (load
       let totalSkippedCount = 0
       const skippedFlights: string[] = []
       const failedFiles: string[] = []
+      const pendingFilesToReview: Array<{ file: File; results: ListsResults; shipments: any[]; diff: LoadPlanDiff }> = []
 
       // Process each file and save to Supabase
       for (let i = 0; i < fileArray.length; i++) {
@@ -577,31 +587,71 @@ function LoadPlansScreenContent({ onLoadPlanSelect }: { onLoadPlanSelect?: (load
             shipments 
           }
 
-          // Save to Supabase (will save load plan even if no shipments)
-          const saveResult = await saveListsDataToSupabase({
-            results,
-            shipments: shipments || [], // Use empty array if no shipments
-            fileName: f.name,
-            fileSize: f.size,
-          })
-          
-          // Log if no shipments but load plan was saved
-          if ((!shipments || shipments.length === 0) && saveResult.success) {
-            console.log(`[LoadPlansScreen] Load plan saved without shipments: ${header.flightNumber}`)
-          }
-
-          if (saveResult.success) {
-            // Check if flight already exists in current list
-            const exists = loadPlans.some((lp) => lp.flight === header.flightNumber)
-            if (exists) {
-              // Flight was updated (revision incremented)
-              totalSkippedCount++
-              skippedFlights.push(header.flightNumber)
+          // Compare with existing data to show review modal if there are changes
+          try {
+            const diff = await compareLoadPlanChanges({
+              results,
+              shipments: shipments || [],
+            })
+            
+            console.log(`[LoadPlansScreen] Diff for ${header.flightNumber}:`, {
+              isNew: diff.isNewLoadPlan,
+              hasChanges: diff.hasChanges,
+              added: diff.addedCount,
+              modified: diff.modifiedCount,
+              deleted: diff.deletedCount,
+            })
+            
+            // If this is a new load plan OR there are no changes, save directly
+            if (diff.isNewLoadPlan || !diff.hasChanges) {
+              const saveResult = await saveListsDataToSupabase({
+                results,
+                shipments: shipments || [],
+                fileName: f.name,
+                fileSize: f.size,
+              })
+              
+              if (saveResult.success) {
+                if (diff.isNewLoadPlan) {
+                  totalAddedCount++
+                } else {
+                  // No changes detected
+                  totalSkippedCount++
+                  skippedFlights.push(header.flightNumber)
+                }
+              } else {
+                failedFiles.push(f.name)
+              }
             } else {
-              totalAddedCount++
+              // Has changes - queue for review
+              pendingFilesToReview.push({
+                file: f,
+                results,
+                shipments: shipments || [],
+                diff,
+              })
             }
-          } else {
-            failedFiles.push(f.name)
+          } catch (compareError) {
+            console.error(`[LoadPlansScreen] Error comparing ${f.name}:`, compareError)
+            // Fallback to direct save on comparison error
+            const saveResult = await saveListsDataToSupabase({
+              results,
+              shipments: shipments || [],
+              fileName: f.name,
+              fileSize: f.size,
+            })
+            
+            if (saveResult.success) {
+              const exists = loadPlans.some((lp) => lp.flight === header.flightNumber)
+              if (exists) {
+                totalSkippedCount++
+                skippedFlights.push(header.flightNumber)
+              } else {
+                totalAddedCount++
+              }
+            } else {
+              failedFiles.push(f.name)
+            }
           }
         } catch (fileError) {
           failedFiles.push(f.name)
@@ -609,6 +659,24 @@ function LoadPlansScreenContent({ onLoadPlanSelect }: { onLoadPlanSelect?: (load
       }
 
       setProgress(90)
+
+      // If there are files pending review, show the review modal
+      if (pendingFilesToReview.length > 0) {
+        console.log(`[LoadPlansScreen] ${pendingFilesToReview.length} file(s) need review`)
+        
+        // Store pending files and show review modal for the first one
+        setPendingFiles(pendingFilesToReview.map(p => ({
+          file: p.file,
+          results: p.results,
+          shipments: p.shipments,
+        })))
+        setPendingDiff(pendingFilesToReview[0].diff)
+        setCurrentReviewIndex(0)
+        setShowReviewModal(true)
+        setShowUploadModal(false)
+        setIsProcessing(false)
+        return // Exit early - will continue after user reviews
+      }
 
       // Refresh load plans from Supabase after processing all files
       try {
@@ -789,6 +857,121 @@ function LoadPlansScreenContent({ onLoadPlanSelect }: { onLoadPlanSelect?: (load
       if (fileInputRef.current) {
         fileInputRef.current.value = ""
       }
+    }
+  }
+
+  // Handle accepting changes from the review modal
+  const handleAcceptReviewChanges = async () => {
+    if (!pendingDiff || pendingFiles.length === 0) return
+    
+    setIsApplyingChanges(true)
+    
+    try {
+      const currentFile = pendingFiles[currentReviewIndex]
+      
+      // Apply the changes
+      const saveResult = await saveListsDataToSupabase({
+        results: currentFile.results,
+        shipments: currentFile.shipments,
+        fileName: currentFile.file.name,
+        fileSize: currentFile.file.size,
+      })
+      
+      if (saveResult.success) {
+        console.log(`[LoadPlansScreen] Successfully applied changes for ${pendingDiff.flightNumber}`)
+        
+        // Show success notification
+        Swal.fire({
+          title: "Changes Applied",
+          text: `Successfully updated ${pendingDiff.flightNumber}`,
+          icon: "success",
+          timer: 2000,
+          showConfirmButton: false,
+        })
+      } else {
+        console.error(`[LoadPlansScreen] Failed to apply changes:`, saveResult.error)
+        Swal.fire({
+          title: "Error",
+          text: saveResult.error || "Failed to apply changes",
+          icon: "error",
+        })
+      }
+      
+      // Move to next file or close modal
+      if (currentReviewIndex < pendingFiles.length - 1) {
+        // More files to review
+        const nextIndex = currentReviewIndex + 1
+        setCurrentReviewIndex(nextIndex)
+        // Get the diff for the next file
+        const nextResults = pendingFiles[nextIndex].results
+        const nextShipments = pendingFiles[nextIndex].shipments
+        const nextDiff = await compareLoadPlanChanges({
+          results: nextResults,
+          shipments: nextShipments,
+        })
+        setPendingDiff(nextDiff)
+      } else {
+        // All files reviewed, close modal and refresh
+        setShowReviewModal(false)
+        setPendingDiff(null)
+        setPendingFiles([])
+        setCurrentReviewIndex(0)
+        
+        // Refresh load plans
+        try {
+          const supabaseLoadPlans = await getLoadPlansFromSupabase()
+          if (supabaseLoadPlans.length > 0) {
+            setLoadPlans(supabaseLoadPlans)
+          }
+        } catch (refreshError) {
+          console.error("[LoadPlansScreen] Error refreshing load plans:", refreshError)
+        }
+      }
+    } catch (err) {
+      console.error("[LoadPlansScreen] Error applying changes:", err)
+      Swal.fire({
+        title: "Error",
+        text: "An error occurred while applying changes",
+        icon: "error",
+      })
+    } finally {
+      setIsApplyingChanges(false)
+    }
+  }
+
+  // Handle discarding changes from the review modal
+  const handleDiscardReviewChanges = async () => {
+    // Move to next file or close modal
+    if (currentReviewIndex < pendingFiles.length - 1) {
+      // More files to review
+      const nextIndex = currentReviewIndex + 1
+      setCurrentReviewIndex(nextIndex)
+      // Get the diff for the next file
+      try {
+        const nextResults = pendingFiles[nextIndex].results
+        const nextShipments = pendingFiles[nextIndex].shipments
+        const nextDiff = await compareLoadPlanChanges({
+          results: nextResults,
+          shipments: nextShipments,
+        })
+        setPendingDiff(nextDiff)
+      } catch (err) {
+        console.error("[LoadPlansScreen] Error getting next diff:", err)
+      }
+    } else {
+      // All files reviewed, close modal
+      setShowReviewModal(false)
+      setPendingDiff(null)
+      setPendingFiles([])
+      setCurrentReviewIndex(0)
+      
+      Swal.fire({
+        title: "Changes Discarded",
+        text: "No changes were applied",
+        icon: "info",
+        timer: 2000,
+        showConfirmButton: false,
+      })
     }
   }
 
@@ -1191,6 +1374,16 @@ function LoadPlansScreenContent({ onLoadPlanSelect }: { onLoadPlanSelect?: (load
         accept=".docx,.doc,.rtf,.pdf,.md,.txt"
         fileTypeDescription="DOCX, DOC, RTF, PDF, MD, TXT - Maximum file size 10 MB (multiple files supported)"
       />
+
+      {/* Review Modal - Option B: In-Memory Review Before Commit */}
+      {showReviewModal && pendingDiff && (
+        <LoadPlanReviewModal
+          diff={pendingDiff}
+          onAccept={handleAcceptReviewChanges}
+          onDiscard={handleDiscardReviewChanges}
+          isApplying={isApplyingChanges}
+        />
+      )}
 
       <DeleteConfirmationModal
         state={deleteModal}

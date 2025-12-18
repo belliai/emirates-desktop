@@ -273,12 +273,13 @@ export async function saveListsDataToSupabase({
       isCorrectVersion,
     })
 
-    // Check if load plan with this flight_number already exists
-    // Fetch full data to compare changes
+    // Check if load plan with this flight_number + flight_date already exists
+    // Using both fields as the unique key ensures different dates are treated as different flights
     const { data: existingLoadPlan, error: checkError } = await supabase
       .from("load_plans")
       .select("*")
       .eq("flight_number", flightNumber)
+      .eq("flight_date", flightDateStr)
       .order("revision", { ascending: false })
       .limit(1)
       .maybeSingle()
@@ -879,10 +880,10 @@ export async function saveListsDataToSupabase({
     }
 
     // 5. Update existing items that have changes
-    // Only update existing items in REVISED mode (CORRECT VERSION)
-    // In ADDITIONAL mode, we only insert new items and keep existing items unchanged
-    if (isCorrectVersion && itemsToUpdate.length > 0) {
-      console.log(`[v0] 🔍 Step 5: Updating ${itemsToUpdate.length} existing items with changes`)
+    // Updates are now applied in BOTH REVISED and ADDITIONAL modes
+    // The only difference: REVISED mode marks missing items as deleted, ADDITIONAL mode keeps them
+    if (itemsToUpdate.length > 0) {
+      console.log(`[v0] 🔍 Step 5: Updating ${itemsToUpdate.length} existing items with changes (mode: ${isCorrectVersion ? 'REVISED' : 'ADDITIONAL'})`)
       
       // Fetch existing items to preserve additional_data values
       const existingItemIds = itemsToUpdate.map(item => item.existingItemId)
@@ -936,8 +937,6 @@ export async function saveListsDataToSupabase({
       }
       
       console.log(`[v0] ✅ Step 5 Complete: Updated ${itemsToUpdate.length} items`)
-    } else if (!isCorrectVersion && itemsToUpdate.length > 0) {
-      console.log(`[v0] ADDITIONAL mode: skipping ${itemsToUpdate.length} item updates - existing items will remain unchanged`)
     }
 
     // 6. Insert new items (items that don't exist in existing)
