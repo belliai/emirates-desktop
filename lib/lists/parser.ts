@@ -411,17 +411,22 @@ export function parseShipments(content: string, header: LoadPlanHeader): Shipmen
         /^(\d{3})\s+(\d{3}-\d{8})\s+([A-Z]{3})([A-Z]{3})\s+(\d+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([A-Z-]+)\s+(.+?)\s+([A-Z]{3})\s+([A-Z]\d)?\s*([A-Z0-9\s]*?)\s+(SS|BS|NN)\s+([YN])\s+([A-Z]{2}\d{4})?\s*(\d{2}[A-Za-z]{3}\d{2,4})?\s*([\d:\/]+)?\s*([A-Z0-9\/]+)?\s*([A-Z0-9]+)?\s+([YN])\s*$/i,
       )
       
-      // If first regex doesn't match, try format with empty SHC (e.g., shipment 012)
-      // Pattern: SER AWB ORG/DES PCS WGT VOL LVOL (empty SHC) MAN.DESC PCODE PC THC BS PI FLTIN ARRDT.TIME SI
-      // Example: 012 176-90670086 KULLHR 11 1200.0 29.7 29.7 CONSOLIDATION GCR P1 QRT NN N EK0345 01Mar1320 01:10/ N
-      // Key: After LVOL, if SHC is empty, MAN.DESC (which starts with capital letter) comes directly after
+      // If first regex doesn't match, try format with empty SHC (e.g., shipments 003-007)
+      // Pattern: SER AWB ORG/DES PCS WGT VOL LVOL (empty or short SHC) MAN.DESC PCODE PC THC BS PI FLTIN ARRDT.TIME SI
+      // Example: 003 176-20476223 CGKJFK 4 505.0 5.4 5.4 CONSOLIDATION GCR P7 SS N EK0359 30Nov0524 50:00/ N
+      // Key: SHC codes are short (3-10 chars) like HEA, HEA-SPX, VUN-CRT-EAP
+      // When SHC is empty, MAN.DESC (like CONSOLIDATION) comes directly after LVOL
       if (!shipmentMatch) {
-        // Try pattern that allows SHC to be completely empty
-        // After LVOL, SHC can be empty (just spaces), then MAN.DESC starts with capital letter
-        // Pattern breakdown: ... LVOL \s+ ([A-Z-]*) \s+ ([A-Z][A-Z\s]+) \s+ PCODE ...
-        // The key is that MAN.DESC must start with [A-Z] to distinguish it from empty SHC
+        // Try pattern that allows SHC to be completely empty or a valid short SHC code
+        // SHC pattern: ([A-Z]{3}(?:-[A-Z]{3})*)? matches:
+        //   - Empty (nothing)
+        //   - HEA (3 letters)
+        //   - HEA-SPX (3-3)
+        //   - VUN-CRT-EAP (3-3-3)
+        // IMPORTANT: Use \s* (not \s+) after SHC to handle empty SHC case
+        // When SHC is empty, there's no space between "nothing" and MAN.DESC
         const emptySHCMatch = normalizedLine.match(
-          /^(\d{3})\s+(\d{3}-\d{8})\s+([A-Z]{3})([A-Z]{3})\s+(\d+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([A-Z-]*)\s+([A-Z][A-Z\s]*?)\s+([A-Z]{3})\s+([A-Z]\d)\s+([A-Z0-9\s]+?)\s+(SS|BS|NN)\s+([YN])\s+([A-Z]{2}\d{4})?\s*(\d{2}[A-Za-z]{3}\d{2,4})?\s*([\d:\/]+)?\s*([A-Z0-9\/]+)?\s*([A-Z0-9]+)?\s+([YN])\s*$/i,
+          /^(\d{3})\s+(\d{3}-\d{8})\s+([A-Z]{3})([A-Z]{3})\s+(\d+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([A-Z]{3}(?:-[A-Z]{3})*)?\s*([A-Z][A-Z\s]*?)\s+([A-Z]{3})\s+([A-Z]\d)?\s*([A-Z0-9\s]*?)\s*(SS|BS|NN|HL)\s+([YN])\s+([A-Z]{2}\d{4})?\s*(\d{2}[A-Za-z]{3}\d{2,4})?\s*([\d:\/]+)?\s*([A-Z0-9\/]+)?\s*([A-Z0-9]+)?\s+([YN])\s*$/i,
         )
         if (emptySHCMatch) {
           const capturedSHC = (emptySHCMatch[9] || "").trim()
@@ -432,13 +437,13 @@ export function parseShipments(content: string, header: LoadPlanHeader): Shipmen
           // SHC can be empty string ""
           const isValidManDesc = capturedManDesc && capturedManDesc.length > 0 && capturedManDesc.match(/^[A-Z]/)
           const isValidPcode = capturedPcode && capturedPcode.length === 3 && capturedPcode.match(/^[A-Z]{3}$/i)
-          const isValidSHC = !capturedSHC || capturedSHC.match(/^[A-Z-]+$/i)
+          const isValidSHC = !capturedSHC || capturedSHC.match(/^[A-Z]{3}(-[A-Z]{3})*$/i)
           
           if (isValidManDesc && isValidPcode && isValidSHC) {
-            console.log("[v0] ✅ Matched with empty SHC regex (e.g., shipment 012):", {
+            console.log("[v0] ✅ Matched with empty/short SHC regex (e.g., shipments 003-007):", {
               serial: emptySHCMatch[1],
               awb: emptySHCMatch[2],
-              shc: capturedSHC || "(empty - will save as empty string \"\")",
+              shc: capturedSHC || "(empty)",
               manDesc: capturedManDesc.substring(0, 30),
               pcode: capturedPcode
             })
