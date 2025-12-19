@@ -273,12 +273,13 @@ export async function saveListsDataToSupabase({
       isCorrectVersion,
     })
 
-    // Check if load plan with this flight_number already exists
-    // Fetch full data to compare changes
+    // Check if load plan with this flight_number + flight_date already exists
+    // Using both fields as the unique key ensures different dates are treated as different flights
     const { data: existingLoadPlan, error: checkError } = await supabase
       .from("load_plans")
       .select("*")
       .eq("flight_number", flightNumber)
+      .eq("flight_date", flightDateStr)
       .order("revision", { ascending: false })
       .limit(1)
       .maybeSingle()
@@ -879,10 +880,10 @@ export async function saveListsDataToSupabase({
     }
 
     // 5. Update existing items that have changes
-    // Only update existing items in REVISED mode (CORRECT VERSION)
-    // In ADDITIONAL mode, we only insert new items and keep existing items unchanged
-    if (isCorrectVersion && itemsToUpdate.length > 0) {
-      console.log(`[v0] 🔍 Step 5: Updating ${itemsToUpdate.length} existing items with changes`)
+    // Updates are now applied in BOTH REVISED and ADDITIONAL modes
+    // The only difference: REVISED mode marks missing items as deleted, ADDITIONAL mode keeps them
+    if (itemsToUpdate.length > 0) {
+      console.log(`[v0] 🔍 Step 5: Updating ${itemsToUpdate.length} existing items with changes (mode: ${isCorrectVersion ? 'REVISED' : 'ADDITIONAL'})`)
       
       // Fetch existing items to preserve additional_data values
       const existingItemIds = itemsToUpdate.map(item => item.existingItemId)
@@ -936,8 +937,6 @@ export async function saveListsDataToSupabase({
       }
       
       console.log(`[v0] ✅ Step 5 Complete: Updated ${itemsToUpdate.length} items`)
-    } else if (!isCorrectVersion && itemsToUpdate.length > 0) {
-      console.log(`[v0] ADDITIONAL mode: skipping ${itemsToUpdate.length} item updates - existing items will remain unchanged`)
     }
 
     // 6. Insert new items (items that don't exist in existing)
@@ -989,49 +988,93 @@ export async function saveListsDataToSupabase({
       // Check both: 1) duplicate serialNo+awbNo combination, 2) duplicate serialNo only
       const { data: allExistingItems } = await supabase
         .from("load_plan_items")
-        .select("serial_number, awb_number")
+        .select("id, serial_number, awb_number")
         .eq("load_plan_id", loadPlanId)
       
       const existingKeysSet = new Set<string>()
-      const existingSerialNosSet = new Set<number>()
+      const existingSerialNosMap = new Map<number, { id: string; awb_number: string }>()
       if (allExistingItems) {
         allExistingItems.forEach(item => {
           const key = createItemKey(item.serial_number, item.awb_number)
           if (key) {
             existingKeysSet.add(key)
           }
-          // Also track serialNo separately
+          // Also track serialNo separately with full item info for updates
           if (item.serial_number !== null && item.serial_number !== undefined && !isNaN(item.serial_number)) {
-            existingSerialNosSet.add(item.serial_number)
+            existingSerialNosMap.set(item.serial_number, { id: item.id, awb_number: item.awb_number })
           }
         })
       }
       
-      // Filter out items that already exist in any revision
-      // Check both duplicate serialNo and duplicate serialNo+awbNo combination
-      const finalItemsToInsert = uniqueItemsToInsert.filter(shipment => {
+      // Separate items into: truly new (insert) vs changed AWB (update by serialNo)
+      const finalItemsToInsert: Shipment[] = []
+      const itemsToUpdateBySerialNo: { shipment: Shipment; existingItemId: string }[] = []
+      
+      uniqueItemsToInsert.forEach(shipment => {
         const serialNo = shipment.serialNo ? (typeof shipment.serialNo === 'string' ? parseInt(shipment.serialNo.trim(), 10) : shipment.serialNo) : null
         const normalizedAwb = shipment.awbNo ? shipment.awbNo.replace(/\s+/g, "").trim() : ""
         const key = createItemKey(serialNo, normalizedAwb)
         
-        // Check for duplicate serialNo in database
+        // Check for exact duplicate serialNo+awbNo - skip completely
+        if (key && existingKeysSet.has(key)) {
+          console.log(`[v0] ℹ️ Item already exists (exact match): serial_number=${serialNo}, awb_number=${normalizedAwb} - skipping`)
+          return
+        }
+        
+        // Check for duplicate serialNo with DIFFERENT AWB - this means AWB changed, should UPDATE
         if (serialNo !== null && serialNo !== undefined && !isNaN(serialNo)) {
-          if (existingSerialNosSet.has(serialNo)) {
-            console.warn(`[v0] ⚠️ Skipping item with duplicate serialNo in database: serial_number=${serialNo}, awb_number=${normalizedAwb}`)
-            return false
+          const existingItem = existingSerialNosMap.get(serialNo)
+          if (existingItem) {
+            console.log(`[v0] 🔄 Item has same serialNo but different AWB - will UPDATE: serial_number=${serialNo}, old_awb=${existingItem.awb_number}, new_awb=${normalizedAwb}`)
+            itemsToUpdateBySerialNo.push({
+              shipment,
+              existingItemId: existingItem.id,
+            })
+            return
           }
         }
         
-        // Also check for duplicate serialNo+awbNo combination
-        if (key && existingKeysSet.has(key)) {
-          console.warn(`[v0] ⚠️ Skipping item that already exists in database: serial_number=${serialNo}, awb_number=${normalizedAwb} (serialNo+awbNo combination exists)`)
-          return false
-        }
-        return true
+        // Truly new item - add to insert list
+        finalItemsToInsert.push(shipment)
       })
       
-      if (finalItemsToInsert.length < uniqueItemsToInsert.length) {
-        console.log(`[v0] ⚠️ Removed ${uniqueItemsToInsert.length - finalItemsToInsert.length} items that already exist in database (checked for duplicate serialNo and serialNo+awbNo)`)
+      console.log(`[v0] 🔍 Step 6a: Categorized items for insertion:`, {
+        toInsert: finalItemsToInsert.length,
+        toUpdateBySerialNo: itemsToUpdateBySerialNo.length,
+        skippedExact: uniqueItemsToInsert.length - finalItemsToInsert.length - itemsToUpdateBySerialNo.length,
+      })
+      
+      // UPDATE items that have same serialNo but different AWB
+      if (itemsToUpdateBySerialNo.length > 0) {
+        console.log(`[v0] 🔍 Step 6b: Updating ${itemsToUpdateBySerialNo.length} items with changed AWB numbers`)
+        
+        for (const { shipment, existingItemId } of itemsToUpdateBySerialNo) {
+          const itemData = createLoadPlanItem(shipment, false) // false = not new item
+          itemData.revision = newRevision
+          itemData.additional_data = true // Mark as changed
+          
+          const serialNo = shipment.serialNo ? (typeof shipment.serialNo === 'string' ? parseInt(shipment.serialNo.trim(), 10) : shipment.serialNo) : null
+          
+          console.log(`[v0] 🔄 Updating item ${serialNo}:`, {
+            existingItemId,
+            new_awb: itemData.awb_number,
+            new_origin: itemData.origin_destination,
+            new_weight: itemData.weight,
+          })
+          
+          const { error: updateError } = await supabase
+            .from("load_plan_items")
+            .update(itemData)
+            .eq("id", existingItemId)
+          
+          if (updateError) {
+            console.error(`[v0] Error updating item ${existingItemId}:`, updateError)
+          } else {
+            console.log(`[v0] ✅ Successfully updated item ${serialNo}`)
+          }
+        }
+        
+        console.log(`[v0] ✅ Step 6b Complete: Updated ${itemsToUpdateBySerialNo.length} items with changed AWB`)
       }
       
       const loadPlanItems = finalItemsToInsert.map((shipment) => {
