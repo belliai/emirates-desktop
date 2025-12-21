@@ -775,13 +775,14 @@ export function parseShipments(content: string, header: LoadPlanHeader): Shipmen
             lastShipment.specialNotes.push(note)
           }
         }
-      } else if (inShipmentSection && line.length > 0 && !line.match(/^\d{3}/) && !line.match(/^xx\s+/i) && !line.match(/^SECTOR:/i) && !line.match(/^TOTALS:/i) && !line.match(/^BAGG|COUR/i) && !line.match(/^RAMP|MAIL/i) && !line.match(/^GO SHOW/i)) {
-        // Comment lines like "137P RELOC ON EK035 01DEC DUE SPACE"
+      } else if (inShipmentSection && line.length > 0 && !normalizedLine.match(/^\d{3}\s+\d{3}-\d{8}/) && !line.match(/^xx\s+/i) && !line.match(/^SECTOR:/i) && !line.match(/^TOTALS:/i) && !line.match(/^BAGG|COUR/i) && !line.match(/^RAMP|MAIL/i) && !line.match(/^GO SHOW/i)) {
+        // Comment lines like "137P RELOC ON EK035 01DEC DUE SPACE" or "CAN BE KEPT AS GO SHOW OK TO MIX LD"
         // These should be stored as specialNotes (remarks) for the preceding AWB
         // Conditions: 
         // - Inside shipment section
         // - Not empty
-        // - Doesn't start with 3 digits (not a shipment line)
+        // - Doesn't match shipment line pattern (3 digits + space + AWB like 176-12345678)
+        //   This allows "137P RELOC..." to be captured as comment (starts with digits but no AWB pattern)
         // - Doesn't start with XX (not a ULD marker)
         // - Doesn't start with SECTOR, TOTALS, BAGG, COUR, RAMP, MAIL, GO SHOW (not section markers)
         const note = line.trim()
