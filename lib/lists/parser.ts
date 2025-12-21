@@ -776,36 +776,33 @@ export function parseShipments(content: string, header: LoadPlanHeader): Shipmen
           }
         }
       } else if (inShipmentSection && line.length > 0 && !line.match(/^\d{3}/) && !line.match(/^xx\s+/i) && !line.match(/^SECTOR:/i) && !line.match(/^TOTALS:/i) && !line.match(/^BAGG|COUR/i) && !line.match(/^RAMP|MAIL/i) && !line.match(/^GO SHOW/i)) {
-        // Baris seperti "SHPT RELOC X EK0005 , 29FEB DUE LATE BREAKDOWN --- SAME PLND ON EK041 AS HL"
-        // Harus masuk ke ULD, bukan specialNotes
-        // Kondisi: 
-        // - Di dalam shipment section
-        // - Tidak kosong
-        // - Tidak dimulai dengan 3 digit (bukan shipment line)
-        // - Tidak dimulai dengan XX (bukan ULD marker)
-        // - Tidak dimulai dengan SECTOR, TOTALS, BAGG, COUR, RAMP, MAIL, GO SHOW (bukan section marker)
+        // Comment lines like "137P RELOC ON EK035 01DEC DUE SPACE"
+        // These should be stored as specialNotes (remarks) for the preceding AWB
+        // Conditions: 
+        // - Inside shipment section
+        // - Not empty
+        // - Doesn't start with 3 digits (not a shipment line)
+        // - Doesn't start with XX (not a ULD marker)
+        // - Doesn't start with SECTOR, TOTALS, BAGG, COUR, RAMP, MAIL, GO SHOW (not section markers)
         const note = line.trim()
         if (note.length > 0) {
-          // Append ke ULD shipment terakhir (currentShipment atau terakhir di buffer)
+          // Store as specialNotes (remarks) for the preceding AWB
           if (currentShipment) {
-            // Jika currentShipment sudah punya ULD, append dengan separator
-            if (currentShipment.uld && currentShipment.uld.trim()) {
-              currentShipment.uld = `${currentShipment.uld} --- ${note}`
-            } else {
-              // Jika belum ada ULD, simpan sebagai ULD
-              currentShipment.uld = note
+            const shipment = currentShipment as Partial<Shipment> & { specialNotes?: string[] }
+            if (!shipment.specialNotes) {
+              shipment.specialNotes = []
             }
-            console.log("[v0] ✅ ULD note detected (non-XX):", note.substring(0, 100))
+            shipment.specialNotes.push(note)
+            console.log("[v0] ✅ Comment line captured as specialNotes:", note.substring(0, 100))
           } else if (awbBuffer.length > 0) {
-            // Assign ke shipment terakhir di buffer
+            // Assign to the last shipment in buffer
             const lastShipment = awbBuffer[awbBuffer.length - 1]
             if (lastShipment) {
-              if (lastShipment.uld && lastShipment.uld.trim()) {
-                lastShipment.uld = `${lastShipment.uld} --- ${note}`
-              } else {
-                lastShipment.uld = note
+              if (!lastShipment.specialNotes) {
+                lastShipment.specialNotes = []
               }
-              console.log("[v0] ✅ ULD note detected (non-XX) for buffered shipment:", note.substring(0, 100))
+              lastShipment.specialNotes.push(note)
+              console.log("[v0] ✅ Comment line captured as specialNotes for buffered shipment:", note.substring(0, 100))
             }
           }
         }
