@@ -1833,16 +1833,6 @@ function ULDRow({ uld, uldEntries, isReadOnly, enableBulkCheckboxes, sectionKeys
     ? trailingComment.substring(0, maxTrailingLength) + "..."
     : trailingComment
   
-  // Color coding for trailing instruction types (based on ULD analysis patterns)
-  const trailingColorClass = {
-    parenthetical: "text-blue-600",    // (ENSURE TO LOAD...) - instructions
-    doubleslash: "text-orange-600",    // // OPTIMIZE WITH... - optimization notes
-    dashes: "text-purple-600",         // --- HL ON EK041 - hold load references
-    brackets: "text-green-600",        // [Must load QKE] - requirements
-    other: "text-gray-500",            // Fallback
-    none: "text-gray-500"
-  }[trailingType]
-  
   return (
     <tr className={isRampTransfer ? "bg-gray-50" : ""}>
       {/* Checkbox column */}
@@ -1894,14 +1884,19 @@ function ULDRow({ uld, uldEntries, isReadOnly, enableBulkCheckboxes, sectionKeys
               className="font-semibold text-gray-900 text-center min-w-[200px]"
               readOnly={isReadOnly}
             />
-            {/* Trailing comment inline after XX - color-coded by type with native title tooltip */}
+            {/* Trailing comment inline after XX - with hover tooltip for truncated text */}
             {trailingComment && (
-              <span 
-                className={`text-xs font-normal whitespace-nowrap cursor-default ${trailingColorClass}`}
-                title={isTrailingTruncated ? trailingComment : undefined}
-              >
-                {displayTrailing}
-              </span>
+              <div className="group/trailing relative inline-flex">
+                <span className="text-xs font-normal text-gray-500 whitespace-nowrap cursor-default">
+                  {displayTrailing}
+                </span>
+                {isTrailingTruncated && (
+                  <div className="absolute left-0 bottom-full mb-1.5 px-2 py-1.5 bg-gray-800/95 text-white text-xs rounded shadow-lg opacity-0 group-hover/trailing:opacity-100 transition-opacity duration-150 pointer-events-none whitespace-normal max-w-[400px] z-50">
+                    {trailingComment}
+                    <div className="absolute top-full left-4 w-0 h-0 border-l-[5px] border-r-[5px] border-t-[5px] border-transparent border-t-gray-800/95"></div>
+                  </div>
+                )}
+              </div>
             )}
           </div>
           {finalSection && (
