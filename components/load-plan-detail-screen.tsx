@@ -1826,8 +1826,8 @@ function ULDRow({ uld, uldEntries, isReadOnly, enableBulkCheckboxes, sectionKeys
     ? formatULDSectionFromCheckedEntries(uldEntries, uld) 
     : coreULD // Show only core ULD when no entries are checked (no trailing comment)
   
-  // Trailing comment truncation threshold - 50 chars is sensible for inline display
-  const maxTrailingLength = 50
+  // Trailing comment truncation threshold - 65 chars covers ~90% of instructions fully
+  const maxTrailingLength = 65
   const isTrailingTruncated = trailingComment.length > maxTrailingLength
   const displayTrailing = isTrailingTruncated 
     ? trailingComment.substring(0, maxTrailingLength) + "..."
