@@ -844,7 +844,8 @@ export async function saveListsDataToSupabase({
         // SI field - only store original SI value, NOT special notes
         special_instructions: truncate(shipment.si, 50),
         // ULD allocation - format ULD with proper spacing before saving
-        uld_allocation: truncate(formatULD(shipment.uld), 50),
+        // Use 500 char limit to preserve trailing comments like "(ENSURE TO LOAD 01PMC/01PLA WITH ALL CARGO)"
+        uld_allocation: truncate(formatULD(shipment.uld), 500),
         // Special notes - store in separate column (e.g., "[Must be load in Fire containment equipment]")
         // Join multiple special notes with newline
         special_notes: shipment.specialNotes && shipment.specialNotes.length > 0
