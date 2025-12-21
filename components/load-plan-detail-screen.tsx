@@ -14,7 +14,7 @@ import { useLoadPlanState } from "./use-load-plan-state"
 import { useLoadPlans } from "@/lib/load-plan-context"
 import type { LoadPlanDetail, AWBRow, ULDSection } from "./load-plan-types"
 import { ULDNumberModal, type ULDEntry } from "./uld-number-modal"
-import { parseULDSection, formatULDSection, formatULDSectionFromEntries, formatULDSectionFromCheckedEntries } from "@/lib/uld-parser"
+import { parseULDSection, formatULDSection, formatULDSectionFromEntries, formatULDSectionFromCheckedEntries, extractULDParts } from "@/lib/uld-parser"
 import { getULDEntriesFromStorage, saveULDEntriesToStorage, getULDEntriesFromSupabase, saveULDEntriesToSupabase } from "@/lib/uld-storage"
 import type { WorkArea, PilPerSubFilter } from "@/lib/work-area-filter-utils"
 import { shouldIncludeULDSection } from "@/lib/work-area-filter-utils"
@@ -1809,6 +1809,9 @@ function ULDRow({ uld, uldEntries, isReadOnly, enableBulkCheckboxes, sectionKeys
   const isBulkULD = uld ? uld.toUpperCase().includes("BULK") : false
   const hasCheckedEntries = checkedEntries.length > 0
   
+  // Extract core ULD (XX ... XX) and trailing comment with type classification
+  const { core: coreULD, trailing: trailingComment, trailingType } = extractULDParts(uld)
+  
   // Left side: Show checked entries
   // - With number: {type}{number}EK (e.g., "PMC12e3EK")
   // - Without number: just {type} (e.g., "AKE") to indicate it's marked as final
@@ -1816,12 +1819,29 @@ function ULDRow({ uld, uldEntries, isReadOnly, enableBulkCheckboxes, sectionKeys
     .map(e => e.number.trim() !== "" ? `${e.type}${e.number.trim()}EK` : e.type)
     .join(", ")
   
-  // Right side: Always show Final section
+  // Right side: Always show Final section (core ULD only, no trailing comment)
   // - If entries are checked with numbers: show dynamic count (XX 02PMC 01AKE XX)
-  // - If no entries checked or no numbers: show original ULD section (XX 1PMC 2AKE XX)
+  // - If no entries checked or no numbers: show core ULD section only
   const finalSection = hasCheckedEntries 
     ? formatULDSectionFromCheckedEntries(uldEntries, uld) 
-    : uld // Always show original section when no entries are checked
+    : coreULD // Show only core ULD when no entries are checked (no trailing comment)
+  
+  // Trailing comment truncation threshold - 50 chars is sensible for inline display
+  const maxTrailingLength = 50
+  const isTrailingTruncated = trailingComment.length > maxTrailingLength
+  const displayTrailing = isTrailingTruncated 
+    ? trailingComment.substring(0, maxTrailingLength) + "..."
+    : trailingComment
+  
+  // Color coding for trailing instruction types (based on ULD analysis patterns)
+  const trailingColorClass = {
+    parenthetical: "text-blue-600",    // (ENSURE TO LOAD...) - instructions
+    doubleslash: "text-orange-600",    // // OPTIMIZE WITH... - optimization notes
+    dashes: "text-purple-600",         // --- HL ON EK041 - hold load references
+    brackets: "text-green-600",        // [Must load QKE] - requirements
+    other: "text-gray-500",            // Fallback
+    none: "text-gray-500"
+  }[trailingType]
   
   return (
     <tr className={isRampTransfer ? "bg-gray-50" : ""}>
@@ -1863,16 +1883,26 @@ function ULDRow({ uld, uldEntries, isReadOnly, enableBulkCheckboxes, sectionKeys
               </div>
             </div>
           )}
+          {/* Center: Core ULD + trailing comment inline */}
           <div 
-            className={`flex-1 ${isReadOnly && !isBulkULD ? "cursor-pointer hover:bg-gray-50 rounded px-2 py-1 transition-colors" : ""}`}
+            className={`flex-1 flex items-center justify-center gap-1 ${isReadOnly && !isBulkULD ? "cursor-pointer hover:bg-gray-50 rounded px-2 py-1 transition-colors" : ""}`}
             onClick={isReadOnly && !isBulkULD ? onClick : undefined}
           >
             <EditableField
-              value={uld}
+              value={coreULD}
               onChange={onUpdate}
               className="font-semibold text-gray-900 text-center min-w-[200px]"
               readOnly={isReadOnly}
             />
+            {/* Trailing comment inline after XX - color-coded by type with native title tooltip */}
+            {trailingComment && (
+              <span 
+                className={`text-xs font-normal whitespace-nowrap cursor-default ${trailingColorClass}`}
+                title={isTrailingTruncated ? trailingComment : undefined}
+              >
+                {displayTrailing}
+              </span>
+            )}
           </div>
           {finalSection && (
             <div className="text-xs font-normal text-gray-600 flex-shrink-0 pl-3 border-l border-gray-200">

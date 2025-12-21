@@ -1,4 +1,65 @@
 /**
+ * Trailing instruction pattern types (based on ULD analysis of 1,144 sections)
+ * - parenthetical: (ENSURE TO LOAD...) - 24 instances
+ * - doubleslash: // OPTIMIZE WITH SBY CARGO - 25 instances  
+ * - dashes: --- HL ON EK041 - 15 instances
+ * - brackets: [Must load QKE] - 5 instances
+ * - other: Fallback for any other trailing content
+ */
+export type TrailingType = "parenthetical" | "doubleslash" | "dashes" | "brackets" | "other" | "none"
+
+/**
+ * Detect the type of trailing instruction pattern
+ */
+export function detectTrailingType(trailing: string): TrailingType {
+  if (!trailing || trailing.trim() === "") return "none"
+  
+  const trimmed = trailing.trim()
+  
+  // Check for parenthetical: (...)
+  if (trimmed.startsWith("(") && trimmed.includes(")")) return "parenthetical"
+  
+  // Check for double-slash: // ...
+  if (trimmed.startsWith("//")) return "doubleslash"
+  
+  // Check for dashes: --- or ----
+  if (trimmed.startsWith("---")) return "dashes"
+  
+  // Check for brackets: [...]
+  if (trimmed.startsWith("[") && trimmed.includes("]")) return "brackets"
+  
+  // Fallback for any other trailing content
+  return "other"
+}
+
+/**
+ * Extract core ULD section (XX ... XX) and trailing comment from a ULD string
+ * Examples:
+ * - "XX 08PMC/01PLA/02AKE XX (ENSURE TO LOAD...)" -> { core: "XX 08PMC/01PLA/02AKE XX", trailing: "(ENSURE TO LOAD...)", trailingType: "parenthetical" }
+ * - "XX 01PMC XX --- HL ON EK041" -> { core: "XX 01PMC XX", trailing: "--- HL ON EK041", trailingType: "dashes" }
+ * - "XX 02AKE XX" -> { core: "XX 02AKE XX", trailing: "", trailingType: "none" }
+ */
+export function extractULDParts(uldString: string): { core: string; trailing: string; trailingType: TrailingType } {
+  if (!uldString) {
+    return { core: "", trailing: "", trailingType: "none" }
+  }
+  
+  // Match pattern: XX ... XX followed by optional trailing content
+  const match = uldString.match(/^(XX\s+.+?\s+XX)(.*)/i)
+  if (match) {
+    const trailing = match[2].trim()
+    return {
+      core: match[1].trim(),
+      trailing,
+      trailingType: detectTrailingType(trailing)
+    }
+  }
+  
+  // If no XX markers found, treat entire string as core
+  return { core: uldString, trailing: "", trailingType: "none" }
+}
+
+/**
  * Parse ULD section string to extract ULD count and types
  * Examples:
  * - "XX 01PMC XX" -> { count: 1, types: ["PMC"], expandedTypes: ["PMC"] }
@@ -8,8 +69,10 @@
  * - "XX 02PMC 03AKE XX" -> { count: 5, types: ["PMC", "AKE"], expandedTypes: ["PMC", "PMC", "AKE", "AKE", "AKE"] }
  */
 export function parseULDSection(uldString: string): { count: number; types: string[]; expandedTypes: string[] } {
+  // Extract only the core ULD part (ignore trailing comment)
+  const { core } = extractULDParts(uldString)
   // Remove XX markers and trim
-  const cleaned = uldString.replace(/^XX\s+/i, "").replace(/\s+XX$/i, "").trim()
+  const cleaned = core.replace(/^XX\s+/i, "").replace(/\s+XX$/i, "").trim()
   
   if (!cleaned) {
     return { count: 0, types: [], expandedTypes: [] }
@@ -77,6 +140,7 @@ export function formatULDSectionFromEntries(entries: Array<{ type: string; numbe
 /**
  * Format ULD section string based on checked ULD entries for Final display (right side)
  * Uses the same format as formatULDSection but works with entries
+ * IMPORTANT: Final section only shows core ULD part (XX ... XX), NOT trailing comments
  * Example: entries with checked PMC entries -> "XX 02PMC XX"
  */
 export function formatULDSectionFromCheckedEntries(entries: Array<{ type: string; number: string; checked: boolean }>, originalSection: string): string {
@@ -84,8 +148,12 @@ export function formatULDSectionFromCheckedEntries(entries: Array<{ type: string
   // This way, when user marks an entry as "final" without a number, it still counts
   const checkedEntries = entries.filter(e => e.checked)
   
+  // Extract core ULD part (without trailing comment) for fallback
+  const { core } = extractULDParts(originalSection)
+  
   if (checkedEntries.length === 0) {
-    return originalSection
+    // Return only the core ULD part, not the trailing comment
+    return core || originalSection
   }
   
   // Group by type and count ALL checked entries
@@ -94,10 +162,10 @@ export function formatULDSectionFromCheckedEntries(entries: Array<{ type: string
     typeCounts[entry.type] = (typeCounts[entry.type] || 0) + 1
   })
   
-  // Get original types order
-  const { types } = parseULDSection(originalSection)
+  // Get original types order (from core ULD part only)
+  const { types } = parseULDSection(core)
   if (types.length === 0) {
-    return originalSection
+    return core || originalSection
   }
   
   // Build the formatted string maintaining the order of types from original
@@ -120,9 +188,10 @@ export function formatULDSectionFromCheckedEntries(entries: Array<{ type: string
   })
   
   if (parts.length === 0) {
-    return originalSection
+    return core || originalSection
   }
   
+  // Return only the core ULD format, no trailing comment
   return `XX ${parts.join(" ")} XX`
 }
 
