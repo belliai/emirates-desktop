@@ -7,11 +7,10 @@ interface LoadPlanHeaderProps {
   isReadOnly: boolean
   onGenerateBCR?: () => void
   onHandover?: () => void
-  onSave?: () => void
   revision?: number
 }
 
-export function LoadPlanHeader({ onBack, isReadOnly, onGenerateBCR, onHandover, onSave, revision }: LoadPlanHeaderProps) {
+export function LoadPlanHeader({ onBack, isReadOnly, onGenerateBCR, onHandover, revision }: LoadPlanHeaderProps) {
   return (
     <header className="sticky top-0 z-50 border-b border-gray-200 bg-white">
       <div className="flex items-center justify-between px-4 py-3">
@@ -43,14 +42,6 @@ export function LoadPlanHeader({ onBack, isReadOnly, onGenerateBCR, onHandover, 
             >
               <FileCheck className="w-4 h-4" />
               Generate BCR
-            </button>
-          )}
-          {onSave && (
-            <button
-              onClick={onSave}
-              className="px-4 py-2 bg-[#D71A21] text-white rounded-lg hover:bg-[#B01419] transition-colors font-medium"
-            >
-              Save Changes
             </button>
           )}
         </div>

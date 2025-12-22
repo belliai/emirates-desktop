@@ -198,7 +198,6 @@ export default function LoadPlansScreen({ onLoadPlanSelect }: { onLoadPlanSelect
 function LoadPlansScreenContent({ onLoadPlanSelect }: { onLoadPlanSelect?: (loadPlan: LoadPlan) => void }) {
   const { loadPlans, addLoadPlan, setLoadPlans } = useLoadPlans()
   const [selectedLoadPlan, setSelectedLoadPlan] = useState<LoadPlanDetail | null>(null)
-  const [savedDetails, setSavedDetails] = useState<Map<string, LoadPlanDetail>>(new Map())
   const [showUploadModal, setShowUploadModal] = useState(false)
   const [isProcessing, setIsProcessing] = useState(false)
   const [isDragging, setIsDragging] = useState(false)
@@ -405,14 +404,7 @@ function LoadPlansScreenContent({ onLoadPlanSelect }: { onLoadPlanSelect?: (load
   }
 
   const handleRowClick = async (loadPlan: LoadPlan) => {
-    // Check if we have a saved version first
-    const savedDetail = savedDetails.get(loadPlan.flight)
-    if (savedDetail) {
-      setSelectedLoadPlan(savedDetail)
-      return
-    }
-
-    // Try to fetch from Supabase
+    // Fetch from Supabase
     try {
       const supabaseDetail = await getLoadPlanDetailFromSupabase(loadPlan.flight)
       if (supabaseDetail) {
@@ -433,13 +425,6 @@ function LoadPlansScreenContent({ onLoadPlanSelect }: { onLoadPlanSelect?: (load
     }
   }
 
-  const handleSave = (updatedPlan: LoadPlanDetail) => {
-    setSavedDetails((prev) => {
-      const updated = new Map(prev)
-      updated.set(updatedPlan.flight, updatedPlan)
-      return updated
-    })
-  }
 
   const handleDelete = (loadPlan: LoadPlan, e: React.MouseEvent) => {
     e.stopPropagation() // Prevent row click when clicking delete button
@@ -457,13 +442,6 @@ function LoadPlansScreenContent({ onLoadPlanSelect }: { onLoadPlanSelect?: (load
       const deleteResult = await deleteLoadPlanFromSupabase(pendingDeletePlan.flight)
       
       if (deleteResult.success) {
-        // Remove from saved details if exists
-        setSavedDetails((prev) => {
-          const updated = new Map(prev)
-          updated.delete(pendingDeletePlan.flight)
-          return updated
-        })
-        
         // Refresh load plans from Supabase
         const supabaseLoadPlans = await getLoadPlansFromSupabase()
         if (supabaseLoadPlans.length > 0) {
@@ -927,19 +905,12 @@ function LoadPlansScreenContent({ onLoadPlanSelect }: { onLoadPlanSelect?: (load
               })
               
               if (refreshedDetail) {
-                // Update the saved details cache so next view shows fresh data
-                setSavedDetails(prev => {
-                  const newMap = new Map(prev)
-                  newMap.set(pendingDiff.flightNumber, refreshedDetail)
-                  return newMap
-                })
-                
                 // If currently viewing this flight, update the detail view too
                 if (flightMatches) {
                   setSelectedLoadPlan(refreshedDetail)
                   console.log(`[LoadPlansScreen] ✅ Detail view updated (was viewing this flight)`)
                 } else {
-                  console.log(`[LoadPlansScreen] ✅ Detail cache updated (will be fresh when viewed)`)
+                  console.log(`[LoadPlansScreen] ✅ Data saved (will be fresh when viewed)`)
                 }
               }
             } else {
@@ -1066,7 +1037,6 @@ function LoadPlansScreenContent({ onLoadPlanSelect }: { onLoadPlanSelect?: (load
       <LoadPlanDetailScreen
         loadPlan={selectedLoadPlan}
         onBack={() => setSelectedLoadPlan(null)}
-        onSave={handleSave}
       />
     )
   }

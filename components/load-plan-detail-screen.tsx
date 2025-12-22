@@ -122,7 +122,6 @@ function calculateConnectionTime(
 interface LoadPlanDetailScreenProps {
   loadPlan: LoadPlanDetail
   onBack: () => void
-  onSave?: (updatedPlan: LoadPlanDetail) => void
   onNavigateToBuildupStaff?: (staffName: string) => void
   enableBulkCheckboxes?: boolean // Enable bulk checkbox functionality (default: false, true for Buildup Staff)
   workAreaFilter?: WorkArea // Filter ULD sections based on work area (SHC codes)
@@ -134,7 +133,7 @@ interface LoadPlanDetailScreenProps {
   hideHandover?: boolean // Hide handover button (when handover is managed at a higher level, e.g., Buildup Staff screen)
 }
 
-export default function LoadPlanDetailScreen({ loadPlan, onBack, onSave, onNavigateToBuildupStaff, enableBulkCheckboxes = false, workAreaFilter, pilPerSubFilter, isQRTList = false, onULDUpdate, arrivalBayInfo, departureBayInfo, hideHandover = false }: LoadPlanDetailScreenProps) {
+export default function LoadPlanDetailScreen({ loadPlan, onBack, onNavigateToBuildupStaff, enableBulkCheckboxes = false, workAreaFilter, pilPerSubFilter, isQRTList = false, onULDUpdate, arrivalBayInfo, departureBayInfo, hideHandover = false }: LoadPlanDetailScreenProps) {
   const [showBCRModal, setShowBCRModal] = useState(false)
   const [showHandoverModal, setShowHandoverModal] = useState(false)
   const [awbComments, setAwbComments] = useState<AWBComment[]>([])
@@ -372,12 +371,6 @@ export default function LoadPlanDetailScreen({ loadPlan, onBack, onSave, onNavig
     }
   }
 
-  const handleSave = () => {
-    if (onSave) {
-      onSave(editedPlan)
-    }
-    onBack()
-  }
 
   const handleHandover = async () => {
     // Helper to extract numeric flight number for normalized comparison
@@ -601,7 +594,6 @@ export default function LoadPlanDetailScreen({ loadPlan, onBack, onSave, onNavig
         isReadOnly={isReadOnly}
         onGenerateBCR={isReadOnly ? () => setShowBCRModal(true) : undefined}
         onHandover={isReadOnly && !hideHandover ? () => setShowHandoverModal(true) : undefined}
-        onSave={onSave ? handleSave : undefined}
         revision={editedPlan.revision}
       />
 

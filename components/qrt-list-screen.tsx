@@ -138,7 +138,6 @@ export default function QRTListScreen({ onBack }: QRTListScreenProps) {
   const [selectedLoadPlan, setSelectedLoadPlan] = useState<LoadPlanDetail | null>(null)
   const [selectedBayInfo, setSelectedBayInfo] = useState<BayInfo | null>(null)
   const [selectedDepartureBayInfo, setSelectedDepartureBayInfo] = useState<DepartureBayInfo | null>(null)
-  const [savedDetails, setSavedDetails] = useState<Map<string, LoadPlanDetail>>(new Map())
   const [isLoading, setIsLoading] = useState(true)
   const [showUploadModal, setShowUploadModal] = useState(false)
   const [showPasteArrivalModal, setShowPasteModal] = useState(false)
@@ -321,16 +320,8 @@ export default function QRTListScreen({ onBack }: QRTListScreenProps) {
       arrivalInfo = parseBayInfoRow(bayArrivalData.headers, bayArrivalData.rows[arrivalIndex])
     }
     setSelectedBayInfo(arrivalInfo)
-    
-    // Check if we have a saved version first
-    const savedDetail = savedDetails.get(loadPlan.flight)
-    if (savedDetail) {
-      console.log(`[QRTListScreen] Using saved detail for ${loadPlan.flight}`)
-      setSelectedLoadPlan(savedDetail)
-      return
-    }
 
-    // Try to fetch from Supabase
+    // Fetch from Supabase
     try {
       console.log(`[QRTListScreen] Fetching load plan detail from Supabase for ${loadPlan.flight}`)
       const supabaseDetail = await getLoadPlanDetailFromSupabase(loadPlan.flight)
@@ -350,13 +341,6 @@ export default function QRTListScreen({ onBack }: QRTListScreenProps) {
     }
   }
 
-  const handleSave = (updatedPlan: LoadPlanDetail) => {
-    setSavedDetails((prev) => {
-      const updated = new Map(prev)
-      updated.set(updatedPlan.flight, updatedPlan)
-      return updated
-    })
-  }
 
   // Filter load plan to only show ramp transfer sections
   const filterToRampTransferOnly = (plan: LoadPlanDetail): LoadPlanDetail => {
@@ -396,7 +380,6 @@ export default function QRTListScreen({ onBack }: QRTListScreenProps) {
           setSelectedBayInfo(null)
           setSelectedDepartureBayInfo(null)
         }}
-        onSave={handleSave}
         isQRTList={true}
         arrivalBayInfo={selectedBayInfo}
         departureBayInfo={selectedDepartureBayInfo}
