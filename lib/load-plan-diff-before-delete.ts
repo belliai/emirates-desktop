@@ -227,6 +227,7 @@ export function compareItemWithShipment(
   const newDbFormat = shipmentToDbFormat(newShipment)
   
   const fieldsToCompare: Array<keyof LoadPlanItemRow> = [
+    'serial_number', // Added for REVISED mode - serial numbers can change
     'awb_number',
     'origin_destination',
     'pieces',

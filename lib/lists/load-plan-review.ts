@@ -89,11 +89,21 @@ function parseDateString(dateStr: string): Date {
   return new Date()
 }
 
-// Helper function to create item key for matching
-function createItemKey(serialNo: number | null, awbNo: string | null): string | null {
+// Helper functions for creating keys
+// REVISED mode: Match by AWB number only (items can be renumbered)
+// ADDITIONAL mode: Match by serial_number + awb_number
+function normalizeAwb(awbNo: string | null): string {
+  return awbNo ? awbNo.replace(/\s+/g, "").trim() : ""
+}
+
+function createItemKeyBySerialAwb(serialNo: number | null, awbNo: string | null): string | null {
   if (serialNo === null || serialNo === undefined || isNaN(serialNo)) return null
-  const normalizedAwb = awbNo ? awbNo.replace(/\s+/g, "").trim() : ""
-  return `${serialNo}_${normalizedAwb}`
+  return `${serialNo}_${normalizeAwb(awbNo)}`
+}
+
+function createItemKeyByAwbOnly(awbNo: string | null): string | null {
+  const normalized = normalizeAwb(awbNo)
+  return normalized || null
 }
 
 // Helper function to format ULD
@@ -120,6 +130,7 @@ function compareItemFields(existingItem: any, shipment: Shipment): FieldChange[]
   const changes: FieldChange[] = []
   
   const fieldMappings: Array<{ dbField: string; shipmentField: keyof Shipment; label: string }> = [
+    { dbField: 'serial_number', shipmentField: 'serialNo', label: 'Serial Number' }, // Added for REVISED mode
     { dbField: 'origin_destination', shipmentField: 'origin', label: 'Origin/Destination' },
     { dbField: 'pieces', shipmentField: 'pieces', label: 'Pieces' },
     { dbField: 'weight', shipmentField: 'weight', label: 'Weight' },
@@ -186,7 +197,11 @@ export async function compareLoadPlanChanges({
   const flightDate = parseDateString(results.header.date)
   const flightDateStr = flightDate.toISOString().split('T')[0]
   
-  console.log("[Review] Comparing load plan:", { flightNumber, flightDateStr })
+  // Determine mode: REVISED (cor/corr) vs ADDITIONAL
+  const isCorrectVersion = results.header.isCorrectVersion === true
+  const keyMode = isCorrectVersion ? "AWB-only (REVISED)" : "serial+AWB (ADDITIONAL)"
+  
+  console.log("[Review] Comparing load plan:", { flightNumber, flightDateStr, mode: keyMode })
   
   // Check if load plan exists
   const { data: existingLoadPlan, error: checkError } = await supabase
@@ -258,13 +273,17 @@ export async function compareLoadPlanChanges({
     throw new Error(`Failed to fetch existing items: ${itemsError.message}`)
   }
   
-  // Build maps for comparison
+  // Build maps for comparison using mode-appropriate key
   const existingItemsMap = new Map<string, any>()
   const newShipmentsMap = new Map<string, Shipment>()
   
+  console.log(`[Review] 🔑 Using ${keyMode} matching for comparison`)
+  
   // Build existing items map
   ;(existingItems || []).forEach(item => {
-    const key = createItemKey(item.serial_number, item.awb_number)
+    const key = isCorrectVersion 
+      ? createItemKeyByAwbOnly(item.awb_number)
+      : createItemKeyBySerialAwb(item.serial_number, item.awb_number)
     if (key) {
       existingItemsMap.set(key, item)
     }
@@ -278,15 +297,17 @@ export async function compareLoadPlanChanges({
         ? parseInt(shipment.serialNo.trim(), 10) 
         : shipment.serialNo
     }
-    const normalizedAwb = shipment.awbNo ? shipment.awbNo.replace(/\s+/g, "").trim() : ""
-    const key = createItemKey(serialNo, normalizedAwb)
+    
+    const key = isCorrectVersion
+      ? createItemKeyByAwbOnly(shipment.awbNo)
+      : createItemKeyBySerialAwb(serialNo, shipment.awbNo)
     
     if (key) {
       newShipmentsMap.set(key, shipment)
     }
   })
   
-  console.log("[Review] Maps created:", {
+  console.log(`[Review] Maps created (${keyMode}):`, {
     existingItems: existingItemsMap.size,
     newShipments: newShipmentsMap.size,
   })
