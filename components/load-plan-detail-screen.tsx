@@ -345,7 +345,7 @@ export default function LoadPlanDetailScreen({ loadPlan, onBack, onNavigateToBui
     mergedUldEntries.set(key, value)
   })
   
-  const isReadOnly = !onSave
+  const isReadOnly = true // All views are read-only since changes save directly to Supabase (ULD entries)
   
   // Enhanced updateULDNumbers that also saves to localStorage
   // Preserves checked state using utility function
