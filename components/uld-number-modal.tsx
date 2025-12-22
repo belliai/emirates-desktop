@@ -13,7 +13,8 @@ export type ULDEntry = {
 interface ULDNumberModalProps {
   isOpen: boolean
   onClose: () => void
-  uldSection: string
+  uldSection: string // For display purposes (section name)
+  ttlPlnUld?: string // TTL PLN ULD from header - source of truth for ULD count
   sectorIndex: number
   uldSectionIndex: number
   initialNumbers: string[]
@@ -26,12 +27,16 @@ export function ULDNumberModal({
   isOpen,
   onClose,
   uldSection,
+  ttlPlnUld,
   initialNumbers,
   initialChecked,
   initialTypes,
   onSave,
 }: ULDNumberModalProps) {
-  const { expandedTypes, types } = parseULDSection(uldSection)
+  // Use TTL PLN ULD from header if provided, otherwise fall back to section string
+  // TTL PLN ULD is the authoritative source for total ULD count
+  const sourceString = ttlPlnUld || uldSection
+  const { expandedTypes, types } = parseULDSection(sourceString)
   const [uldEntries, setUldEntries] = useState<ULDEntry[]>([])
   
   // Track previous values to avoid infinite loops

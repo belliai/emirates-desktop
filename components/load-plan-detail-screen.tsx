@@ -843,6 +843,7 @@ export default function LoadPlanDetailScreen({ loadPlan, onBack, onSave, onNavig
             setSelectedULDSection(null)
           }}
           uldSection={selectedULDSection.uld}
+          ttlPlnUld={loadPlan.ttlPlnUld} // Use TTL PLN ULD from header as source of truth
           sectorIndex={selectedULDSection.sectorIndex}
           uldSectionIndex={selectedULDSection.uldSectionIndex}
           initialNumbers={mergedUldEntries.get(`${selectedULDSection.sectorIndex}-${selectedULDSection.uldSectionIndex}`)?.map(e => e.number) || []}
