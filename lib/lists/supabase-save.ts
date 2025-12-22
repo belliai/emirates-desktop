@@ -611,31 +611,46 @@ export async function saveListsDataToSupabase({
         if (existingError) {
           console.error("[v0] Error fetching existing items:", existingError)
         } else {
-          // Helper function to create unique key from serial_number and awb_number
-          const createItemKey = (serialNo: number | null, awbNo: string | null): string | null => {
-            if (serialNo === null || serialNo === undefined || isNaN(serialNo)) return null
-            const normalizedAwb = awbNo ? awbNo.replace(/\s+/g, "").trim() : ""
-            return `${serialNo}_${normalizedAwb}`
+          // Helper functions for creating keys
+          // REVISED mode: Match by AWB number only (items can be renumbered)
+          // ADDITIONAL mode: Match by serial_number + awb_number
+          const normalizeAwb = (awbNo: string | null): string => {
+            return awbNo ? awbNo.replace(/\s+/g, "").trim() : ""
           }
           
-          // Create maps for comparison using serial_number + awb_number as key
+          const createItemKeyBySerialAwb = (serialNo: number | null, awbNo: string | null): string | null => {
+            if (serialNo === null || serialNo === undefined || isNaN(serialNo)) return null
+            return `${serialNo}_${normalizeAwb(awbNo)}`
+          }
+          
+          const createItemKeyByAwbOnly = (awbNo: string | null): string | null => {
+            const normalized = normalizeAwb(awbNo)
+            return normalized || null
+          }
+          
+          // Choose key function based on mode
+          const keyMode = isCorrectVersion ? "AWB-only (REVISED)" : "serial+AWB (ADDITIONAL)"
+          console.log(`[v0] 🔑 Using ${keyMode} matching for item comparison`)
+          
+          // Create maps for comparison
           const existingItemsMap = new Map<string, any>()
           const newShipmentsMap = new Map<string, Shipment>()
           
           // Build existing items map
           ;(existingItems || []).forEach(item => {
-            if (item.serial_number !== null) {
-              const key = createItemKey(item.serial_number, item.awb_number)
-              if (key) {
-                // If key already exists, log warning but keep the first one
-                if (existingItemsMap.has(key)) {
-                  console.warn(`[v0] ⚠️ Duplicate key found in existing items: ${key}`, {
-                    existing: existingItemsMap.get(key),
-                    duplicate: item,
-                  })
-                } else {
-                  existingItemsMap.set(key, item)
-                }
+            const key = isCorrectVersion 
+              ? createItemKeyByAwbOnly(item.awb_number)
+              : createItemKeyBySerialAwb(item.serial_number, item.awb_number)
+            
+            if (key) {
+              // If key already exists, log warning but keep the first one
+              if (existingItemsMap.has(key)) {
+                console.warn(`[v0] ⚠️ Duplicate key found in existing items: ${key}`, {
+                  existing: existingItemsMap.get(key),
+                  duplicate: item,
+                })
+              } else {
+                existingItemsMap.set(key, item)
               }
             }
           })
@@ -650,8 +665,10 @@ export async function saveListsDataToSupabase({
                 serialNo = shipment.serialNo
               }
             }
-            const normalizedAwb = shipment.awbNo ? shipment.awbNo.replace(/\s+/g, "").trim() : ""
-            const key = createItemKey(serialNo, normalizedAwb)
+            
+            const key = isCorrectVersion
+              ? createItemKeyByAwbOnly(shipment.awbNo)
+              : createItemKeyBySerialAwb(serialNo, shipment.awbNo)
             
             if (key) {
               // If key already exists in new shipments, log warning
@@ -666,11 +683,9 @@ export async function saveListsDataToSupabase({
             }
           })
           
-          console.log(`[v0] Maps created:`, {
+          console.log(`[v0] Maps created (${keyMode}):`, {
             existingItems: existingItemsMap.size,
             newShipments: newShipmentsMap.size,
-            hasItem001InExisting: existingItemsMap.has(createItemKey(1, null) || ""),
-            hasItem001InNew: newShipmentsMap.has(createItemKey(1, null) || ""),
           })
           
           // Import compareItemWithShipment function
