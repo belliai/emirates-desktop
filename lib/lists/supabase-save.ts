@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/client"
 import type { ListsResults, LoadPlanHeader, Shipment } from "./types"
 import { PIL_PER_SHC_CODES } from "@/lib/work-area-filter-utils"
+import { parseUldExclusions, calculateAdjustedTtlPlnUld } from "./parser"
 
 /**
  * Compute work area for a single item based on its SHC code
@@ -30,6 +31,7 @@ export interface SaveListsDataParams {
   shipments?: Shipment[]
   fileName: string
   fileSize: number
+  rawContent?: string // Raw file content for parsing COUR/MAIL allocations
 }
 
 export interface SaveListsDataResult {
@@ -246,6 +248,7 @@ export async function saveListsDataToSupabase({
   shipments = [],
   fileName,
   fileSize,
+  rawContent = "",
 }: SaveListsDataParams): Promise<SaveListsDataResult> {
   try {
     const supabase = createClient()
@@ -384,6 +387,25 @@ export async function saveListsDataToSupabase({
       hasAdditionalData = true // New load plan means all data is "additional"
     }
 
+    // Calculate ULD exclusions (COUR, MAIL, RAMP TRANSFER)
+    // rawContent is used to parse COUR/MAIL footer lines
+    // shipments are used to sum RAMP TRANSFER ULDs
+    const uldExclusions = parseUldExclusions(rawContent, shipments)
+    const adjustedTtlPlnUld = calculateAdjustedTtlPlnUld(
+      results.header.ttlPlnUld || "",
+      uldExclusions.courAllocation,
+      uldExclusions.mailAllocation,
+      uldExclusions.rampTransferUlds
+    )
+    
+    console.log("[v0] ULD Exclusions:", {
+      original: results.header.ttlPlnUld,
+      courAllocation: uldExclusions.courAllocation,
+      mailAllocation: uldExclusions.mailAllocation,
+      rampTransferUlds: uldExclusions.rampTransferUlds,
+      adjusted: adjustedTtlPlnUld,
+    })
+
     // 1. Prepare insert/update data
     const loadPlanData: any = {
       flight_number: flightNumber,
@@ -402,6 +424,11 @@ export async function saveListsDataToSupabase({
       sector: results.header.sector || null,
       header_warning: results.header.headerWarning || null,
       revision: newRevision,
+      // ULD exclusion fields (will be ignored if columns don't exist in DB)
+      cour_allocation: uldExclusions.courAllocation || null,
+      mail_allocation: uldExclusions.mailAllocation || null,
+      ramp_transfer_ulds: uldExclusions.rampTransferUlds || null,
+      adjusted_ttl_pln_uld: adjustedTtlPlnUld || null,
     }
     
     // Log header data for debugging

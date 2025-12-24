@@ -602,7 +602,8 @@ export default function LoadPlanDetailScreen({ loadPlan, onBack, onNavigateToBui
         <FlightHeaderRow
           plan={{
             ...editedPlan,
-            ttlPlnUld: editedPlan.ttlPlnUld,
+            // Use adjusted TTL PLN ULD if available (excludes COUR/MAIL/RAMP TRANSFER)
+            ttlPlnUld: loadPlan.adjustedTtlPlnUld || editedPlan.ttlPlnUld,
           }}
           onFieldUpdate={updateField}
           isReadOnly={isReadOnly}

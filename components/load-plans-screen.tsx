@@ -210,7 +210,7 @@ function LoadPlansScreenContent({ onLoadPlanSelect }: { onLoadPlanSelect?: (load
   const [showReviewModal, setShowReviewModal] = useState(false)
   const [pendingDiff, setPendingDiff] = useState<LoadPlanDiff | null>(null)
   const [isApplyingChanges, setIsApplyingChanges] = useState(false)
-  const [pendingFiles, setPendingFiles] = useState<Array<{ file: File; results: ListsResults; shipments: any[] }>>([])
+  const [pendingFiles, setPendingFiles] = useState<Array<{ file: File; results: ListsResults; shipments: any[]; rawContent: string }>>([])
   const [currentReviewIndex, setCurrentReviewIndex] = useState(0)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [deleteModal, setDeleteModal] = useState<DeleteModalState>({ isOpen: false, type: "confirm", flight: "" })
@@ -511,7 +511,7 @@ function LoadPlansScreenContent({ onLoadPlanSelect }: { onLoadPlanSelect?: (load
       let totalSkippedCount = 0
       const skippedFlights: string[] = []
       const failedFiles: string[] = []
-      const pendingFilesToReview: Array<{ file: File; results: ListsResults; shipments: any[]; diff: LoadPlanDiff }> = []
+      const pendingFilesToReview: Array<{ file: File; results: ListsResults; shipments: any[]; diff: LoadPlanDiff; rawContent: string }> = []
 
       // Process each file and save to Supabase
       for (let i = 0; i < fileArray.length; i++) {
@@ -587,6 +587,7 @@ function LoadPlansScreenContent({ onLoadPlanSelect }: { onLoadPlanSelect?: (load
                 shipments: shipments || [],
                 fileName: f.name,
                 fileSize: f.size,
+                rawContent: content,
               })
               
               if (saveResult.success) {
@@ -607,6 +608,7 @@ function LoadPlansScreenContent({ onLoadPlanSelect }: { onLoadPlanSelect?: (load
                 results,
                 shipments: shipments || [],
                 diff,
+                rawContent: content,
               })
             }
           } catch (compareError) {
@@ -617,6 +619,7 @@ function LoadPlansScreenContent({ onLoadPlanSelect }: { onLoadPlanSelect?: (load
               shipments: shipments || [],
               fileName: f.name,
               fileSize: f.size,
+              rawContent: content,
             })
             
             if (saveResult.success) {
@@ -647,6 +650,7 @@ function LoadPlansScreenContent({ onLoadPlanSelect }: { onLoadPlanSelect?: (load
           file: p.file,
           results: p.results,
           shipments: p.shipments,
+          rawContent: p.rawContent,
         })))
         setPendingDiff(pendingFilesToReview[0].diff)
         setCurrentReviewIndex(0)
@@ -853,6 +857,7 @@ function LoadPlansScreenContent({ onLoadPlanSelect }: { onLoadPlanSelect?: (load
         shipments: currentFile.shipments,
         fileName: currentFile.file.name,
         fileSize: currentFile.file.size,
+        rawContent: currentFile.rawContent,
       })
       
       if (saveResult.success) {

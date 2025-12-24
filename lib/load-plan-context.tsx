@@ -15,6 +15,7 @@ export type LoadPlan = {
   std: string
   uldVersion: string
   ttlPlnUld: string
+  adjustedTtlPlnUld?: string // TTL PLN ULD minus COUR/MAIL/RAMP TRANSFER exclusions
   workAreas?: string[] // Pre-computed work areas: ["GCR"], ["PIL", "PER"], or ["GCR", "PIL", "PER"]
 }
 

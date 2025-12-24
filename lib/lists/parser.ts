@@ -154,6 +154,211 @@ export function parseHeader(content: string, fileName?: string): LoadPlanHeader 
 }
 
 /**
+ * ULD type aliases - some types are equivalent
+ * QKE = AKE (same container type, different naming convention)
+ */
+const ULD_TYPE_ALIASES: Record<string, string> = {
+  'QKE': 'AKE',
+}
+
+/**
+ * Normalize ULD type using aliases
+ */
+function normalizeUldType(type: string): string {
+  const upperType = type.toUpperCase()
+  return ULD_TYPE_ALIASES[upperType] || upperType
+}
+
+/**
+ * Parse ULD allocation string (e.g., "02QKE", "3PMC 2QKE", "05PMC/01PLA/07AKE")
+ * Returns a map of normalized ULD type to count
+ */
+export function parseUldAllocation(allocation: string): Map<string, number> {
+  const result = new Map<string, number>()
+  if (!allocation) return result
+  
+  // Match patterns like "02QKE", "3PMC", "07AKE", etc.
+  // Pattern: optional digits followed by ULD type
+  const pattern = /(\d+)?(PMC|AKE|QKE|AKL|AMF|ALF|PLA|PAG|AMP|RKE|BULK)/gi
+  const matches = allocation.matchAll(pattern)
+  
+  for (const match of matches) {
+    const count = match[1] ? parseInt(match[1], 10) : 1
+    const type = normalizeUldType(match[2])
+    result.set(type, (result.get(type) || 0) + count)
+  }
+  
+  return result
+}
+
+/**
+ * Convert ULD allocation map to string format (e.g., "02PMC/04AKE")
+ */
+export function formatUldAllocation(allocation: Map<string, number>): string {
+  if (allocation.size === 0) return ""
+  
+  const parts: string[] = []
+  // Sort by type for consistent output
+  const sortedTypes = Array.from(allocation.keys()).sort()
+  
+  for (const type of sortedTypes) {
+    const count = allocation.get(type) || 0
+    if (count > 0) {
+      parts.push(`${String(count).padStart(2, '0')}${type}`)
+    }
+  }
+  
+  return parts.join('/')
+}
+
+/**
+ * Subtract one ULD allocation from another
+ * Returns the difference (original - subtract), with no negative values
+ */
+export function subtractUldAllocation(
+  original: Map<string, number>,
+  subtract: Map<string, number>
+): Map<string, number> {
+  const result = new Map<string, number>()
+  
+  // Copy original values
+  original.forEach((count, type) => {
+    result.set(type, count)
+  })
+  
+  // Subtract
+  subtract.forEach((count, type) => {
+    const normalizedType = normalizeUldType(type)
+    const currentCount = result.get(normalizedType) || 0
+    const newCount = Math.max(0, currentCount - count)
+    if (newCount > 0) {
+      result.set(normalizedType, newCount)
+    } else {
+      result.delete(normalizedType)
+    }
+  })
+  
+  return result
+}
+
+/**
+ * Parse ULD exclusions from content (COUR, MAIL, RAMP TRANSFER)
+ * Returns allocation strings for each category
+ */
+export function parseUldExclusions(content: string, shipments?: Shipment[]): {
+  courAllocation: string
+  mailAllocation: string
+  rampTransferUlds: string
+} {
+  const lines = content.split('\n')
+  let courAllocation = ''
+  let mailAllocation = ''
+  
+  // Parse COUR/COU line from footer
+  // Formats: "COUR 3PMC 2QKE BULK 100K", "COU 02QKE BULK (FEDEX...)", "COUR 1QKE BULK 650K"
+  for (const line of lines) {
+    const trimmed = line.trim()
+    
+    // Match COUR or COU line
+    const courMatch = trimmed.match(/^(?:COUR|COU)\s+(.+)/i)
+    if (courMatch) {
+      // Extract ULD allocations from the matched content
+      const allocation = parseUldAllocation(courMatch[1])
+      if (allocation.size > 0) {
+        courAllocation = formatUldAllocation(allocation)
+        console.log('[v0] Parsed COUR allocation:', courAllocation, 'from line:', trimmed)
+      }
+    }
+    
+    // Match MAIL line
+    // Formats: "MAIL 01QKE", "MAIL 2AKE"
+    const mailMatch = trimmed.match(/^MAIL\s+(.+)/i)
+    if (mailMatch) {
+      const allocation = parseUldAllocation(mailMatch[1])
+      if (allocation.size > 0) {
+        mailAllocation = formatUldAllocation(allocation)
+        console.log('[v0] Parsed MAIL allocation:', mailAllocation, 'from line:', trimmed)
+      }
+    }
+  }
+  
+  // Parse RAMP TRANSFER ULDs from shipments (if provided)
+  // Sum all ULDs from sections marked as isRampTransfer
+  let rampTransferUlds = ''
+  if (shipments && shipments.length > 0) {
+    const rampTransferAllocation = new Map<string, number>()
+    
+    // Get unique ULDs from ramp transfer shipments
+    const rampTransferUldSet = new Set<string>()
+    shipments
+      .filter(s => s.isRampTransfer && s.uld)
+      .forEach(s => rampTransferUldSet.add(s.uld))
+    
+    // Parse each unique ULD and sum
+    rampTransferUldSet.forEach(uld => {
+      const allocation = parseUldAllocation(uld)
+      allocation.forEach((count, type) => {
+        rampTransferAllocation.set(type, (rampTransferAllocation.get(type) || 0) + count)
+      })
+    })
+    
+    if (rampTransferAllocation.size > 0) {
+      rampTransferUlds = formatUldAllocation(rampTransferAllocation)
+      console.log('[v0] Parsed RAMP TRANSFER ULDs:', rampTransferUlds)
+    }
+  }
+  
+  return {
+    courAllocation,
+    mailAllocation,
+    rampTransferUlds,
+  }
+}
+
+/**
+ * Calculate adjusted TTL PLN ULD by subtracting exclusions
+ * @param ttlPlnUld - Original TTL PLN ULD from header (e.g., "05PMC/01PLA/07AKE")
+ * @param courAllocation - COUR allocation to subtract (e.g., "02AKE")
+ * @param mailAllocation - MAIL allocation to subtract (e.g., "01AKE")
+ * @param rampTransferUlds - RAMP TRANSFER ULDs to subtract (e.g., "04PMC")
+ * @returns Adjusted TTL PLN ULD string (e.g., "01PMC/01PLA/04AKE")
+ */
+export function calculateAdjustedTtlPlnUld(
+  ttlPlnUld: string,
+  courAllocation: string,
+  mailAllocation: string,
+  rampTransferUlds: string
+): string {
+  if (!ttlPlnUld) return ''
+  
+  // Parse original TTL PLN ULD
+  let result = parseUldAllocation(ttlPlnUld)
+  
+  // Subtract COUR allocation
+  if (courAllocation) {
+    const cour = parseUldAllocation(courAllocation)
+    result = subtractUldAllocation(result, cour)
+    console.log('[v0] After subtracting COUR:', formatUldAllocation(result))
+  }
+  
+  // Subtract MAIL allocation
+  if (mailAllocation) {
+    const mail = parseUldAllocation(mailAllocation)
+    result = subtractUldAllocation(result, mail)
+    console.log('[v0] After subtracting MAIL:', formatUldAllocation(result))
+  }
+  
+  // Subtract RAMP TRANSFER ULDs
+  if (rampTransferUlds) {
+    const rampTransfer = parseUldAllocation(rampTransferUlds)
+    result = subtractUldAllocation(result, rampTransfer)
+    console.log('[v0] After subtracting RAMP TRANSFER:', formatUldAllocation(result))
+  }
+  
+  return formatUldAllocation(result)
+}
+
+/**
  * Detect CRITICAL stamp from images in DOCX file using OCR
  * This is called separately after text-based detection fails
  * @param file - DOCX file to check for images
