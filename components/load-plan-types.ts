@@ -49,6 +49,7 @@ export type LoadPlanDetail = {
   std: string
   preparedBy: string
   ttlPlnUld: string
+  adjustedTtlPlnUld?: string // TTL PLN ULD minus COUR/MAIL/RAMP TRANSFER exclusions
   uldVersion: string
   preparedOn: string
   headerWarning?: string

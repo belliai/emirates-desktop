@@ -601,7 +601,8 @@ export default function LoadPlanDetailScreen({ loadPlan, onBack, onNavigateToBui
         <FlightHeaderRow
           plan={{
             ...editedPlan,
-            ttlPlnUld: editedPlan.ttlPlnUld,
+            // Use adjusted TTL PLN ULD if available (excludes COUR/MAIL/RAMP TRANSFER)
+            ttlPlnUld: loadPlan.adjustedTtlPlnUld || editedPlan.ttlPlnUld,
           }}
           onFieldUpdate={updateField}
           isReadOnly={isReadOnly}
@@ -835,7 +836,7 @@ export default function LoadPlanDetailScreen({ loadPlan, onBack, onNavigateToBui
             setSelectedULDSection(null)
           }}
           uldSection={selectedULDSection.uld}
-          ttlPlnUld={loadPlan.ttlPlnUld} // Use TTL PLN ULD from header as source of truth
+          ttlPlnUld={loadPlan.adjustedTtlPlnUld || loadPlan.ttlPlnUld} // Use adjusted TTL PLN ULD if available (excludes COUR/MAIL/RAMP TRANSFER)
           sectorIndex={selectedULDSection.sectorIndex}
           uldSectionIndex={selectedULDSection.uldSectionIndex}
           initialNumbers={mergedUldEntries.get(`${selectedULDSection.sectorIndex}-${selectedULDSection.uldSectionIndex}`)?.map(e => e.number) || []}

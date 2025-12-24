@@ -12,6 +12,11 @@ export interface LoadPlanHeader {
   headerWarning?: string
   isCritical?: boolean // Flag to indicate if document has CRITICAL stamp
   isCorrectVersion?: boolean // Flag to indicate if header or filename contains "cor" or "corr" (revised/correction mode)
+  // ULD exclusion fields - allocations to subtract from TTL PLN ULD
+  courAllocation?: string // COUR/COU line from footer (e.g., "02QKE" or "3PMC 2QKE")
+  mailAllocation?: string // MAIL line from footer (e.g., "01QKE")
+  rampTransferUlds?: string // Sum of ULDs from RAMP TRANSFER sections (e.g., "04PMC")
+  adjustedTtlPlnUld?: string // TTL PLN ULD minus exclusions (calculated)
 }
 
 export interface Shipment {

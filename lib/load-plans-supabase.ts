@@ -182,6 +182,7 @@ export async function getLoadPlansFromSupabase(): Promise<LoadPlan[]> {
         std: formatTime(plan.std_time),
         uldVersion: plan.uld_version || "",
         ttlPlnUld: plan.total_planned_uld || "",
+        adjustedTtlPlnUld: plan.adjusted_ttl_pln_uld || undefined,
         workAreas: uniqueWorkAreas.length > 0 ? uniqueWorkAreas : ["GCR"], // Default to GCR if no items
       }
     })
@@ -577,6 +578,7 @@ export async function getLoadPlanDetailFromSupabase(flightNumber: string): Promi
       std: formatTime(loadPlan.std_time),
       preparedBy: loadPlan.prepared_by || "",
       ttlPlnUld: loadPlan.total_planned_uld || "",
+      adjustedTtlPlnUld: loadPlan.adjusted_ttl_pln_uld || undefined,
       uldVersion: loadPlan.uld_version || "",
       preparedOn: formatDateTime(loadPlan.prepared_on),
       headerWarning: loadPlan.header_warning || undefined,
