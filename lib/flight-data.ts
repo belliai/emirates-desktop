@@ -108,12 +108,22 @@ async function getFlightDataFromCSV(): Promise<Flight[]> {
 
 export async function getFlightData(): Promise<Flight[]> {
   try {
-    // Check if Supabase is configured before attempting to use it
+    // NOTE: The 'flights' table was never created in the database.
+    // This module (Import/ULD tracking) uses CSV data as the source.
+    // The main app uses 'load_plans' table for Load Plan features.
+    // Always use CSV fallback to avoid unnecessary Supabase errors.
+    console.log("[v0] Using CSV data for flights (flights table not implemented)")
+    return await getFlightDataFromCSV()
+
+    // Legacy code below - kept for reference if flights table is implemented later
+    const isSupabaseConfigured = false // Disabled - flights table doesn't exist
+    /* 
     const isSupabaseConfigured = 
       process.env.NEXT_PUBLIC_SUPABASE_URL && 
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY &&
       process.env.NEXT_PUBLIC_SUPABASE_URL !== "https://placeholder.supabase.co" &&
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY !== "placeholder-anon-key"
+    */
 
     if (!isSupabaseConfigured) {
       console.log("[v0] Supabase not configured, using CSV fallback")

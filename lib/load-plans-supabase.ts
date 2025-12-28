@@ -584,6 +584,10 @@ export async function getLoadPlanDetailFromSupabase(flightNumber: string): Promi
       headerWarning: loadPlan.header_warning || undefined,
       isCritical: loadPlan.is_critical || undefined,
       revision: loadPlan.revision || 1,
+      // ULD exclusion data for display
+      courAllocation: loadPlan.cour_allocation || undefined,
+      mailAllocation: loadPlan.mail_allocation || undefined,
+      rampTransferUlds: loadPlan.ramp_transfer_ulds || undefined,
       sectors,
     }
 

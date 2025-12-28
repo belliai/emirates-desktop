@@ -85,7 +85,8 @@ export function parseHeader(content: string, fileName?: string): LoadPlanHeader 
       
       // Stop if we find a shipment line (starts with 3 digits followed by AWB)
       // Check both original and normalized line
-      const isShipmentLine = line.match(/^\d{3}\s+\d{3}-\d{8}/) || normalizedLine.match(/^\d{3}\s+\d{3}-\d{8}/)
+      // More lenient pattern to detect shipment lines - accept ANY digit count after dash
+      const isShipmentLine = line.match(/^\d{3}\s+\d{3}-\d+/) || normalizedLine.match(/^\d{3}\s+\d{3}-\d+/)
       if (isShipmentLine) {
         break
       }
@@ -250,9 +251,24 @@ export function parseUldExclusions(content: string, shipments?: Shipment[]): {
   mailAllocation: string
   rampTransferUlds: string
 } {
+  // Debug: Check if content is being passed
+  console.log('[v0] parseUldExclusions called with:', {
+    contentLength: content?.length || 0,
+    contentPreview: content?.substring(0, 200) || '(empty)',
+    shipmentsCount: shipments?.length || 0,
+  })
+  
   const lines = content.split('\n')
   let courAllocation = ''
   let mailAllocation = ''
+  
+  // Debug: Look for COUR/MAIL lines
+  const courMailLines = lines.filter(l => /COUR|COU\s|MAIL/i.test(l))
+  if (courMailLines.length > 0) {
+    console.log('[v0] Found COUR/MAIL lines:', courMailLines)
+  } else {
+    console.log('[v0] No COUR/MAIL lines found in content')
+  }
   
   // Parse COUR/COU line from footer
   // Formats: "COUR 3PMC 2QKE BULK 100K", "COU 02QKE BULK (FEDEX...)", "COUR 1QKE BULK 650K"
@@ -283,20 +299,22 @@ export function parseUldExclusions(content: string, shipments?: Shipment[]): {
   }
   
   // Parse RAMP TRANSFER ULDs from shipments (if provided)
-  // Sum all ULDs from sections marked as isRampTransfer
+  // Sum ALL ULDs from items marked as isRampTransfer (each AWB has its own ULD allocation)
   let rampTransferUlds = ''
   if (shipments && shipments.length > 0) {
     const rampTransferAllocation = new Map<string, number>()
     
-    // Get unique ULDs from ramp transfer shipments
-    const rampTransferUldSet = new Set<string>()
-    shipments
-      .filter(s => s.isRampTransfer && s.uld)
-      .forEach(s => rampTransferUldSet.add(s.uld))
+    // Count ULDs from ALL ramp transfer shipments (not unique - each AWB has its own allocation)
+    const rampTransferShipments = shipments.filter(s => s.isRampTransfer && s.uld)
     
-    // Parse each unique ULD and sum
-    rampTransferUldSet.forEach(uld => {
-      const allocation = parseUldAllocation(uld)
+    console.log('[v0] RAMP TRANSFER shipments found:', rampTransferShipments.length)
+    rampTransferShipments.forEach(s => {
+      console.log('[v0]   - AWB:', s.awbNo, 'ULD:', s.uld)
+    })
+    
+    // Parse each shipment's ULD and sum (NOT using Set - each AWB counts separately)
+    rampTransferShipments.forEach(shipment => {
+      const allocation = parseUldAllocation(shipment.uld)
       allocation.forEach((count, type) => {
         rampTransferAllocation.set(type, (rampTransferAllocation.get(type) || 0) + count)
       })
@@ -304,7 +322,7 @@ export function parseUldExclusions(content: string, shipments?: Shipment[]): {
     
     if (rampTransferAllocation.size > 0) {
       rampTransferUlds = formatUldAllocation(rampTransferAllocation)
-      console.log('[v0] Parsed RAMP TRANSFER ULDs:', rampTransferUlds)
+      console.log('[v0] Parsed RAMP TRANSFER ULDs (total from all AWBs):', rampTransferUlds)
     }
   }
   
@@ -613,7 +631,7 @@ export function parseShipments(content: string, header: LoadPlanHeader): Shipmen
       // - SI: Y or N (required at end)
       // Between ARRDT.TIME and SI there's often just whitespace
       let shipmentMatch = normalizedLine.match(
-        /^(\d{3})\s+(\d{3}-\d{8})\s+([A-Z]{3})([A-Z]{3})\s+(\d+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([A-Z-]+)\s+(.+?)\s+([A-Z]{3})\s+([A-Z]\d)?\s*([A-Z0-9\s]*?)\s+(SS|BS|NN)\s+([YN])\s+([A-Z]{2}\d{4})?\s*(\d{2}[A-Za-z]{3}\d{2,4})?\s*([\d:\/]+)?\s*([A-Z0-9\/]+)?\s*([A-Z0-9]+)?\s+([YN])\s*$/i,
+        /^(\d{3})\s+(\d{3}-\d{4,8})\s+([A-Z]{3})([A-Z]{3})\s+(\d+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([A-Z-]+)\s+(.+?)\s+([A-Z]{3})\s+([A-Z]\d)?\s*([A-Z0-9\s]*?)\s+(SS|BS|NN)\s+([YN])\s+([A-Z]{2}\d{4})?\s*(\d{2}[A-Za-z]{3}\d{2,4})?\s*([\d:\/]+)?\s*([A-Z0-9\/]+)?\s*([A-Z0-9]+)?\s+([YN])\s*$/i,
       )
       
       // If first regex doesn't match, try format with empty SHC (e.g., shipments 003-007)
@@ -631,7 +649,7 @@ export function parseShipments(content: string, header: LoadPlanHeader): Shipmen
         // IMPORTANT: Use \s* (not \s+) after SHC to handle empty SHC case
         // When SHC is empty, there's no space between "nothing" and MAN.DESC
         const emptySHCMatch = normalizedLine.match(
-          /^(\d{3})\s+(\d{3}-\d{8})\s+([A-Z]{3})([A-Z]{3})\s+(\d+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([A-Z]{3}(?:-[A-Z]{3})*)?\s*([A-Z][A-Z\s]*?)\s+([A-Z]{3})\s+([A-Z]\d)?\s*([A-Z0-9\s]*?)\s*(SS|BS|NN|HL)\s+([YN])\s+([A-Z]{2}\d{4})?\s*(\d{2}[A-Za-z]{3}\d{2,4})?\s*([\d:\/]+)?\s*([A-Z0-9\/]+)?\s*([A-Z0-9]+)?\s+([YN])\s*$/i,
+          /^(\d{3})\s+(\d{3}-\d{4,8})\s+([A-Z]{3})([A-Z]{3})\s+(\d+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([A-Z]{3}(?:-[A-Z]{3})*)?\s*([A-Z][A-Z\s]*?)\s+([A-Z]{3})\s+([A-Z]\d)?\s*([A-Z0-9\s]*?)\s*(SS|BS|NN|HL)\s+([YN])\s+([A-Z]{2}\d{4})?\s*(\d{2}[A-Za-z]{3}\d{2,4})?\s*([\d:\/]+)?\s*([A-Z0-9\/]+)?\s*([A-Z0-9]+)?\s+([YN])\s*$/i,
         )
         if (emptySHCMatch) {
           const capturedSHC = (emptySHCMatch[9] || "").trim()
@@ -663,7 +681,7 @@ export function parseShipments(content: string, header: LoadPlanHeader): Shipmen
       if (!shipmentMatch) {
         // Try pattern: SER AWB ORG/DES PCS WGT VOL LVOL SHC MAN.DESC PCODE PC THC ... SI (no SS/BS/PI/FLTIN)
         const altMatch = normalizedLine.match(
-          /^(\d{3})\s+(\d{3}-\d{8})\s+([A-Z]{3})([A-Z]{3})\s+(\d+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([A-Z-]+)\s+(.+?)\s+([A-Z]{3})\s+([A-Z]\d)\s+(.+?)\s+([YN])?$/i,
+          /^(\d{3})\s+(\d{3}-\d{4,8})\s+([A-Z]{3})([A-Z]{3})\s+(\d+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([A-Z-]+)\s+(.+?)\s+([A-Z]{3})\s+([A-Z]\d)\s+(.+?)\s+([YN])?$/i,
         )
         if (altMatch) {
           console.log("[v0] Matched with alternative regex (no FLTIN/ARRDT.TIME)")
@@ -718,7 +736,7 @@ export function parseShipments(content: string, header: LoadPlanHeader): Shipmen
           // Try pattern for shipment 010: PC is missing, format is "PXS    QRT  SS N ..."
           // Pattern: SER AWB ORG/DES PCS WGT VOL LVOL SHC MAN.DESC PCODE (no PC) THC SS PI FLTIN ARRDT.TIME SI
           const noPCMatch = normalizedLine.match(
-            /^(\d{3})\s+(\d{3}-\d{8})\s+([A-Z]{3})([A-Z]{3})\s+(\d+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([A-Z-]+)\s+(.+?)\s+([A-Z]{3})\s+([A-Z0-9]+)\s+(SS)\s+([YN])\s+([A-Z]+\d+)?\s*(\d{2}[A-Za-z]{3}\d{4})?\s*([\d:\/]+)?\s*([YN])?/i,
+            /^(\d{3})\s+(\d{3}-\d{4,8})\s+([A-Z]{3})([A-Z]{3})\s+(\d+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([A-Z-]+)\s+(.+?)\s+([A-Z]{3})\s+([A-Z0-9]+)\s+(SS)\s+([YN])\s+([A-Z]+\d+)?\s*(\d{2}[A-Za-z]{3}\d{4})?\s*([\d:\/]+)?\s*([YN])?/i,
           )
           if (noPCMatch) {
             console.log("[v0] Matched with no-PC regex (e.g., shipment 010)")
@@ -747,57 +765,95 @@ export function parseShipments(content: string, header: LoadPlanHeader): Shipmen
               noPCMatch[18] || "N", // si
             ]
           } else {
-            // Log lines that look like shipments but don't match
-            if (line.match(/^\d{3}\s+\d{3}-\d{8}/)) {
-              console.log("[v0] ⚠️ Failed to parse shipment line:", line.substring(0, 150))
-              console.log("[v0] ⚠️ Normalized line:", normalizedLine.substring(0, 150))
-              // Try to identify which part might be causing the issue
-              const serialMatch = normalizedLine.match(/^(\d{3})/)
-              if (serialMatch) {
-                const serial = serialMatch[1]
-                console.log("[v0] ⚠️ Serial number detected:", serial, "- attempting to debug parsing issue")
-                
-                // Special handling for shipment 012 (known issue with empty SHC)
-                if (serial === "012") {
-                  console.log("[v0] 🔍 Special debug for shipment 012 with empty SHC")
-                  // Try to manually parse shipment 012 format
-                  // Pattern: 012 176-90670086 KULLHR 11 1200.0 29.7 29.7 CONSOLIDATION GCR P1 QRT NN N EK0345 01Mar1320 01:10/ N
-                  const manualMatch = normalizedLine.match(/^(\d{3})\s+(\d{3}-\d{8})\s+([A-Z]{3})([A-Z]{3})\s+(\d+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([A-Z][A-Z\s]+?)\s+([A-Z]{3})\s+([A-Z]\d)\s+([A-Z0-9\s]+?)\s+(SS|BS|NN)\s+([YN])\s+([A-Z]{2}\d{4})?\s*(\d{2}[A-Za-z]{3}\d{2,4})?\s*([\d:\/]+)?\s*([A-Z0-9\/]+)?\s*([A-Z0-9]+)?\s+([YN])\s*$/i)
-                  if (manualMatch) {
-                    console.log("[v0] ✅ Manual pattern matched for shipment 012:", {
-                      serial: manualMatch[1],
-                      awb: manualMatch[2],
-                      manDesc: manualMatch[9]?.substring(0, 30),
-                      pcode: manualMatch[10]
-                    })
-                    // Create shipment match array manually
-                    shipmentMatch = [
-                      manualMatch[0], // full match
-                      manualMatch[1], // serial
-                      manualMatch[2], // awb
-                      manualMatch[3], // origin
-                      manualMatch[4], // destination
-                      manualMatch[5], // pcs
-                      manualMatch[6], // wgt
-                      manualMatch[7], // vol
-                      manualMatch[8], // lvol
-                      "", // shc (empty)
-                      manualMatch[9], // manDesc
-                      manualMatch[10], // pcode
-                      manualMatch[11], // pc
-                      manualMatch[12], // thc
-                      manualMatch[13], // bs
-                      manualMatch[14], // pi
-                      manualMatch[15] || "", // fltIn
-                      manualMatch[16] || "", // arrDate
-                      manualMatch[17] || "", // arrTime
-                      manualMatch[18] || "", // qnnAqnn
-                      manualMatch[19] || "", // whs
-                      manualMatch[20] || "N", // si
-                    ]
-                    console.log("[v0] ✅ Created manual shipment match for 012 with empty SHC")
+            // LENIENT FALLBACK PARSER - Capture any line that looks like a shipment entry
+            // This is critical for capturing entries with unusual AWB formats (e.g., "176-0011")
+            // or other edge cases that don't match the strict regex patterns above
+            // Pattern: SER (3 digits) + AWB (digits-digits, any length) + rest of line
+            const lenientMatch = normalizedLine.match(/^(\d{3})\s+(\d{3}-\d+)\s+([A-Z]{6})\s+(\d+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+(.*)$/i)
+            if (lenientMatch) {
+              console.log("[v0] ✅ LENIENT PARSER captured unusual AWB format:", {
+                serial: lenientMatch[1],
+                awb: lenientMatch[2],
+                orgDes: lenientMatch[3],
+                pcs: lenientMatch[4],
+                rest: lenientMatch[8]?.substring(0, 50)
+              })
+              
+              // Parse the remaining fields from the "rest" portion
+              const rest = lenientMatch[8] || ""
+              const restParts = rest.split(/\s+/).filter(p => p.length > 0)
+              
+              // Try to extract known fields from rest
+              // Format typically: SHC MAN.DESC PCODE PC THC BS PI FLTIN ARRDT.TIME ... SI
+              let shc = ""
+              let manDesc = ""
+              let pcode = ""
+              let si = "N"
+              
+              // Look for SI at the end (Y or N)
+              if (restParts.length > 0 && /^[YN]$/i.test(restParts[restParts.length - 1])) {
+                si = restParts.pop() || "N"
+              }
+              
+              // Look for PCODE (3 uppercase letters like GCR, VAL, PXS)
+              const pcodeIndex = restParts.findIndex(p => /^[A-Z]{3}$/i.test(p))
+              if (pcodeIndex !== -1) {
+                pcode = restParts[pcodeIndex]
+                // Everything before PCODE is likely SHC + MAN.DESC
+                const beforePcode = restParts.slice(0, pcodeIndex)
+                // First part might be SHC (like HEA, VAL, etc.) or start of MAN.DESC
+                if (beforePcode.length > 0) {
+                  // Check if first part looks like SHC (3 letters or 3-3-3 pattern)
+                  if (/^[A-Z]{3}(-[A-Z]{3})*$/i.test(beforePcode[0])) {
+                    shc = beforePcode[0]
+                    manDesc = beforePcode.slice(1).join(" ")
+                  } else {
+                    manDesc = beforePcode.join(" ")
                   }
                 }
+              } else {
+                // No PCODE found, just use rest as manDesc
+                manDesc = restParts.join(" ")
+              }
+              
+              shipmentMatch = [
+                lenientMatch[0], // full match
+                lenientMatch[1], // serial
+                lenientMatch[2], // awb
+                lenientMatch[3].substring(0, 3), // origin (first 3 chars of ORGDES)
+                lenientMatch[3].substring(3, 6), // destination (last 3 chars of ORGDES)
+                lenientMatch[4], // pcs
+                lenientMatch[5], // wgt
+                lenientMatch[6], // vol
+                lenientMatch[7], // lvol
+                shc, // shc
+                manDesc, // manDesc
+                pcode, // pcode
+                "", // pc
+                "", // thc
+                "SS", // bs (default)
+                "N", // pi (default)
+                "", // fltIn
+                "", // arrDate
+                "", // arrTime
+                "", // qnnAqnn
+                "", // whs
+                si, // si
+              ]
+              console.log("[v0] ✅ LENIENT PARSER created shipment:", {
+                serial: shipmentMatch[1],
+                awb: shipmentMatch[2],
+                origin: shipmentMatch[3],
+                destination: shipmentMatch[4],
+                shc: shipmentMatch[9] || "(none)",
+                manDesc: (shipmentMatch[10] || "").substring(0, 30),
+                pcode: shipmentMatch[11]
+              })
+            } else {
+              // Log lines that look like shipments but don't match even lenient parser
+              if (line.match(/^\d{3}\s+\d{3}-\d+/)) {
+                console.log("[v0] ⚠️ Failed to parse shipment line (even lenient):", line.substring(0, 150))
+                console.log("[v0] ⚠️ Normalized line:", normalizedLine.substring(0, 150))
               }
             }
           }
@@ -980,7 +1036,7 @@ export function parseShipments(content: string, header: LoadPlanHeader): Shipmen
             lastShipment.specialNotes.push(note)
           }
         }
-      } else if (inShipmentSection && line.length > 0 && !normalizedLine.match(/^\d{3}\s+\d{3}-\d{8}/) && !line.match(/^xx\s+/i) && !line.match(/^SECTOR:/i) && !line.match(/^TOTALS:/i) && !line.match(/^BAGG|COUR/i) && !line.match(/^RAMP|MAIL/i) && !line.match(/^GO SHOW/i)) {
+      } else if (inShipmentSection && line.length > 0 && !normalizedLine.match(/^\d{3}\s+\d{3}-\d+/) && !line.match(/^xx\s+/i) && !line.match(/^SECTOR:/i) && !line.match(/^TOTALS:/i) && !line.match(/^BAGG|COUR/i) && !line.match(/^RAMP|MAIL/i) && !line.match(/^GO SHOW/i)) {
         // Comment lines like "137P RELOC ON EK035 01DEC DUE SPACE" or "CAN BE KEPT AS GO SHOW OK TO MIX LD"
         // These should be stored as specialNotes (remarks) for the preceding AWB
         // Conditions: 

@@ -355,7 +355,8 @@ export function parseShipmentLine(line: string): ParsedShipmentFields | null {
   let normalized = line.replace(/\s{2,}/g, " ").trim()
   
   // Pattern: Start with 3 digits (SER) followed by AWB pattern
-  const serAWBMatch = normalized.match(/^(\d{3})\s+(\d{3}-\d{8})/)
+  // More lenient AWB pattern - accept ANY digit count after dash (handles edge cases like 176-0011)
+  const serAWBMatch = normalized.match(/^(\d{3})\s+(\d{3}-\d+)/)
   if (!serAWBMatch) {
     return null
   }
@@ -452,7 +453,7 @@ export function parseShipmentLine(line: string): ParsedShipmentFields | null {
   
   // Try to find SI pattern - can be separate or joined
   // Pattern 1: " N " or " Y " (with spaces)
-  const siPatternSeparate = /\s+([YN])\s+(?=XX|$|\d{3}\s+\d{3}-\d{8})/
+  const siPatternSeparate = /\s+([YN])\s+(?=XX|$|\d{3}\s+\d{3}-\d+)/
   const siMatchSeparate = remaining.match(siPatternSeparate)
   
   // Pattern 2: SI at the very end (before potential ULD on next line)
@@ -465,10 +466,10 @@ export function parseShipmentLine(line: string): ParsedShipmentFields | null {
     // Extract ULD after SI
     const afterSI = remaining.substring(siIndex + siMatchSeparate[0].length).trim()
     // ULD can be XX...XX or just text (not starting with shipment pattern)
-    const uldMatch = afterSI.match(/^(XX\s+.*?\s+XX|XX[^X]+XX|[^0-9]+?)(?=\s+\d{3}\s+\d{3}-\d{8}|$)/)
+    const uldMatch = afterSI.match(/^(XX\s+.*?\s+XX|XX[^X]+XX|[^0-9]+?)(?=\s+\d{3}\s+\d{3}-\d+|$)/)
     if (uldMatch) {
       uld = uldMatch[1].trim()
-    } else if (afterSI && !afterSI.match(/^\d{3}\s+\d{3}-\d{8}/)) {
+    } else if (afterSI && !afterSI.match(/^\d{3}\s+\d{3}-\d+/)) {
       // If there's text after SI and it's not a shipment, it might be ULD
       uld = afterSI.trim()
     }

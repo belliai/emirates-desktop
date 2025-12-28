@@ -56,6 +56,10 @@ export type LoadPlanDetail = {
   isCritical?: boolean // Flag to indicate if document has CRITICAL stamp
   revision?: number // Revision number for the load plan
   remarks?: string[]
+  // ULD exclusion data for display
+  courAllocation?: string // COUR/COU line from footer (e.g., "02AKE/02PMC")
+  mailAllocation?: string // MAIL line from footer (e.g., "01AKE")
+  rampTransferUlds?: string // Sum of ULDs from RAMP TRANSFER sections (e.g., "04PMC")
   sectors: {
     sector: string
     uldSections: ULDSection[]

@@ -406,7 +406,7 @@ export async function saveListsDataToSupabase({
       adjusted: adjustedTtlPlnUld,
     })
 
-    // 1. Prepare insert/update data
+    // 1. Prepare insert/update data (core fields only - ULD exclusion fields added separately)
     const loadPlanData: any = {
       flight_number: flightNumber,
       flight_date: flightDateStr,
@@ -424,7 +424,11 @@ export async function saveListsDataToSupabase({
       sector: results.header.sector || null,
       header_warning: results.header.headerWarning || null,
       revision: newRevision,
-      // ULD exclusion fields (will be ignored if columns don't exist in DB)
+    }
+    
+    // ULD exclusion fields - these are optional and may not exist in all DB schemas
+    // Store separately so we can retry without them if insert fails
+    const uldExclusionFields = {
       cour_allocation: uldExclusions.courAllocation || null,
       mail_allocation: uldExclusions.mailAllocation || null,
       ramp_transfer_ulds: uldExclusions.rampTransferUlds || null,
@@ -491,13 +495,19 @@ export async function saveListsDataToSupabase({
     let loadPlan = null
     let loadPlanError = null
     
+    // First try with ULD exclusion fields included
+    const fullLoadPlanData = {
+      ...loadPlanData,
+      ...uldExclusionFields,
+    }
+    
     if (!loadPlan) {
       // Only insert/update if there are changes or it's new
       const result = existingLoadPlanId
         ? await supabase
             .from("load_plans")
             .update({
-              ...loadPlanData,
+              ...fullLoadPlanData,
               revision: newRevision, // Update revision
             })
             .eq("id", existingLoadPlanId)
@@ -505,12 +515,55 @@ export async function saveListsDataToSupabase({
             .single()
         : await supabase
             .from("load_plans")
-            .insert(loadPlanData)
+            .insert(fullLoadPlanData)
             .select()
             .single()
       
       loadPlan = result.data
       loadPlanError = result.error
+      
+      // If error might be related to ULD exclusion columns, retry without them
+      if (loadPlanError) {
+        const errorStr = JSON.stringify(loadPlanError)
+        const isColumnError = 
+          errorStr.includes('cour_allocation') ||
+          errorStr.includes('mail_allocation') ||
+          errorStr.includes('ramp_transfer_ulds') ||
+          errorStr.includes('adjusted_ttl_pln_uld') ||
+          errorStr.includes('schema cache') ||
+          errorStr.includes('column') ||
+          loadPlanError.code === 'PGRST204' // Column not found
+        
+        if (isColumnError || errorStr === '{}') {
+          console.warn("[v0] Insert failed, retrying without ULD exclusion fields...")
+          
+          // Retry without ULD exclusion fields
+          const retryResult = existingLoadPlanId
+            ? await supabase
+                .from("load_plans")
+                .update({
+                  ...loadPlanData,
+                  revision: newRevision,
+                })
+                .eq("id", existingLoadPlanId)
+                .select()
+                .single()
+            : await supabase
+                .from("load_plans")
+                .insert(loadPlanData)
+                .select()
+                .single()
+          
+          if (!retryResult.error) {
+            console.log("[v0] ✅ Retry succeeded without ULD exclusion fields")
+            loadPlan = retryResult.data
+            loadPlanError = null
+          } else {
+            // Keep the retry error
+            loadPlanError = retryResult.error
+          }
+        }
+      }
     }
 
     // If error is about is_critical column, retry without it

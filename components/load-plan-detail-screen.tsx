@@ -1273,12 +1273,34 @@ function CombinedTable({
                       )
                     })}
                     
-                    {/* Ramp Transfer AWBs for this sector */}
+                    {/* COUR/MAIL Footer Row - greyed out to indicate exclusion from TTL PLN ULD */}
+                    {(editedPlan.courAllocation || editedPlan.mailAllocation) && (
+                      <tr className="bg-gray-100/70 opacity-60">
+                        <td colSpan={enableBulkCheckboxes ? (isQRTList ? 22 : 21) : (isQRTList ? 21 : 20)} className="px-2 py-1 text-gray-500 italic">
+                          <div className="flex items-center gap-6 justify-center">
+                            {editedPlan.courAllocation && (
+                              <span>
+                                <span className="font-semibold">COUR:</span> {editedPlan.courAllocation}
+                                <span className="text-xs font-normal ml-2">(excluded from TTL PLN ULD)</span>
+                              </span>
+                            )}
+                            {editedPlan.mailAllocation && (
+                              <span>
+                                <span className="font-semibold">MAIL:</span> {editedPlan.mailAllocation}
+                                <span className="text-xs font-normal ml-2">(excluded from TTL PLN ULD)</span>
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                    
+                    {/* Ramp Transfer AWBs for this sector - greyed out to indicate exclusion from TTL PLN ULD */}
                     {rampTransfer.length > 0 && (
                       <>
-                        <tr className="bg-gray-50">
-                          <td colSpan={enableBulkCheckboxes ? (isQRTList ? 22 : 21) : (isQRTList ? 21 : 20)} className="px-2 py-1 font-semibold text-gray-900 text-center">
-                            ***** RAMP TRANSFER *****
+                        <tr className="bg-gray-200/70">
+                          <td colSpan={enableBulkCheckboxes ? (isQRTList ? 22 : 21) : (isQRTList ? 21 : 20)} className="px-2 py-1 font-semibold text-gray-500 text-center italic">
+                            ***** RAMP TRANSFER ***** <span className="text-xs font-normal">(excluded from TTL PLN ULD)</span>
                           </td>
                         </tr>
                         {rampTransfer.map((item, index) => {
@@ -1568,11 +1590,13 @@ function AWBRow({
   const isAdded = changeInfo?.changeType === 'added' || (awb.additional_data === true || additional_data === true)
   const isModified = changeInfo?.changeType === 'modified'
   
-  // Base text color: red for added, gray for deleted, black for others
+  // Base text color: red for added, gray for deleted, muted for ramp transfer, black for others
   const baseTextColorClass = isDeleted 
     ? "text-gray-500 line-through" 
     : isAdded 
     ? "text-red-600" 
+    : isRampTransfer
+    ? "text-gray-500"
     : "text-gray-900"
   
   // Helper function to check if a field was modified
@@ -1611,7 +1635,7 @@ function AWBRow({
   return (
     <>
       <tr
-        className={`border-b border-gray-100 ${isRampTransfer ? "bg-gray-50 hover:bg-gray-50" : ""} ${isDeleted ? "opacity-60" : ""} ${isReadOnly && onRowClick && !isBulkULD ? "cursor-pointer hover:bg-gray-50" : ""}`}
+        className={`border-b border-gray-100 ${isRampTransfer ? "bg-gray-100/70 opacity-60" : ""} ${isDeleted ? "opacity-60" : ""} ${isReadOnly && onRowClick && !isBulkULD ? "cursor-pointer hover:bg-gray-50" : ""}`}
         data-uld-type={uldType || "none"}
         data-is-bulk={isBulkULD ? "true" : "false"}
         onClick={() => {
@@ -1838,7 +1862,7 @@ function ULDRow({ uld, uldEntries, isReadOnly, enableBulkCheckboxes, sectionKeys
     : trailingComment
   
   return (
-    <tr className={isRampTransfer ? "bg-gray-50" : ""}>
+    <tr className={isRampTransfer ? "bg-gray-100/70 opacity-60" : ""}>
       {/* Checkbox column */}
       {enableBulkCheckboxes && (
         <td
