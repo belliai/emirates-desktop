@@ -4,22 +4,76 @@ import { useState, useEffect, useRef } from "react"
 import { X, Plus, Trash2 } from "lucide-react"
 import { parseULDSection } from "@/lib/uld-parser"
 
+// Work type indicates the effort required for the ULD
+// BUILT = Staff builds from ground up (more effort)
+// THRU = ULD passes through (already built, less effort)
+export type WorkType = 'BUILT' | 'THRU' | null
+
 export type ULDEntry = {
   number: string
   checked: boolean
   type: string
+  workType?: WorkType // Type of work: BUILT, THRU, or null (not set)
+}
+
+// Dropdown component for work type selection
+function WorkTypeSelect({ 
+  value, 
+  onChange 
+}: { 
+  value: WorkType
+  onChange: (newValue: WorkType) => void 
+}) {
+  const handleChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    e.stopPropagation()
+    const newValue = e.target.value === '' ? null : e.target.value as WorkType
+    onChange(newValue)
+  }
+
+  const getSelectStyles = () => {
+    switch (value) {
+      case 'BUILT':
+        return 'bg-orange-50 text-orange-700 border-orange-300'
+      case 'THRU':
+        return 'bg-blue-50 text-blue-700 border-blue-300'
+      default:
+        return 'bg-white text-gray-500 border-gray-300'
+    }
+  }
+
+  return (
+    <select
+      value={value || ''}
+      onChange={handleChange}
+      onClick={(e) => e.stopPropagation()}
+      className={`px-2 py-1.5 text-xs font-medium rounded border min-w-[75px] focus:outline-none focus:ring-1 focus:ring-gray-400 transition-colors ${getSelectStyles()}`}
+    >
+      <option value="">—</option>
+      <option value="BUILT">BUILT</option>
+      <option value="THRU">THRU</option>
+    </select>
+  )
+}
+
+// AWB info for display in the modal
+export type AWBInfo = {
+  awbNumber: string
+  pieces: number
+  weight: number
+  commodity?: string
 }
 
 interface ULDNumberModalProps {
   isOpen: boolean
   onClose: () => void
-  uldSection: string // For display purposes (section name)
-  ttlPlnUld?: string // TTL PLN ULD from header - source of truth for ULD count
+  uldSection: string // Section string like "XX 1AKE XX" - used for ULD count
   sectorIndex: number
   uldSectionIndex: number
+  awbsInSection?: AWBInfo[] // AWBs that go into this ULD section
   initialNumbers: string[]
   initialChecked?: boolean[]
   initialTypes?: string[]
+  initialWorkTypes?: WorkType[]
   onSave: (entries: ULDEntry[]) => void
 }
 
@@ -27,16 +81,16 @@ export function ULDNumberModal({
   isOpen,
   onClose,
   uldSection,
-  ttlPlnUld,
+  awbsInSection = [],
   initialNumbers,
   initialChecked,
   initialTypes,
+  initialWorkTypes,
   onSave,
 }: ULDNumberModalProps) {
-  // Use TTL PLN ULD from header if provided, otherwise fall back to section string
-  // TTL PLN ULD is the authoritative source for total ULD count
-  const sourceString = ttlPlnUld || uldSection
-  const { expandedTypes, types } = parseULDSection(sourceString)
+  // Use the section string for ULD count (e.g., "XX 1AKE XX" = 1 AKE)
+  // This ensures we show only the ULDs for this specific section, not the entire flight
+  const { expandedTypes, types } = parseULDSection(uldSection)
   const [uldEntries, setUldEntries] = useState<ULDEntry[]>([])
   
   // Track previous values to avoid infinite loops
@@ -44,23 +98,26 @@ export function ULDNumberModal({
   const prevInitialNumbersRef = useRef<string>("")
   const prevInitialCheckedRef = useRef<string>("")
   const prevInitialTypesRef = useRef<string>("")
+  const prevInitialWorkTypesRef = useRef<string>("")
   
   // Available ULD types for dropdown
-  const availableTypes = ["PMC", "AKE", "AKL", "AMF", "ALF", "PLA", "PAG", "AMP", "RKE", "BULK"]
+  const availableTypes = ["PMC", "AKE", "QKE", "AKL", "AMF", "ALF", "PLA", "PAG", "AMP", "RKE", "BULK"]
 
   useEffect(() => {
     // Only initialize when modal opens or when initial values actually change
     const initialNumbersStr = JSON.stringify(initialNumbers)
     const initialCheckedStr = JSON.stringify(initialChecked)
     const initialTypesStr = JSON.stringify(initialTypes)
+    const initialWorkTypesStr = JSON.stringify(initialWorkTypes)
     
     const isOpening = isOpen && !prevIsOpenRef.current
     const numbersChanged = initialNumbersStr !== prevInitialNumbersRef.current
     const checkedChanged = initialCheckedStr !== prevInitialCheckedRef.current
     const typesChanged = initialTypesStr !== prevInitialTypesRef.current
+    const workTypesChanged = initialWorkTypesStr !== prevInitialWorkTypesRef.current
     
     if (isOpen) {
-      if (isOpening || numbersChanged || checkedChanged || typesChanged) {
+      if (isOpening || numbersChanged || checkedChanged || typesChanged || workTypesChanged) {
         // Initialize with existing entries or create new ones
         const expectedCount = expandedTypes.length
         
@@ -69,7 +126,8 @@ export function ULDNumberModal({
           const entries: ULDEntry[] = initialNumbers.map((number, index) => ({
             number: number || "",
             checked: initialChecked?.[index] ?? false,
-            type: initialTypes[index] || expandedTypes[index] || types[0] || "PMC"
+            type: initialTypes[index] || expandedTypes[index] || types[0] || "PMC",
+            workType: initialWorkTypes?.[index] ?? null
           }))
           setUldEntries(entries)
         } else if (expectedCount > 0) {
@@ -77,7 +135,8 @@ export function ULDNumberModal({
           const entries: ULDEntry[] = expandedTypes.map((type) => ({
             number: "",
             checked: false,
-            type: type
+            type: type,
+            workType: null
           }))
           setUldEntries(entries)
         } else {
@@ -89,6 +148,7 @@ export function ULDNumberModal({
         prevInitialNumbersRef.current = initialNumbersStr
         prevInitialCheckedRef.current = initialCheckedStr
         prevInitialTypesRef.current = initialTypesStr
+        prevInitialWorkTypesRef.current = initialWorkTypesStr
       }
     } else {
       // Reset when modal closes
@@ -98,7 +158,7 @@ export function ULDNumberModal({
     }
     
     prevIsOpenRef.current = isOpen
-  }, [isOpen, initialNumbers, initialChecked, initialTypes, expandedTypes, types])
+  }, [isOpen, initialNumbers, initialChecked, initialTypes, initialWorkTypes, expandedTypes, types])
 
   if (!isOpen) return null
 
@@ -132,6 +192,14 @@ export function ULDNumberModal({
     })
   }
 
+  const handleWorkTypeChange = (index: number, workType: WorkType) => {
+    setUldEntries((prev) => {
+      const updated = [...prev]
+      updated[index] = { ...updated[index], workType }
+      return updated
+    })
+  }
+
   const handleAdd = () => {
     // Add a new empty ULD entry
     const lastType = uldEntries.length > 0
@@ -142,7 +210,7 @@ export function ULDNumberModal({
     
     setUldEntries((prev) => [
       ...prev,
-      { number: "", checked: false, type: lastType }
+      { number: "", checked: false, type: lastType, workType: null }
     ])
   }
 
@@ -175,6 +243,28 @@ export function ULDNumberModal({
         <div className="mb-3 text-xs text-gray-600">
           Section: <span className="font-mono font-semibold">{uldSection}</span>
         </div>
+
+        {/* AWBs in this section */}
+        {awbsInSection.length > 0 && (
+          <div className="mb-4 p-3 bg-gray-50 rounded-lg border border-gray-200">
+            <div className="text-xs font-semibold text-gray-700 mb-2">AWBs in this ULD:</div>
+            <div className="space-y-1 max-h-[120px] overflow-y-auto">
+              {awbsInSection.map((awb, idx) => (
+                <div key={idx} className="flex items-center justify-between text-xs">
+                  <span className="font-mono font-medium text-gray-900">{awb.awbNumber}</span>
+                  <span className="text-gray-600">
+                    {awb.pieces} pcs • {awb.weight} kg
+                    {awb.commodity && <span className="ml-1 text-gray-500">• {awb.commodity}</span>}
+                  </span>
+                </div>
+              ))}
+            </div>
+            <div className="mt-2 pt-2 border-t border-gray-200 text-xs text-gray-600">
+              Total: <span className="font-semibold">{awbsInSection.reduce((sum, a) => sum + a.pieces, 0)} pcs</span> • 
+              <span className="font-semibold ml-1">{awbsInSection.reduce((sum, a) => sum + a.weight, 0).toFixed(1)} kg</span>
+            </div>
+          </div>
+        )}
 
         <div className="space-y-2 mb-4 max-h-[300px] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
           {uldEntries.length === 0 ? (
@@ -236,6 +326,10 @@ export function ULDNumberModal({
                     className="flex-1 px-2 py-1.5 border border-gray-300 rounded-md text-sm focus:outline-none focus:border-gray-400"
                     placeholder="Enter ULD number (optional)"
                     autoFocus={index === 0 && uldEntries.every(e => !e.number)}
+                  />
+                  <WorkTypeSelect
+                    value={entry.workType || null}
+                    onChange={(newValue) => handleWorkTypeChange(index, newValue)}
                   />
                   <button
                     type="button"

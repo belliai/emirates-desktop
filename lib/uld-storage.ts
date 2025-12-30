@@ -19,6 +19,7 @@ interface ULDEntryRow {
   uld_type: string
   uld_number: string | null
   is_checked: boolean
+  work_type: 'BUILT' | 'THRU' | null
   checked_by: string | null
   checked_at: string | null
   created_at: string
@@ -107,7 +108,8 @@ export async function getULDEntriesFromSupabase(
             entriesMap.get(key)!.push({
               number: row.uld_number || "",
               checked: row.is_checked,
-              type: row.uld_type
+              type: row.uld_type,
+              workType: row.work_type || null
             })
           })
           
@@ -267,13 +269,14 @@ export async function saveULDEntriesToSupabase(
         uld_type: entry.type,
         uld_number: entry.number || null,
         is_checked: entry.checked,
+        work_type: entry.workType || null,
         checked_by: entry.checked ? checkedBy || null : null,
         checked_at: entry.checked ? now : null
       }))
       
-      console.log(`[ULDStorage] Attempting to upsert ${rowsToUpsert.length} rows:`, rowsToUpsert)
+      console.log(`[ULDStorage] Attempting to upsert ${rowsToUpsert.length} rows`)
       
-      const { data: upsertData, error: upsertError } = await supabase
+      let { data: upsertData, error: upsertError } = await supabase
         .from("uld_entries")
         .upsert(rowsToUpsert, {
           onConflict: "load_plan_id,sector_index,uld_section_index,entry_index"
@@ -284,6 +287,38 @@ export async function saveULDEntriesToSupabase(
       if (upsertError && (upsertError.message?.includes("relation") || upsertError.code === "42P01")) {
         console.log(`[ULDStorage] uld_entries table not found, using localStorage only`)
         return true
+      }
+      
+      // If work_type column not in schema cache, retry without it
+      if (upsertError && (upsertError.message?.includes("work_type") || upsertError.message?.includes("schema cache"))) {
+        console.warn(`[ULDStorage] work_type column not in schema cache, retrying without it...`)
+        const rowsWithoutWorkType = entries.map((entry, index) => ({
+          load_plan_id: loadPlanId,
+          flight_number: flightNumber,
+          sector_index: sectorIndex,
+          uld_section_index: uldSectionIndex,
+          entry_index: index,
+          uld_type: entry.type,
+          uld_number: entry.number || null,
+          is_checked: entry.checked,
+          checked_by: entry.checked ? checkedBy || null : null,
+          checked_at: entry.checked ? now : null
+        }))
+        
+        const retryResult = await supabase
+          .from("uld_entries")
+          .upsert(rowsWithoutWorkType, {
+            onConflict: "load_plan_id,sector_index,uld_section_index,entry_index"
+          })
+          .select()
+        
+        upsertData = retryResult.data
+        upsertError = retryResult.error
+        
+        if (!upsertError) {
+          console.log(`[ULDStorage] ✅ Saved (without work_type) ${upsertData?.length || entries.length} ULD entries for ${flightNumber} [${key}]`)
+          return true
+        }
       }
       
       if (upsertError) {

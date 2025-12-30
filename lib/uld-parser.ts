@@ -80,7 +80,7 @@ export function parseULDSection(uldString: string): { count: number; types: stri
   
   // Match patterns like "01PMC", "02AKE", "BULK", etc.
   // Pattern: digits followed by ULD type code (PMC, AKE, AKL, AMF, ALF, PLA, etc.) or BULK
-  const uldPattern = /\b(\d+)?(PMC|AKE|AKL|AMF|ALF|PLA|PAG|AMP|RKE|BULK)\b/gi
+  const uldPattern = /\b(\d+)?(PMC|AKE|QKE|AKL|AMF|ALF|PLA|PAG|AMP|RKE|BULK)\b/gi
   const matches = Array.from(cleaned.matchAll(uldPattern))
   
   if (!matches || matches.length === 0) {

@@ -13,7 +13,7 @@ import { EditableField } from "./editable-field"
 import { useLoadPlanState } from "./use-load-plan-state"
 import { useLoadPlans } from "@/lib/load-plan-context"
 import type { LoadPlanDetail, AWBRow, ULDSection } from "./load-plan-types"
-import { ULDNumberModal, type ULDEntry } from "./uld-number-modal"
+import { ULDNumberModal, type ULDEntry, type WorkType, type AWBInfo } from "./uld-number-modal"
 import { parseULDSection, formatULDSection, formatULDSectionFromEntries, formatULDSectionFromCheckedEntries, extractULDParts } from "@/lib/uld-parser"
 import { getULDEntriesFromStorage, saveULDEntriesToStorage, getULDEntriesFromSupabase, saveULDEntriesToSupabase } from "@/lib/uld-storage"
 import type { WorkArea, PilPerSubFilter } from "@/lib/work-area-filter-utils"
@@ -147,6 +147,7 @@ export default function LoadPlanDetailScreen({ loadPlan, onBack, onNavigateToBui
     sectorIndex: number
     uldSectionIndex: number
     uld: string
+    awbs: AWBInfo[]
   } | null>(null)
   const [showQuickActionModal, setShowQuickActionModal] = useState(false)
   const [selectedAWBForQuickAction, setSelectedAWBForQuickAction] = useState<{
@@ -760,7 +761,15 @@ export default function LoadPlanDetailScreen({ loadPlan, onBack, onNavigateToBui
               if (uld && uld.toUpperCase().includes("BULK")) {
                 return
               }
-              setSelectedULDSection({ sectorIndex, uldSectionIndex, uld })
+              // Get AWBs from this section to display in the modal
+              const sectionAwbs = editedPlan.sectors[sectorIndex]?.uldSections[uldSectionIndex]?.awbs || []
+              const awbInfos: AWBInfo[] = sectionAwbs.map(awb => ({
+                awbNumber: awb.awbNo || '',
+                pieces: parseInt(awb.pcs || '0', 10) || 0,
+                weight: parseFloat(awb.wgt || '0') || 0,
+                commodity: awb.manDesc || undefined
+              }))
+              setSelectedULDSection({ sectorIndex, uldSectionIndex, uld, awbs: awbInfos })
               setShowULDModal(true)
             }}
             isQRTList={isQRTList}
@@ -835,12 +844,13 @@ export default function LoadPlanDetailScreen({ loadPlan, onBack, onNavigateToBui
             setSelectedULDSection(null)
           }}
           uldSection={selectedULDSection.uld}
-          ttlPlnUld={loadPlan.ttlPlnUld} // Use TTL PLN ULD from header as source of truth
           sectorIndex={selectedULDSection.sectorIndex}
           uldSectionIndex={selectedULDSection.uldSectionIndex}
+          awbsInSection={selectedULDSection.awbs}
           initialNumbers={mergedUldEntries.get(`${selectedULDSection.sectorIndex}-${selectedULDSection.uldSectionIndex}`)?.map(e => e.number) || []}
           initialChecked={mergedUldEntries.get(`${selectedULDSection.sectorIndex}-${selectedULDSection.uldSectionIndex}`)?.map(e => e.checked)}
           initialTypes={mergedUldEntries.get(`${selectedULDSection.sectorIndex}-${selectedULDSection.uldSectionIndex}`)?.map(e => e.type)}
+          initialWorkTypes={mergedUldEntries.get(`${selectedULDSection.sectorIndex}-${selectedULDSection.uldSectionIndex}`)?.map(e => e.workType || null)}
           onSave={(entries) => {
             handleUpdateULDNumbers(selectedULDSection.sectorIndex, selectedULDSection.uldSectionIndex, entries)
           }}
