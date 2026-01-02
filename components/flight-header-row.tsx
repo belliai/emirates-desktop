@@ -1,6 +1,6 @@
 "use client"
 
-import { Plane, Calendar, Package, Users, Clock, FileText, ArrowRight } from "lucide-react"
+import { Plane, Calendar, Package, Users, Clock, FileText } from "lucide-react"
 import { EditableField } from "./editable-field"
 import type { LoadPlanDetail } from "./load-plan-types"
 
@@ -8,37 +8,59 @@ interface FlightHeaderRowProps {
   plan: LoadPlanDetail
   onFieldUpdate: (field: keyof LoadPlanDetail, value: string) => void
   isReadOnly: boolean
+  extraUldsDisplay?: string // Display string for extra ULDs (e.g., "+1 PMC +2 AKE")
 }
 
 /**
  * TTL PLN ULD Display Component
  * Shows original value with strikethrough and adjusted value when different
+ * Stacked vertically to save horizontal space
+ * Also shows indicator if extra ULDs were added by users (with types)
  */
-function TtlPlnUldDisplay({ original, adjusted }: { original: string; adjusted?: string }) {
+function TtlPlnUldDisplay({ 
+  original, 
+  adjusted,
+  extraDisplay = ""
+}: { 
+  original: string
+  adjusted?: string
+  extraDisplay?: string
+}) {
   // If no adjusted value or they're the same, just show original
   if (!adjusted || adjusted === original) {
     return (
-      <span className="text-gray-700 font-semibold text-sm">
-        {original || "-"}
-      </span>
+      <div className="flex flex-col leading-tight">
+        <span className="text-gray-700 font-semibold text-sm">
+          {original || "-"}
+        </span>
+        {extraDisplay && (
+          <span className="text-orange-600 text-xs font-medium">
+            {extraDisplay}
+          </span>
+        )}
+      </div>
     )
   }
   
-  // Show strikethrough original with adjusted value
+  // Show stacked: original (strikethrough) on top, adjusted below, extra indicator if any
   return (
-    <div className="flex items-center gap-2">
-      <span className="text-gray-400 line-through text-sm">
+    <div className="flex flex-col leading-tight">
+      <span className="text-gray-400 line-through text-xs">
         {original}
       </span>
-      <ArrowRight className="w-3 h-3 text-gray-400" />
       <span className="text-green-700 font-semibold text-sm">
         {adjusted}
       </span>
+      {extraDisplay && (
+        <span className="text-orange-600 text-xs font-medium">
+          {extraDisplay}
+        </span>
+      )}
     </div>
   )
 }
 
-export function FlightHeaderRow({ plan, onFieldUpdate, isReadOnly }: FlightHeaderRowProps) {
+export function FlightHeaderRow({ plan, onFieldUpdate, isReadOnly, extraUldsDisplay = "" }: FlightHeaderRowProps) {
   return (
     <div className="bg-white border-b border-gray-200">
       {/* Header Labels Row */}
@@ -117,6 +139,7 @@ export function FlightHeaderRow({ plan, onFieldUpdate, isReadOnly }: FlightHeade
         <TtlPlnUldDisplay 
           original={plan.ttlPlnUld} 
           adjusted={plan.adjustedTtlPlnUld}
+          extraDisplay={extraUldsDisplay}
         />
         <EditableField
           value={plan.uldVersion}

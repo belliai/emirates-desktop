@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import React from "react"
 import { Plus, Trash2, CheckCircle } from "lucide-react"
 import BCRModal, { generateBCRData } from "./bcr-modal"
@@ -168,11 +168,17 @@ export default function LoadPlanDetailScreen({ loadPlan, onBack, onNavigateToBui
     return getULDEntriesFromStorage(loadPlan.flight, loadPlan.sectors)
   })
   
+  // Track entries specifically from Supabase (not localStorage) for extra ULD calculation
+  // This prevents showing "extra" ULDs from old/auto-initialized localStorage data
+  const [supabaseEntries, setSupabaseEntries] = useState<Map<string, ULDEntry[]>>(new Map())
+  
   // Fetch ULD entries from Supabase on mount (for cross-device sync)
   useEffect(() => {
     const fetchULDEntriesFromDB = async () => {
       try {
         const entries = await getULDEntriesFromSupabase(loadPlan.flight, loadPlan.sectors)
+        // Always set supabaseEntries (even if empty) to track what's actually in DB
+        setSupabaseEntries(entries)
         if (entries.size > 0) {
           setUldEntriesFromStorage(entries)
           console.log(`[LoadPlanDetail] Loaded ${entries.size} ULD sections from Supabase for ${loadPlan.flight}`)
@@ -346,9 +352,47 @@ export default function LoadPlanDetailScreen({ loadPlan, onBack, onNavigateToBui
     mergedUldEntries.set(key, value)
   })
   
+  // Calculate extra ULDs added by users beyond original load plan
+  // Only count entries that were EXPLICITLY saved by users to Supabase database
+  // This prevents showing "extra" ULDs from old/auto-initialized localStorage data
+  // Returns a map of ULD type to extra count (e.g., { PMC: 2, AKE: 1 })
+  const extraUldsByType = useMemo(() => {
+    const extras = new Map<string, number>()
+    loadPlan.sectors.forEach((sector, sectorIndex) => {
+      sector.uldSections.forEach((uldSection, uldSectionIndex) => {
+        const key = `${sectorIndex}-${uldSectionIndex}`
+        // Only use entries from Supabase (not localStorage) to prevent false positives
+        const storedEntries = supabaseEntries.get(key) || []
+        const { expandedTypes } = parseULDSection(uldSection.uld || "")
+        const expectedCount = expandedTypes.length
+        
+        // If user saved more entries than expected, count the extra by type
+        if (storedEntries.length > expectedCount) {
+          // Extra entries are those beyond the expected count
+          const extraEntries = storedEntries.slice(expectedCount)
+          extraEntries.forEach(entry => {
+            const type = entry.type || "PMC"
+            extras.set(type, (extras.get(type) || 0) + 1)
+          })
+        }
+      })
+    })
+    return extras
+  }, [loadPlan.sectors, supabaseEntries])
+  
+  // Format extra ULDs for display (e.g., "+1 PMC +2 AKE")
+  const extraUldsDisplay = useMemo(() => {
+    if (extraUldsByType.size === 0) return ""
+    const parts: string[] = []
+    extraUldsByType.forEach((count, type) => {
+      parts.push(`+${count} ${type}`)
+    })
+    return parts.join(" ")
+  }, [extraUldsByType])
+  
   const isReadOnly = true // All views are read-only since changes save directly to Supabase (ULD entries)
   
-  // Enhanced updateULDNumbers that also saves to localStorage
+  // Enhanced updateULDNumbers that also saves to localStorage and Supabase
   // Preserves checked state using utility function
   const handleUpdateULDNumbers = (sectorIndex: number, uldSectionIndex: number, entries: ULDEntry[]) => {
     // Convert entries back to numbers array for backward compatibility with useLoadPlanState
@@ -360,7 +404,15 @@ export default function LoadPlanDetailScreen({ loadPlan, onBack, onNavigateToBui
       const updated = new Map(prev)
       updated.set(key, entries)
       // Save to localStorage using utility function to ensure checked state is preserved
+      // This also syncs to Supabase in background
       saveULDEntriesToStorage(loadPlan.flight, updated)
+      return updated
+    })
+    
+    // Also update supabaseEntries to keep extra ULD calculation in sync
+    setSupabaseEntries((prev) => {
+      const updated = new Map(prev)
+      updated.set(key, entries)
       return updated
     })
     
@@ -602,11 +654,12 @@ export default function LoadPlanDetailScreen({ loadPlan, onBack, onNavigateToBui
         <FlightHeaderRow
           plan={{
             ...editedPlan,
-            // Use adjusted TTL PLN ULD if available (excludes COUR/MAIL/RAMP TRANSFER)
-            ttlPlnUld: loadPlan.adjustedTtlPlnUld || editedPlan.ttlPlnUld,
+            // Keep original ttlPlnUld for display, pass adjusted separately for strikethrough
+            adjustedTtlPlnUld: loadPlan.adjustedTtlPlnUld,
           }}
           onFieldUpdate={updateField}
           isReadOnly={isReadOnly}
+          extraUldsDisplay={extraUldsDisplay}
         />
 
         {/* Bay Numbers Table - Only for QRT List, shown after flight header */}
@@ -1250,25 +1303,46 @@ function CombinedTable({
                             changeInfo={loadPlanChanges.get(parseInt(awb.ser) || 0)}
                             uldType={uld}
                           />
-                          {shouldShowULD && (
-                            <ULDRow
-                              uld={uld}
-                              sectorIndex={sectorIndex}
-                              uldSectionIndex={uldSectionIndex}
-                              uldEntries={uldEntries.get(`${sectorIndex}-${uldSectionIndex}`) || []}
-                              isReadOnly={isReadOnly}
-                              enableBulkCheckboxes={enableBulkCheckboxes}
-                              sectionKeys={enableBulkCheckboxes ? getULDSectionAWBKeys(sectorIndex, uldSectionIndex) : new Set()}
-                              isAllSelected={enableBulkCheckboxes ? isAllSelected(getULDSectionAWBKeys(sectorIndex, uldSectionIndex)) : false}
-                              isSomeSelected={enableBulkCheckboxes ? isSomeSelected(getULDSectionAWBKeys(sectorIndex, uldSectionIndex)) : false}
-                              onToggleSection={enableBulkCheckboxes ? () => onToggleULDSection(sectorIndex, uldSectionIndex) : () => {}}
-                              onUpdate={(value) => onUpdateULDField(sectorIndex, uldSectionIndex, value)}
-                              onAddAWB={() => onAddNewAWBRow(sectorIndex, uldSectionIndex)}
-                              onDelete={() => onDeleteULDSection(sectorIndex, uldSectionIndex)}
-                              onClick={() => onULDSectionClick(sectorIndex, uldSectionIndex, uld)}
-                              isQRTList={isQRTList}
-                            />
-                          )}
+                          {shouldShowULD && (() => {
+                            // Calculate extra ULDs for this specific section
+                            const sectionEntries = uldEntries.get(`${sectorIndex}-${uldSectionIndex}`) || []
+                            const { expandedTypes } = parseULDSection(uld)
+                            const expectedCount = expandedTypes.length
+                            const extraCount = Math.max(0, sectionEntries.length - expectedCount)
+                            // Get the types of extra ULDs for this section
+                            const extraUldsForSection = extraCount > 0 
+                              ? sectionEntries.slice(expectedCount).reduce((acc, entry) => {
+                                  const type = entry.type || "PMC"
+                                  acc.set(type, (acc.get(type) || 0) + 1)
+                                  return acc
+                                }, new Map<string, number>())
+                              : new Map<string, number>()
+                            // Format extra ULDs display for this section (e.g., "+1 AKE")
+                            const sectionExtrasDisplay = extraUldsForSection.size > 0
+                              ? Array.from(extraUldsForSection.entries()).map(([type, count]) => `+${count} ${type}`).join(" ")
+                              : ""
+                            
+                            return (
+                              <ULDRow
+                                uld={uld}
+                                sectorIndex={sectorIndex}
+                                uldSectionIndex={uldSectionIndex}
+                                uldEntries={sectionEntries}
+                                isReadOnly={isReadOnly}
+                                enableBulkCheckboxes={enableBulkCheckboxes}
+                                sectionKeys={enableBulkCheckboxes ? getULDSectionAWBKeys(sectorIndex, uldSectionIndex) : new Set()}
+                                isAllSelected={enableBulkCheckboxes ? isAllSelected(getULDSectionAWBKeys(sectorIndex, uldSectionIndex)) : false}
+                                isSomeSelected={enableBulkCheckboxes ? isSomeSelected(getULDSectionAWBKeys(sectorIndex, uldSectionIndex)) : false}
+                                onToggleSection={enableBulkCheckboxes ? () => onToggleULDSection(sectorIndex, uldSectionIndex) : () => {}}
+                                onUpdate={(value) => onUpdateULDField(sectorIndex, uldSectionIndex, value)}
+                                onAddAWB={() => onAddNewAWBRow(sectorIndex, uldSectionIndex)}
+                                onDelete={() => onDeleteULDSection(sectorIndex, uldSectionIndex)}
+                                onClick={() => onULDSectionClick(sectorIndex, uldSectionIndex, uld)}
+                                isQRTList={isQRTList}
+                                extraUldsDisplay={sectionExtrasDisplay}
+                              />
+                            )
+                          })()}
                         </React.Fragment>
                       )
                     })}
@@ -1307,12 +1381,9 @@ function CombinedTable({
                           const { awb, sectorIndex, uldSectionIndex, awbIndex, uld } = item
                           const assignmentKey = `${awb.awbNo}-${sectorIndex}-${uldSectionIndex}-${awbIndex}`
                           
-                          // Check if we need to show ULD row after this AWB
-                          const nextItem = rampTransfer[index + 1]
-                          const shouldShowULD = uld && uld.trim() !== "" && (
-                            !nextItem || 
-                            nextItem.uld !== uld
-                          )
+                          // For RAMP TRANSFER, each AWB has its own ULD instance - always show ULD row
+                          // (Unlike regular sections where multiple AWBs share one ULD)
+                          const shouldShowULD = uld && uld.trim() !== ""
                           
                           // Get additional_data flag from awb item (from database)
                           const isRampAdditionalData = awb.additional_data === true
@@ -1342,26 +1413,47 @@ function CombinedTable({
                                 changeInfo={loadPlanChanges.get(parseInt(awb.ser) || 0)}
                                 uldType={uld}
                               />
-                              {shouldShowULD && (
-                                <ULDRow
-                                  uld={uld}
-                                  sectorIndex={sectorIndex}
-                                  uldSectionIndex={uldSectionIndex}
-                                  uldEntries={uldEntries.get(`${sectorIndex}-${uldSectionIndex}`) || []}
-                                  isReadOnly={isReadOnly}
-                                  enableBulkCheckboxes={enableBulkCheckboxes}
-                                  sectionKeys={enableBulkCheckboxes ? getULDSectionAWBKeys(sectorIndex, uldSectionIndex) : new Set()}
-                                  isAllSelected={enableBulkCheckboxes ? isAllSelected(getULDSectionAWBKeys(sectorIndex, uldSectionIndex)) : false}
-                                  isSomeSelected={enableBulkCheckboxes ? isSomeSelected(getULDSectionAWBKeys(sectorIndex, uldSectionIndex)) : false}
-                                  onToggleSection={enableBulkCheckboxes ? () => onToggleULDSection(sectorIndex, uldSectionIndex) : () => {}}
-                                  onUpdate={(value) => onUpdateULDField(sectorIndex, uldSectionIndex, value)}
-                                  onAddAWB={() => onAddNewAWBRow(sectorIndex, uldSectionIndex)}
-                                  onDelete={() => onDeleteULDSection(sectorIndex, uldSectionIndex)}
-                                  onClick={() => onULDSectionClick(sectorIndex, uldSectionIndex, uld)}
-                                  isRampTransfer
-                                  isQRTList={isQRTList}
-                                />
-                              )}
+                              {shouldShowULD && (() => {
+                                // Calculate extra ULDs for this specific section (ramp transfer)
+                                const sectionEntries = uldEntries.get(`${sectorIndex}-${uldSectionIndex}`) || []
+                                const { expandedTypes } = parseULDSection(uld)
+                                const expectedCount = expandedTypes.length
+                                const extraCount = Math.max(0, sectionEntries.length - expectedCount)
+                                // Get the types of extra ULDs for this section
+                                const extraUldsForSection = extraCount > 0 
+                                  ? sectionEntries.slice(expectedCount).reduce((acc, entry) => {
+                                      const type = entry.type || "PMC"
+                                      acc.set(type, (acc.get(type) || 0) + 1)
+                                      return acc
+                                    }, new Map<string, number>())
+                                  : new Map<string, number>()
+                                // Format extra ULDs display for this section (e.g., "+1 AKE")
+                                const sectionExtrasDisplay = extraUldsForSection.size > 0
+                                  ? Array.from(extraUldsForSection.entries()).map(([type, count]) => `+${count} ${type}`).join(" ")
+                                  : ""
+                                
+                                return (
+                                  <ULDRow
+                                    uld={uld}
+                                    sectorIndex={sectorIndex}
+                                    uldSectionIndex={uldSectionIndex}
+                                    uldEntries={sectionEntries}
+                                    isReadOnly={isReadOnly}
+                                    enableBulkCheckboxes={enableBulkCheckboxes}
+                                    sectionKeys={enableBulkCheckboxes ? getULDSectionAWBKeys(sectorIndex, uldSectionIndex) : new Set()}
+                                    isAllSelected={enableBulkCheckboxes ? isAllSelected(getULDSectionAWBKeys(sectorIndex, uldSectionIndex)) : false}
+                                    isSomeSelected={enableBulkCheckboxes ? isSomeSelected(getULDSectionAWBKeys(sectorIndex, uldSectionIndex)) : false}
+                                    onToggleSection={enableBulkCheckboxes ? () => onToggleULDSection(sectorIndex, uldSectionIndex) : () => {}}
+                                    onUpdate={(value) => onUpdateULDField(sectorIndex, uldSectionIndex, value)}
+                                    onAddAWB={() => onAddNewAWBRow(sectorIndex, uldSectionIndex)}
+                                    onDelete={() => onDeleteULDSection(sectorIndex, uldSectionIndex)}
+                                    onClick={() => onULDSectionClick(sectorIndex, uldSectionIndex, uld)}
+                                    isRampTransfer
+                                    isQRTList={isQRTList}
+                                    extraUldsDisplay={sectionExtrasDisplay}
+                                  />
+                                )
+                              })()}
                             </React.Fragment>
                           )
                         })}
@@ -1828,14 +1920,16 @@ interface ULDRowProps {
   onClick: () => void
   isRampTransfer?: boolean
   isQRTList?: boolean
+  extraUldsDisplay?: string // Display string for extra ULDs in this section (e.g., "+1 AKE")
 }
 
-function ULDRow({ uld, uldEntries, isReadOnly, enableBulkCheckboxes, sectionKeys, isAllSelected, isSomeSelected, onToggleSection, onUpdate, onAddAWB, onDelete, onClick, isRampTransfer, isQRTList = false }: ULDRowProps) {
+function ULDRow({ uld, uldEntries, isReadOnly, enableBulkCheckboxes, sectionKeys, isAllSelected, isSomeSelected, onToggleSection, onUpdate, onAddAWB, onDelete, onClick, isRampTransfer, isQRTList = false, extraUldsDisplay = "" }: ULDRowProps) {
   const { count, types } = parseULDSection(uld)
   const checkedEntries = uldEntries.filter(e => e.checked)
   // BULK ULD sections are view-only - don't allow opening ULD Numbers modal
   const isBulkULD = uld ? uld.toUpperCase().includes("BULK") : false
   const hasCheckedEntries = checkedEntries.length > 0
+  const hasExtraUlds = extraUldsDisplay.length > 0
   
   // Extract core ULD (XX ... XX) and trailing comment with type classification
   const { core: coreULD, trailing: trailingComment, trailingType } = extractULDParts(uld)
@@ -1862,7 +1956,7 @@ function ULDRow({ uld, uldEntries, isReadOnly, enableBulkCheckboxes, sectionKeys
     : trailingComment
   
   return (
-    <tr className={isRampTransfer ? "bg-gray-100/70 opacity-60" : ""}>
+    <tr className={`${isRampTransfer ? "bg-gray-100/70 opacity-60" : ""} ${hasExtraUlds ? "bg-orange-50" : ""}`}>
       {/* Checkbox column */}
       {enableBulkCheckboxes && (
         <td
@@ -1912,6 +2006,12 @@ function ULDRow({ uld, uldEntries, isReadOnly, enableBulkCheckboxes, sectionKeys
               className="font-semibold text-gray-900 text-center min-w-[200px]"
               readOnly={isReadOnly}
             />
+            {/* Extra ULDs indicator */}
+            {hasExtraUlds && (
+              <span className="px-1.5 py-0.5 text-xs font-semibold bg-orange-500 text-white rounded whitespace-nowrap">
+                {extraUldsDisplay}
+              </span>
+            )}
             {/* Trailing comment inline after XX - with hover tooltip for truncated text */}
             {trailingComment && (
               <div className="group/trailing relative inline-flex">

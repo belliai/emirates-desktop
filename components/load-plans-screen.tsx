@@ -1360,6 +1360,12 @@ function LoadPlansScreenContent({ onLoadPlanSelect }: { onLoadPlanSelect?: (load
                   <th className="px-2 py-1 text-left font-semibold text-xs">
                     <div className="flex items-center gap-2">
                       <FileText className="w-4 h-4 flex-shrink-0" />
+                      <span className="whitespace-nowrap">Adjusted ULD</span>
+                    </div>
+                  </th>
+                  <th className="px-2 py-1 text-left font-semibold text-xs">
+                    <div className="flex items-center gap-2">
+                      <FileText className="w-4 h-4 flex-shrink-0" />
                       <span className="whitespace-nowrap">ULD Version</span>
                     </div>
                   </th>
@@ -1370,13 +1376,13 @@ function LoadPlansScreenContent({ onLoadPlanSelect }: { onLoadPlanSelect?: (load
               <tbody>
                 {isLoading ? (
                   <tr>
-                    <td colSpan={10} className="px-3 py-2 text-center text-gray-500 text-sm">
+                    <td colSpan={11} className="px-3 py-2 text-center text-gray-500 text-sm">
                       Loading load plans...
                     </td>
                   </tr>
                 ) : filteredLoadPlans.length === 0 ? (
                   <tr>
-                    <td colSpan={10} className="px-3 py-2 text-center text-gray-500 text-sm">
+                    <td colSpan={11} className="px-3 py-2 text-center text-gray-500 text-sm">
                       {loadPlans.length === 0 ? "No load plans available" : "No load plans match the selected filters"}
                     </td>
                   </tr>
@@ -1436,6 +1442,9 @@ interface LoadPlanRowProps {
 }
 
 function LoadPlanRow({ loadPlan, onClick, onDelete }: LoadPlanRowProps) {
+  // Check if there's an adjusted value that differs from original
+  const hasAdjusted = loadPlan.adjustedTtlPlnUld && loadPlan.adjustedTtlPlnUld !== loadPlan.ttlPlnUld
+  
   return (
     <tr
       onClick={() => onClick(loadPlan)}
@@ -1450,6 +1459,15 @@ function LoadPlanRow({ loadPlan, onClick, onDelete }: LoadPlanRowProps) {
       <td className="px-2 py-1 text-gray-900 text-xs whitespace-nowrap truncate">{loadPlan.pax}</td>
       <td className="px-2 py-1 text-gray-900 text-xs whitespace-nowrap truncate">{loadPlan.std}</td>
       <td className="px-2 py-1 text-gray-900 text-xs whitespace-nowrap truncate">{loadPlan.ttlPlnUld}</td>
+      <td className="px-2 py-1 text-xs whitespace-nowrap truncate">
+        {hasAdjusted ? (
+          <span className="text-green-700 font-semibold">
+            {loadPlan.adjustedTtlPlnUld}
+          </span>
+        ) : (
+          <span className="text-gray-400">-</span>
+        )}
+      </td>
       <td className="px-2 py-1 text-gray-900 text-xs whitespace-nowrap truncate">{loadPlan.uldVersion}</td>
       <td className="px-2 py-1 w-10">
         <ChevronRight className="h-4 w-4 text-gray-600 hover:text-[#D71A21]" />

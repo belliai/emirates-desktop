@@ -172,9 +172,11 @@ function normalizeUldType(type: string): string {
 
 /**
  * Parse ULD allocation string (e.g., "02QKE", "3PMC 2QKE", "05PMC/01PLA/07AKE")
- * Returns a map of normalized ULD type to count
+ * @param allocation - ULD allocation string
+ * @param normalize - If true, normalize types (QKE→AKE). Default false to preserve original.
+ * Returns a map of ULD type to count
  */
-export function parseUldAllocation(allocation: string): Map<string, number> {
+export function parseUldAllocation(allocation: string, normalize: boolean = false): Map<string, number> {
   const result = new Map<string, number>()
   if (!allocation) return result
   
@@ -185,7 +187,7 @@ export function parseUldAllocation(allocation: string): Map<string, number> {
   
   for (const match of matches) {
     const count = match[1] ? parseInt(match[1], 10) : 1
-    const type = normalizeUldType(match[2])
+    const type = normalize ? normalizeUldType(match[2]) : match[2].toUpperCase()
     result.set(type, (result.get(type) || 0) + count)
   }
   
@@ -194,15 +196,40 @@ export function parseUldAllocation(allocation: string): Map<string, number> {
 
 /**
  * Convert ULD allocation map to string format (e.g., "02PMC/04AKE")
+ * @param allocation - Map of ULD type to count
+ * @param orderReference - Optional string to use for ordering types (e.g., original TTL PLN ULD)
  */
-export function formatUldAllocation(allocation: Map<string, number>): string {
+export function formatUldAllocation(allocation: Map<string, number>, orderReference?: string): string {
   if (allocation.size === 0) return ""
   
   const parts: string[] = []
-  // Sort by type for consistent output
-  const sortedTypes = Array.from(allocation.keys()).sort()
+  let orderedTypes: string[]
   
-  for (const type of sortedTypes) {
+  if (orderReference) {
+    // Extract order from reference string (e.g., "05PMC/01PLA/07AKE" -> ["PMC", "PLA", "AKE"])
+    const typeOrder: string[] = []
+    const typePattern = /(\d+)([A-Z]{2,4})/gi
+    let match
+    while ((match = typePattern.exec(orderReference)) !== null) {
+      const type = match[2].toUpperCase()
+      if (!typeOrder.includes(type)) {
+        typeOrder.push(type)
+      }
+    }
+    
+    // Use reference order, then add any types not in reference
+    orderedTypes = [...typeOrder]
+    allocation.forEach((_, type) => {
+      if (!orderedTypes.includes(type)) {
+        orderedTypes.push(type)
+      }
+    })
+  } else {
+    // Default: sort alphabetically for consistent output
+    orderedTypes = Array.from(allocation.keys()).sort()
+  }
+  
+  for (const type of orderedTypes) {
     const count = allocation.get(type) || 0
     if (count > 0) {
       parts.push(`${String(count).padStart(2, '0')}${type}`)
@@ -298,32 +325,52 @@ export function parseUldExclusions(content: string, shipments?: Shipment[]): {
     }
   }
   
-  // Parse RAMP TRANSFER ULDs from shipments (if provided)
-  // Sum ALL ULDs from items marked as isRampTransfer (each AWB has its own ULD allocation)
+  // Parse RAMP TRANSFER ULDs directly from raw content
+  // Each ULD line (like "XX 02PMC XX") is a separate instance, even if same string appears multiple times
   let rampTransferUlds = ''
-  if (shipments && shipments.length > 0) {
-    const rampTransferAllocation = new Map<string, number>()
+  
+  // Find RAMP TRANSFER section and count ULD lines within it
+  let inRampTransfer = false
+  const rampTransferAllocation = new Map<string, number>()
+  const uldLinePattern = /^XX\s*(\d+)?(PMC|AKE|QKE|AKL|AMF|ALF|PLA|PAG|AMP|RKE|BULK)\s*XX$/i
+  
+  console.log('[v0] Scanning for RAMP TRANSFER ULD lines...')
+  
+  for (const line of lines) {
+    const trimmed = line.trim()
     
-    // Count ULDs from ALL ramp transfer shipments (not unique - each AWB has its own allocation)
-    const rampTransferShipments = shipments.filter(s => s.isRampTransfer && s.uld)
-    
-    console.log('[v0] RAMP TRANSFER shipments found:', rampTransferShipments.length)
-    rampTransferShipments.forEach(s => {
-      console.log('[v0]   - AWB:', s.awbNo, 'ULD:', s.uld)
-    })
-    
-    // Parse each shipment's ULD and sum (NOT using Set - each AWB counts separately)
-    rampTransferShipments.forEach(shipment => {
-      const allocation = parseUldAllocation(shipment.uld)
-      allocation.forEach((count, type) => {
-        rampTransferAllocation.set(type, (rampTransferAllocation.get(type) || 0) + count)
-      })
-    })
-    
-    if (rampTransferAllocation.size > 0) {
-      rampTransferUlds = formatUldAllocation(rampTransferAllocation)
-      console.log('[v0] Parsed RAMP TRANSFER ULDs (total from all AWBs):', rampTransferUlds)
+    // Detect RAMP TRANSFER section start
+    if (/\*+\s*RAMP\s*TRANSFER\s*\*+/i.test(trimmed)) {
+      inRampTransfer = true
+      console.log('[v0] Entered RAMP TRANSFER section')
+      continue
     }
+    
+    // Detect section end (new sector, table header, footer items like BAGG/COU/MAIL/TOTALS)
+    if (inRampTransfer) {
+      if (/^SECTOR:/i.test(trimmed) || 
+          /^SER\.\s+AWB/i.test(trimmed) ||
+          /^(BAGG|COU|COUR|MAIL|TOTALS)\s/i.test(trimmed)) {
+        inRampTransfer = false
+        console.log('[v0] Exited RAMP TRANSFER section at:', trimmed.substring(0, 30))
+        continue
+      }
+      
+      // Match ULD lines within RAMP TRANSFER section
+      // Format: "XX 02PMC XX", "XX 2AKE XX", etc.
+      const uldMatch = trimmed.match(uldLinePattern)
+      if (uldMatch) {
+        const count = uldMatch[1] ? parseInt(uldMatch[1], 10) : 1
+        const type = uldMatch[2].toUpperCase()
+        rampTransferAllocation.set(type, (rampTransferAllocation.get(type) || 0) + count)
+        console.log('[v0] Found RAMP TRANSFER ULD line:', trimmed, '→', count, type)
+      }
+    }
+  }
+  
+  if (rampTransferAllocation.size > 0) {
+    rampTransferUlds = formatUldAllocation(rampTransferAllocation)
+    console.log('[v0] Total RAMP TRANSFER ULDs:', rampTransferUlds)
   }
   
   return {
@@ -349,31 +396,21 @@ export function calculateAdjustedTtlPlnUld(
 ): string {
   if (!ttlPlnUld) return ''
   
-  // Parse original TTL PLN ULD
-  let result = parseUldAllocation(ttlPlnUld)
+  // Parse original TTL PLN ULD (normalized for calculation - QKE counts as AKE)
+  let result = parseUldAllocation(ttlPlnUld, true)
   
-  // Subtract COUR allocation
-  if (courAllocation) {
-    const cour = parseUldAllocation(courAllocation)
-    result = subtractUldAllocation(result, cour)
-    console.log('[v0] After subtracting COUR:', formatUldAllocation(result))
-  }
+  // COUR and MAIL are already excluded from TTL PLN ULD header - do NOT subtract again
+  // (keeping parameters for backward compatibility and display purposes)
   
-  // Subtract MAIL allocation
-  if (mailAllocation) {
-    const mail = parseUldAllocation(mailAllocation)
-    result = subtractUldAllocation(result, mail)
-    console.log('[v0] After subtracting MAIL:', formatUldAllocation(result))
-  }
-  
-  // Subtract RAMP TRANSFER ULDs
+  // Only subtract RAMP TRANSFER ULDs (normalized - QKE subtracts from AKE)
   if (rampTransferUlds) {
-    const rampTransfer = parseUldAllocation(rampTransferUlds)
+    const rampTransfer = parseUldAllocation(rampTransferUlds, true)
     result = subtractUldAllocation(result, rampTransfer)
-    console.log('[v0] After subtracting RAMP TRANSFER:', formatUldAllocation(result))
+    console.log('[v0] After subtracting RAMP TRANSFER:', formatUldAllocation(result, ttlPlnUld))
   }
   
-  return formatUldAllocation(result)
+  // Use original TTL PLN ULD order for consistent display
+  return formatUldAllocation(result, ttlPlnUld)
 }
 
 /**
