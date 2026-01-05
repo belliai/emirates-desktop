@@ -5,7 +5,7 @@ import { EditableField } from "./editable-field"
 import { ExcelCell } from "./excel-cell"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
-import { Copy, FileText, Plus, Search, Clock, X, Settings2, ArrowUpDown, SlidersHorizontal, Loader2, Users, Zap, Package, TrendingUp } from "lucide-react"
+import { Copy, FileText, Plus, Search, Clock, X, Settings2, ArrowUpDown, SlidersHorizontal, Loader2, Users, Zap, Package, TrendingUp, Download, AlertCircle, ChevronDown, ChevronUp } from "lucide-react"
 import UWSDelayReportModal from "./uws-delay-report-modal"
 import { 
   fetchShiftSummaryData, 
@@ -986,8 +986,8 @@ TOTAL\t${totalPending.pmcAmf}\t${totalPending.alfPla}\t${totalPending.akeRke}\t$
         isOpen={showUWSDelayReport}
         onClose={() => setShowUWSDelayReport(false)}
       />
-    <div className="min-h-screen bg-gray-50 p-4">
-      <div className="max-w-full space-y-4">
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 p-6">
+      <div className="max-w-full">
         {/* Loading indicator */}
         {isLoading && (
           <div className="fixed top-4 right-4 z-50 bg-white rounded-lg shadow-lg px-4 py-2 flex items-center gap-2 border border-gray-200">
@@ -1004,39 +1004,34 @@ TOTAL\t${totalPending.pmcAmf}\t${totalPending.alfPla}\t${totalPending.akeRke}\t$
         )}
         
         {/* Header */}
-        <div className="mb-4">
-          <div className="flex items-start justify-between">
-            <div>
-              <h1 className="text-xl font-bold text-gray-900">Shift Summary Report</h1>
-              <div className="flex items-center gap-4 mt-2 text-sm text-gray-600">
-                <EditableField value={date} onChange={setDate} className="text-sm" />
-                <span>|</span>
-                <EditableField value={shift} onChange={setShift} className="text-sm w-16" />
-                <span>|</span>
-                <EditableField value={dutyHours} onChange={setDutyHours} className="text-sm" />
-                <select
-                  value={shiftType}
-                  onChange={(e) => setShiftType(e.target.value as "Night" | "Day")}
-                  className="px-3 py-1 border border-gray-300 rounded text-sm ml-2"
-                >
-                  <option value="Night">Night</option>
-                  <option value="Day">Day</option>
-                </select>
-              </div>
-            </div>
-
-            {/* Top Right Actions */}
-            <div className="flex items-center gap-2">
-              {/* Copy Total Advance vs Total Pending Button */}
-              <Button
-                onClick={copyToClipboard}
-                variant="outline"
-                size="sm"
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">Shift Summary Report</h1>
+            <div className="flex items-center gap-3 mt-1 text-sm text-gray-500">
+              <EditableField value={date} onChange={setDate} className="text-sm" />
+              <span className="text-gray-300">|</span>
+              <span>Shift {shift}</span>
+              <span className="text-gray-300">|</span>
+              <span>{dutyHours}</span>
+              <select
+                value={shiftType}
+                onChange={(e) => setShiftType(e.target.value as "Night" | "Day")}
+                className="px-2 py-0.5 text-xs border border-gray-200 rounded bg-white focus:outline-none focus:ring-2 focus:ring-[#D71A21]"
               >
-                <Copy className="w-4 h-4" />
-                Copy Total Advance vs Total Pending
-              </Button>
+                <option value="Night">Night Shift</option>
+                <option value="Day">Day Shift</option>
+              </select>
             </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button onClick={copyToClipboard} variant="outline" size="sm" className="gap-2 bg-white">
+              <Copy className="h-4 w-4" />
+              Copy Summary
+            </Button>
+            <Button variant="outline" size="sm" className="gap-2 bg-white">
+              <Download className="h-4 w-4" />
+              Export Report
+            </Button>
           </div>
         </div>
 
@@ -1044,45 +1039,46 @@ TOTAL\t${totalPending.pmcAmf}\t${totalPending.alfPla}\t${totalPending.akeRke}\t$
         {/* Dashboard Overview Section */}
         {/* ============================================ */}
         <div className="mb-6">
-          {/* Hero KPI Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+          {/* KPI Cards */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
             <StatCard
-              title="Total ULDs Built"
+              title="TOTAL ULDs BUILT"
               value={shiftEfficiency.totalUld.toLocaleString()}
-              subtitle="This shift"
-              icon={<Package className="w-6 h-6" />}
-              variant="hero"
+              icon={<Package className="w-5 h-5" />}
+              trend={{ value: 12, label: "vs last shift" }}
+              className="chart-delay-1"
             />
             <StatCard
-              title="Total Staff Hours"
+              title="TOTAL STAFF HOURS"
               value={shiftEfficiency.totalHours.toLocaleString()}
-              subtitle="Combined hours"
-              icon={<Clock className="w-6 h-6" />}
-              variant="hero"
+              icon={<Clock className="w-5 h-5" />}
+              trend={{ value: 5, label: "vs planned" }}
+              className="chart-delay-2"
             />
             <StatCard
-              title="Shift Efficiency"
-              value={`${shiftEfficiency.efficiency.toFixed(2)} ULDs/hr`}
-              subtitle="Average per person"
-              icon={<Zap className="w-6 h-6" />}
+              title="SHIFT EFFICIENCY"
+              value={shiftEfficiency.efficiency.toFixed(2)}
+              subtitle="ULDs per hour"
+              icon={<Zap className="w-5 h-5" />}
               trend={{ value: 8, label: "vs target" }}
-              variant="hero"
+              className="chart-delay-3"
             />
             <StatCard
-              title="Active Teams"
-              value={`${ekOnFloor.length + tgOnFloor.length + dlOnFloor.length}`}
-              subtitle="Staff on floor"
-              icon={<Users className="w-6 h-6" />}
-              variant="hero"
+              title="ACTIVE STAFF"
+              value={ekOnFloor.length + tgOnFloor.length + dlOnFloor.length}
+              subtitle="on floor now"
+              icon={<Users className="w-5 h-5" />}
+              className="chart-delay-4"
             />
           </div>
 
           {/* Charts Grid */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
             {/* Chart 2.1: Efficiency Gauge Dashboard */}
             <ChartCard
               title="Team Efficiency"
               subtitle="Units per hour by team"
+              className="chart-delay-1"
             >
               <div className="flex items-center justify-around py-4">
                 <GaugeChart
@@ -1113,7 +1109,7 @@ TOTAL\t${totalPending.pmcAmf}\t${totalPending.alfPla}\t${totalPending.akeRke}\t$
                   animationDelay={400}
                 />
               </div>
-              <div className="flex justify-center gap-8 text-xs text-gray-500 pt-2 border-t">
+              <div className="flex justify-center gap-6 text-xs text-gray-500 pt-3 border-t border-gray-100">
                 <span>Target: <strong className="text-gray-900">2.0 ULD/hr</strong></span>
                 <span>Avg: <strong className="text-gray-900">{((ekEfficiency.efficiency + tgEfficiency.efficiency + dlEfficiency.efficiency) / 3).toFixed(2)} ULD/hr</strong></span>
               </div>
@@ -1122,13 +1118,14 @@ TOTAL\t${totalPending.pmcAmf}\t${totalPending.alfPla}\t${totalPending.akeRke}\t$
             {/* Chart 2.2: ULD Production Timeline */}
             <ChartCard
               title="ULD Production by Period"
-              subtitle="Planned vs Built across shift windows"
+              subtitle="Built vs Pending across shift windows"
+              className="chart-delay-2"
             >
               <StackedAreaChart
                 data={[
-                  { period: "Early Morning", planned: advancePlanned.firstWave, built: advanceBuilt.firstWave, pending: advancePending.firstWave },
-                  { period: "Late Morning", planned: advancePlanned.secondWave, built: advanceBuilt.secondWave, pending: advancePending.secondWave },
-                  { period: "Afternoon", planned: Math.round(advancePlanned.total * 0.3), built: Math.round(advanceBuilt.total * 0.25), pending: Math.round(advancePending.total * 0.35) },
+                  { period: "Early AM", shiftTime: "00:01 - 05:59", built: advanceBuilt.firstWave, pending: advancePending.firstWave },
+                  { period: "Late AM", shiftTime: "06:00 - 12:59", built: advanceBuilt.secondWave, pending: advancePending.secondWave },
+                  { period: "Afternoon", shiftTime: "13:00 - 23:59", built: Math.round(advanceBuilt.total * 0.25), pending: Math.round(advancePending.total * 0.35) },
                 ]}
                 dataKeys={[
                   { key: "built", name: "Built", color: CHART_COLORS.completion.complete },
@@ -1136,6 +1133,7 @@ TOTAL\t${totalPending.pmcAmf}\t${totalPending.alfPla}\t${totalPending.akeRke}\t$
                 ]}
                 xAxisKey="period"
                 height={220}
+                showLegend={true}
               />
             </ChartCard>
 
@@ -1143,6 +1141,7 @@ TOTAL\t${totalPending.pmcAmf}\t${totalPending.alfPla}\t${totalPending.akeRke}\t$
             <ChartCard
               title="Resource Utilization"
               subtitle="Planned vs Actual staffing"
+              className="chart-delay-3"
             >
               <HorizontalBarChart
                 data={[
@@ -1156,26 +1155,59 @@ TOTAL\t${totalPending.pmcAmf}\t${totalPending.alfPla}\t${totalPending.akeRke}\t$
               />
             </ChartCard>
           </div>
+
+          {/* Handover Summary Card (REQ: Pending for Next Shift) */}
+          <div className="bg-white rounded-xl border border-gray-200 p-5 mb-6">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <AlertCircle className="w-5 h-5 text-amber-500" />
+                <h3 className="text-sm font-semibold text-gray-900">Handover Summary - Pending for Next Shift</h3>
+              </div>
+              <span className="text-xs text-gray-500 bg-amber-50 text-amber-700 px-2 py-1 rounded-full">
+                {advancePending.total} ULDs pending
+              </span>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="bg-gray-50 rounded-lg p-3">
+                <div className="text-xs text-gray-500 uppercase tracking-wide">Early Morning</div>
+                <div className="text-xl font-bold text-gray-900 mt-1">{advancePending.firstWave}</div>
+                <div className="text-xs text-amber-600">ULDs pending</div>
+              </div>
+              <div className="bg-gray-50 rounded-lg p-3">
+                <div className="text-xs text-gray-500 uppercase tracking-wide">Late Morning</div>
+                <div className="text-xl font-bold text-gray-900 mt-1">{advancePending.secondWave}</div>
+                <div className="text-xs text-amber-600">ULDs pending</div>
+              </div>
+              <div className="bg-gray-50 rounded-lg p-3">
+                <div className="text-xs text-gray-500 uppercase tracking-wide">Half-Built ULDs</div>
+                <div className="text-xl font-bold text-amber-600 mt-1">{Math.round(advancePending.total * 0.15)}</div>
+                <div className="text-xs text-gray-500">require completion</div>
+              </div>
+              <div className="bg-gray-50 rounded-lg p-3">
+                <div className="text-xs text-gray-500 uppercase tracking-wide">Total Pending</div>
+                <div className="text-xl font-bold text-red-600 mt-1">{advancePending.total}</div>
+                <div className="text-xs text-gray-500">for next shift</div>
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* Filters */}
-        <div className="flex items-center gap-2 mb-4 px-2 flex-wrap">
+        <div className="flex items-center gap-3 mb-6 flex-wrap bg-white rounded-xl border border-gray-200 px-4 py-3">
           {/* Default View Dropdown */}
-          <div className="flex items-center">
-            <select
-              className="px-2 py-1.5 text-xs border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-[#D71A21] focus:border-transparent"
-            >
-              <option value="default">≡ Default</option>
-              <option value="custom">Custom View</option>
-            </select>
-          </div>
+          <select
+            className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-[#D71A21] focus:border-transparent shadow-sm"
+          >
+            <option value="default">≡ Default View</option>
+            <option value="custom">Custom View</option>
+          </select>
 
           {/* Add Filter Dropdown */}
           <div className="relative" ref={addFilterRef}>
             <button
               type="button"
               onClick={() => setShowAddFilterDropdown(!showAddFilterDropdown)}
-              className="flex items-center gap-1 px-2 py-1.5 text-xs border border-gray-300 rounded-md bg-white hover:border-gray-400 transition-colors"
+              className="flex items-center gap-1 px-3 py-1.5 text-xs border border-gray-200 rounded-lg bg-white hover:border-gray-300 transition-colors shadow-sm"
             >
               <Plus className="w-3 h-3" />
               <span>Add Filter</span>
@@ -1211,34 +1243,34 @@ TOTAL\t${totalPending.pmcAmf}\t${totalPending.alfPla}\t${totalPending.akeRke}\t$
 
           {/* Search */}
           <div className="relative">
-            <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 w-3 h-3 text-gray-400" />
+            <Search className="absolute left-2.5 top-1/2 transform -translate-y-1/2 w-3 h-3 text-gray-400" />
             <input
               type="text"
               placeholder="Search..."
-              className="pl-7 pr-2 py-1.5 text-xs border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-[#D71A21] focus:border-transparent w-32"
+              className="pl-8 pr-3 py-1.5 text-xs border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-[#D71A21] focus:border-transparent w-36 shadow-sm"
             />
           </div>
 
           <div className="w-px h-6 bg-gray-200" />
 
-          {/* Work Area Filter - Functional */}
+          {/* Work Area Filter */}
           <select
             id="work-area-filter"
             value={selectedWorkArea}
             onChange={(e) => setSelectedWorkArea(e.target.value as WorkArea)}
-            className="px-2 py-1.5 text-xs border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-[#D71A21] focus:border-transparent"
+            className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-[#D71A21] focus:border-transparent shadow-sm"
           >
-            <option value="GCR">Work Area: GCR</option>
-            <option value="PIL and PER">Work Area: PIL/PER</option>
+            <option value="GCR">GCR</option>
+            <option value="PIL and PER">PIL/PER</option>
           </select>
           
-          {/* PIL/PER Sub-filter - Dummy (enabled when PIL/PER selected) */}
+          {/* PIL/PER Sub-filter */}
           <select
             disabled={selectedWorkArea !== "PIL and PER"}
-            className={`px-2 py-1.5 text-xs border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#D71A21] focus:border-transparent transition-colors ${
+            className={`px-3 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#D71A21] focus:border-transparent transition-colors shadow-sm ${
               selectedWorkArea === "PIL and PER"
                 ? "bg-white cursor-pointer"
-                : "bg-gray-100 text-gray-400 cursor-not-allowed"
+                : "bg-gray-50 text-gray-400 cursor-not-allowed"
             }`}
           >
             <option value="Both">Both</option>
@@ -1246,7 +1278,7 @@ TOTAL\t${totalPending.pmcAmf}\t${totalPending.alfPla}\t${totalPending.akeRke}\t$
             <option value="PER only">PER only</option>
           </select>
 
-          {/* Shift Filter - Dummy */}
+          {/* Shift Filter */}
           <select
             id="shift-filter"
             value={selectedShift}
@@ -1254,7 +1286,7 @@ TOTAL\t${totalPending.pmcAmf}\t${totalPending.alfPla}\t${totalPending.akeRke}\t$
               setSelectedShift(e.target.value as Shift)
               if (e.target.value !== "All") setCustomTimeRange(null)
             }}
-            className="px-2 py-1.5 text-xs border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-[#D71A21] focus:border-transparent"
+            className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-[#D71A21] focus:border-transparent shadow-sm"
           >
             {SHIFTS.map(shiftOption => (
               <option key={shiftOption} value={shiftOption}>
@@ -1263,13 +1295,13 @@ TOTAL\t${totalPending.pmcAmf}\t${totalPending.alfPla}\t${totalPending.akeRke}\t$
             ))}
           </select>
 
-          {/* Time Range - Dummy */}
+          {/* Time Range */}
           <div className="relative" ref={timeRangePickerRef}>
             <button
               type="button"
               onClick={() => setShowTimeRangePicker(!showTimeRangePicker)}
-              className={`flex items-center gap-1 px-2 py-1.5 text-xs border rounded-md bg-white transition-colors ${
-                customTimeRange ? "border-[#D71A21] text-[#D71A21]" : "border-gray-300 text-gray-700 hover:border-gray-400"
+              className={`flex items-center gap-1 px-3 py-1.5 text-xs border rounded-lg bg-white transition-colors shadow-sm ${
+                customTimeRange ? "border-[#D71A21] text-[#D71A21]" : "border-gray-200 text-gray-700 hover:border-gray-300"
               }`}
             >
               <Clock className="w-3 h-3" />
@@ -1317,7 +1349,7 @@ TOTAL\t${totalPending.pmcAmf}\t${totalPending.alfPla}\t${totalPending.akeRke}\t$
             id="module-filter"
             value={selectedModule}
             onChange={(e) => setSelectedModule(e.target.value as Module)}
-            className="px-2 py-1.5 text-xs border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-[#D71A21] focus:border-transparent max-w-40 truncate"
+            className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-[#D71A21] focus:border-transparent max-w-48 truncate shadow-sm"
           >
             {MODULES.map(module => (
               <option key={module} value={module}>
@@ -1328,12 +1360,12 @@ TOTAL\t${totalPending.pmcAmf}\t${totalPending.alfPla}\t${totalPending.akeRke}\t$
 
           <div className="flex-1" />
 
-          {/* View Options Panel - Dummy */}
+          {/* View Options Panel */}
           <div className="relative" ref={viewOptionsRef}>
             <button
               type="button"
               onClick={() => setShowViewOptions(!showViewOptions)}
-              className="flex items-center gap-1 px-2 py-1.5 text-xs border border-gray-300 rounded-md bg-white hover:border-gray-400 transition-colors"
+              className="flex items-center gap-1 px-3 py-1.5 text-xs border border-gray-200 rounded-lg bg-white hover:border-gray-300 transition-colors shadow-sm"
             >
               <SlidersHorizontal className="w-3 h-3" />
             </button>
@@ -1398,26 +1430,26 @@ TOTAL\t${totalPending.pmcAmf}\t${totalPending.alfPla}\t${totalPending.akeRke}\t$
 
         {/* GCR View - Tab-based Content Area */}
         {selectedWorkArea === "GCR" && (
-        <div>
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
             {/* Tabs positioned at top */}
-            <div className="mb-4">
-              <TabsList className="bg-white border-b border-gray-200 rounded-none p-0 h-auto w-full justify-start">
+            <div className="border-b border-gray-200">
+              <TabsList className="bg-transparent rounded-none p-0 h-auto w-full justify-start">
                 <TabsTrigger 
                   value="bup-shift-details" 
-                  className="rounded-none border-b-2 border-transparent data-[state=active]:border-blue-600 data-[state=active]:text-blue-600 data-[state=active]:bg-transparent px-4 py-3 font-medium"
+                  className="rounded-none border-b-2 border-transparent data-[state=active]:border-[#D71A21] data-[state=active]:text-[#D71A21] data-[state=active]:bg-transparent px-4 py-3 text-sm font-medium"
                 >
                   BUP Shift Details {shiftType}
                 </TabsTrigger>
                 <TabsTrigger 
                   value="advance-report" 
-                  className="rounded-none border-b-2 border-transparent data-[state=active]:border-blue-600 data-[state=active]:text-blue-600 data-[state=active]:bg-transparent px-4 py-3 font-medium"
+                  className="rounded-none border-b-2 border-transparent data-[state=active]:border-[#D71A21] data-[state=active]:text-[#D71A21] data-[state=active]:bg-transparent px-4 py-3 text-sm font-medium"
                 >
                   Advance Report
                 </TabsTrigger>
                 <TabsTrigger 
                   value="plan-vs-advance" 
-                  className="rounded-none border-b-2 border-transparent data-[state=active]:border-blue-600 data-[state=active]:text-blue-600 data-[state=active]:bg-transparent px-4 py-3 font-medium"
+                  className="rounded-none border-b-2 border-transparent data-[state=active]:border-[#D71A21] data-[state=active]:text-[#D71A21] data-[state=active]:bg-transparent px-4 py-3 text-sm font-medium"
                 >
                   Plan vs Advance
                 </TabsTrigger>

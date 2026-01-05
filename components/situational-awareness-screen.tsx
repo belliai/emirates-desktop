@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect, useMemo, useRef } from "react"
-import { ChevronRight, ChevronDown, Plane, Calendar, Package, Users, Clock, FileText, Phone, User, Filter, X, Plus, Search, SlidersHorizontal, Settings2, ArrowUpDown, Activity, Target, Zap, TrendingUp, BarChart3, Radar as RadarIcon, Eye } from "lucide-react"
+import { ChevronRight, ChevronDown, Plane, Calendar, Package, Users, Clock, FileText, Phone, User, Filter, X, Plus, Search, SlidersHorizontal, Settings2, ArrowUpDown, Activity, Target, Zap, TrendingUp, BarChart3, Radar as RadarIcon, Eye, Download, AlertCircle } from "lucide-react"
 import LoadPlanDetailScreen from "./load-plan-detail-screen"
 import type { LoadPlanDetail, AWBRow, ULDSection } from "./load-plan-types"
 import type { ULDEntry } from "./uld-number-modal"
@@ -19,6 +19,9 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsive
 import BCRModal from "./bcr-modal"
 import { BUP_ALLOCATION_DATA } from "@/lib/bup-allocation-data"
 import { CompletionRing, ChartCard, StatCard, RadarChartComponent } from "@/components/ui/dashboard-charts"
+import { Button } from "@/components/ui/button"
+import { tooltipContainerClass } from "@/components/reports/charts/chart-tooltip"
+import { cn } from "@/lib/utils"
 import { CHART_COLORS, TOOLTIP_STYLE, CHART_ANIMATION, getCompletionColor } from "@/lib/chart-theme"
 
 // Types for completion tracking
@@ -819,8 +822,8 @@ function SituationalAwarenessScreenContent() {
       <div className="min-h-screen bg-gradient-to-br from-gray-50 via-gray-50 to-red-50/30 p-4">
         <div className="max-w-full">
           {/* Mission Control Header */}
-          <div className="mb-6">
-            <div className="flex items-center gap-3 mb-2">
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-red-600 to-red-700 flex items-center justify-center shadow-lg shadow-red-500/20">
                 <Activity className="w-5 h-5 text-white" />
               </div>
@@ -828,6 +831,15 @@ function SituationalAwarenessScreenContent() {
                 <h1 className="text-2xl font-bold text-gray-900">Mission Control</h1>
                 <p className="text-sm text-gray-500">Real-time situational awareness dashboard</p>
               </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" className="flex items-center gap-2">
+                <Download className="w-4 h-4" />
+                Export Report
+              </Button>
+              <Button variant="outline" size="icon">
+                <Settings2 className="w-4 h-4" />
+              </Button>
             </div>
           </div>
 
@@ -900,12 +912,31 @@ function SituationalAwarenessScreenContent() {
                         width={55}
                       />
                       <Tooltip
-                        contentStyle={TOOLTIP_STYLE.contentStyle}
-                        labelStyle={TOOLTIP_STYLE.labelStyle}
-                        formatter={(value: number, name: string, props: { payload: { completed: number; total: number } }) => [
-                          `${value}% (${props.payload.completed}/${props.payload.total})`,
-                          "Completion",
-                        ]}
+                        cursor={{ fill: "rgba(0,0,0,0.05)" }}
+                        content={({ active, payload }) => {
+                          if (active && payload && payload.length) {
+                            const data = payload[0].payload as { flight: string; completion: number; completed: number; total: number; status: string }
+                            return (
+                              <div className={cn(tooltipContainerClass, "p-3")}>
+                                <p className="text-sm font-semibold text-gray-900 mb-2">{data.flight}</p>
+                                <div className="flex items-center gap-2 mb-1">
+                                  <span className={cn(
+                                    "text-lg font-bold",
+                                    data.status === "green" ? "text-green-500" :
+                                    data.status === "amber" ? "text-amber-500" : "text-red-500"
+                                  )}>
+                                    {data.completion}%
+                                  </span>
+                                  <span className="text-xs text-gray-400">completion</span>
+                                </div>
+                                <div className="text-xs text-gray-500">
+                                  {data.completed} / {data.total} ULDs
+                                </div>
+                              </div>
+                            )
+                          }
+                          return null
+                        }}
                       />
                       <ReferenceLine
                         x={80}
@@ -998,9 +1029,27 @@ function SituationalAwarenessScreenContent() {
                         animationBegin={CHART_ANIMATION.staggerDelay}
                       />
                       <Tooltip
-                        contentStyle={TOOLTIP_STYLE.contentStyle}
-                        labelStyle={TOOLTIP_STYLE.labelStyle}
-                        formatter={(value: number) => [`${value}%`, ""]}
+                        content={({ active, payload }) => {
+                          if (active && payload && payload.length) {
+                            const data = payload[0].payload as { subject: string; completion: number; capacity: number }
+                            return (
+                              <div className={cn(tooltipContainerClass, "p-3")}>
+                                <p className="text-sm font-semibold text-gray-900 mb-2">{data.subject}</p>
+                                <div className="space-y-1">
+                                  <div className="flex items-center justify-between gap-4">
+                                    <span className="text-xs text-gray-500">Completion</span>
+                                    <span className="text-sm font-semibold text-green-600">{data.completion}%</span>
+                                  </div>
+                                  <div className="flex items-center justify-between gap-4">
+                                    <span className="text-xs text-gray-500">Capacity</span>
+                                    <span className="text-sm font-semibold text-red-600">{data.capacity}%</span>
+                                  </div>
+                                </div>
+                              </div>
+                            )
+                          }
+                          return null
+                        }}
                       />
                       <Legend
                         wrapperStyle={{ fontSize: "11px", paddingTop: "5px" }}
@@ -1016,20 +1065,32 @@ function SituationalAwarenessScreenContent() {
 
           {/* Tabbed Content Area */}
           <Tabs defaultValue="flights" className="mb-6">
-            <TabsList className="bg-white border border-gray-200 shadow-sm mb-4">
-              <TabsTrigger value="flights" className="gap-2 data-[state=active]:bg-red-50 data-[state=active]:text-red-700">
+            <TabsList className="bg-white rounded-xl border border-gray-200 p-1 mb-4">
+              <TabsTrigger 
+                value="flights" 
+                className="gap-2 rounded-lg data-[state=active]:bg-white data-[state=active]:border-b-2 data-[state=active]:border-[#D71A21] data-[state=active]:text-[#D71A21] data-[state=active]:shadow-sm"
+              >
                 <Plane className="w-4 h-4" />
                 Flights View
               </TabsTrigger>
-              <TabsTrigger value="workload" className="gap-2 data-[state=active]:bg-red-50 data-[state=active]:text-red-700">
+              <TabsTrigger 
+                value="workload" 
+                className="gap-2 rounded-lg data-[state=active]:bg-white data-[state=active]:border-b-2 data-[state=active]:border-[#D71A21] data-[state=active]:text-[#D71A21] data-[state=active]:shadow-sm"
+              >
                 <BarChart3 className="w-4 h-4" />
                 Workload
               </TabsTrigger>
-              <TabsTrigger value="incoming" className="gap-2 data-[state=active]:bg-red-50 data-[state=active]:text-red-700">
+              <TabsTrigger 
+                value="incoming" 
+                className="gap-2 rounded-lg data-[state=active]:bg-white data-[state=active]:border-b-2 data-[state=active]:border-[#D71A21] data-[state=active]:text-[#D71A21] data-[state=active]:shadow-sm"
+              >
                 <TrendingUp className="w-4 h-4" />
                 Incoming
               </TabsTrigger>
-              <TabsTrigger value="bcr" className="gap-2 data-[state=active]:bg-red-50 data-[state=active]:text-red-700">
+              <TabsTrigger 
+                value="bcr" 
+                className="gap-2 rounded-lg data-[state=active]:bg-white data-[state=active]:border-b-2 data-[state=active]:border-[#D71A21] data-[state=active]:text-[#D71A21] data-[state=active]:shadow-sm"
+              >
                 <FileText className="w-4 h-4" />
                 BCR Reports
               </TabsTrigger>
@@ -1038,7 +1099,8 @@ function SituationalAwarenessScreenContent() {
             {/* Flights Tab */}
             <TabsContent value="flights" className="mt-0">
               {/* Filters */}
-              <div className="flex items-center gap-2 mb-4 px-2 flex-wrap">
+              <div className="bg-white rounded-xl border border-gray-200 px-4 py-3 mb-4">
+                <div className="flex items-center gap-2 flex-wrap">
             {/* Default View Dropdown */}
             <div className="flex items-center">
               <select
@@ -1247,7 +1309,8 @@ function SituationalAwarenessScreenContent() {
             <div className="text-xs text-gray-500 whitespace-nowrap">
               {filteredLoadPlans.length} of {loadPlans.length} flights
             </div>
-          </div>
+                </div>
+              </div>
           
           {/* Flights Table */}
           <div className="mx-2 rounded-lg border border-gray-200 overflow-x-auto mb-6">

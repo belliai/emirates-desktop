@@ -48,7 +48,8 @@ export { ProductivityScatter } from "./productivity-scatter";
 export { RadarChartComponent } from "./radar-chart";
 
 // Treemap
-export { TreemapChart } from "./treemap-chart";
+export { TreemapChart, WorkAreaTreemap, WORK_AREA_COLORS } from "./treemap-chart";
+export type { WorkAreaData, WorkAreaCategory } from "./treemap-chart";
 
 // Heatmap
 export { HeatmapGrid, EnhancedHeatmapGrid } from "./heatmap-grid";
