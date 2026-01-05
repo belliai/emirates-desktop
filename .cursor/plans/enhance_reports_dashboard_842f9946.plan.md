@@ -4,40 +4,40 @@ overview: Add visually stunning, insightful charts to four reporting pages (Staf
 todos:
   - id: chart-theme
     content: Create shared chart theme with Emirates branding and animations
-    status: pending
+    status: completed
   - id: staff-performance-bars
     content: "M1: Add efficiency horizontal bar chart with avg line"
-    status: pending
+    status: completed
   - id: staff-performance-scatter
     content: "M1: Add productivity scatter plot (hours vs units)"
-    status: pending
+    status: completed
   - id: staff-performance-uld
     content: "M1: Add ULD type breakdown stacked bars (PIL/PER)"
-    status: pending
+    status: completed
   - id: staff-performance-layout
     content: "M1: Reorganize with dashboard header and chart cards"
-    status: pending
+    status: completed
   - id: staff-performance-contact
     content: "M1 REQ: Display staff contact numbers in table"
     status: pending
   - id: shift-summary-gauges
     content: "M2: Add efficiency gauge dashboard (3 radial charts)"
-    status: pending
+    status: completed
   - id: shift-summary-timeline
     content: "M2: Add ULD production stacked area chart"
-    status: pending
+    status: completed
   - id: shift-summary-resources
     content: "M2: Add resource utilization comparison bars"
-    status: pending
+    status: completed
   - id: shift-summary-layout
     content: "M2: Reorganize layout with dashboard header"
-    status: pending
+    status: completed
   - id: shift-summary-pending
     content: "M2 REQ: Add Pending for Next Shift summary section"
-    status: pending
+    status: completed
   - id: shift-summary-halfbuild
     content: "M2 REQ: Add half-build/incomplete ULD indicators"
-    status: pending
+    status: completed
   - id: workload-treemap
     content: "M3: Add Work Area Treemap with completion-based coloring"
     status: completed
@@ -115,99 +115,103 @@ This is a POC demo for Emirates on Monday, January 12th. The priority is visual 
 
 | Requirement | Status || ----------------------------------- | ------ || Pending for next shift | Done || Half-build/incomplete ULD info | Done |---
 
-## Milestone 3: Workload Visibility Enhancement - IN PROGRESS
+## Milestone 3: Workload Visibility Enhancement - COMPLETED
 
 **File**: [`components/bdn-dashboard-screen.tsx`](components/bdn-dashboard-screen.tsx)
 
-### Notion Requirements ([source](https://www.notion.so/belli-ai/6-decide-what-graphs-tables-to-show-to-management-Reports-section-2b89e07d412b8030a0b6ca118503142d))
+### Charts Implemented
 
-**Layout Structure:**
+| Chart | Type | Status |
 
-- Top: Filters (Category GCR/PIL/PER, Work Areas/modules)
-- Workload for current shift
-- Bottom: Two columns (Processed vs Remaining | Screening Summary)
+| --------------------------- | ----------------------------------------- | ------ |
 
-**Key Action Item:** "just replace this inaccurate workload section"
+| Work Area Treemap | Flexbox floor-based layout with categories | Done |
 
-### Charts to Implement
+| Workload by Cargo Type | Horizontal Bar Chart (Recharts) | Done |
 
-| Chart | Type | Data Source | Priority | Status || --------------------------- | -------------- | ----------------------------------- | -------- | ------- || 3.1 Work Area Treemap | Treemap | Physical warehouse zones by ULD count | High | Pending || 3.2 (Keep existing) | Progress Bars | GCR/PER/PIL workload | - | Exists || 3.3 (Keep existing) | Stacked Bar | Advance Planned vs Built | - | Exists || 3.4 (Keep existing) | Bar Chart | Screening Summary | - | Exists |
+| Advance Planned vs Built | Stacked Bar Chart | Done |
 
-### Work Area Treemap Specification
+| Screening Summary | Bar Chart + Collapsible Tables | Done |
 
-Based on the floor layout image provided, create a treemap showing workload by physical work area:**Ground Floor Areas:**
+### Features Implemented
 
-- MTD Area
-- Freighter and PAX Breakdown/Build-up
-- PAX Breakdown
-- Agency
-- IND/PAK Build-up
-- PER
-- DM Inspection
-- PIL
-- WCD Area
+| Feature | Description | Status |
 
-**1st Floor Areas:**
+| ------------------------------ | ---------------------------------------------------- | ------ |
 
-- PAX and PF Build-up EUR
-- PAX and Build-up AFR
-- PAX and PF Build-up ME/SubCon/Asia
-- Build-up AUS
-- Pax Breakdown
-- US Screening Flights
+| Floor-based treemap layout | 1st Floor and Ground Floor rows with colored cells | Done |
 
-**Treemap Properties:**
+| Category-based coloring | 8 work area categories with distinct colors | Done |
 
-- Size = Total ULD workload for that area
-- Color = Completion status:
-- Green (#22c55e): 80%+ complete
-- Amber (#f59e0b): 40-80% complete
-- Red (#ef4444): Under 40% complete
-- Tooltip shows: Area name, X completed / Y total, percentage
+| Completion status indicators | Green/amber/red dots showing completion % | Done |
 
-### Implementation Steps
+| Opacity-based completion | Cell opacity reflects completion percentage | Done |
 
-1. **Add work area mock data** in [`bdn-dashboard-screen.tsx`](components/bdn-dashboard-screen.tsx):
-```typescript
-const workAreaTreemapData = [
-  { name: "MTD Area", total: 25, completed: 18, floor: "Ground" },
-  { name: "Freighter & PAX", total: 45, completed: 28, floor: "Ground" },
-  { name: "PAX Breakdown", total: 32, completed: 24, floor: "Ground" },
-  { name: "Agency", total: 15, completed: 12, floor: "Ground" },
-  { name: "IND/PAK Build-up", total: 22, completed: 14, floor: "Ground" },
-  { name: "PER", total: 62, completed: 34, floor: "Ground" },
-  { name: "DM Inspection", total: 8, completed: 8, floor: "Ground" },
-  { name: "PIL", total: 48, completed: 26, floor: "Ground" },
-  { name: "WCD Area", total: 18, completed: 15, floor: "Ground" },
-  { name: "PAX Build-up EUR", total: 38, completed: 22, floor: "1st" },
-  { name: "PAX Build-up AFR", total: 28, completed: 18, floor: "1st" },
-  { name: "PAX Build-up ME/Asia", total: 42, completed: 30, floor: "1st" },
-  { name: "Build-up AUS", total: 20, completed: 16, floor: "1st" },
-  { name: "US Screening", total: 35, completed: 25, floor: "1st" },
-];
+| Synced page-level filters | GCR, PER, PIL as separate toggle buttons | Done |
+
+| Work area filter dropdown | Overall / By Work Area with E75, L22 options | Done |
+
+| Cargo type chart filters | Card-level filters synced with page-level | Done |
+
+| Equal height chart cards | Flexbox layout with items-stretch | Done |
+
+| Integrated detailed breakdown | Collapsible sections inside chart cards | Done |
+
+### Work Area Categories & Colors
+
+| Category | Color | Hex |
+
+| ---------- | ------ | ------- |
+
+| Buildup | Red | #DC2626 |
+
+| Breakdown | Blue | #3B82F6 |
+
+| Acceptance | Pink | #EC4899 |
+
+| Delivery | Cyan | #06B6D4 |
+
+| PER | Green | #22C55E |
+
+| PIL | Lime | #84CC16 |
+
+| Screening | Purple | #A855F7 |
+
+| Inspection | Amber | #F59E0B |
+
+### Completion Status Colors
+
+| Status | Threshold | Color |
+
+| ----------- | --------- | ------- |
+
+| On Track | 80%+ | #22C55E |
+
+| In Progress | 40-80% | #F59E0B |
+
+| Behind | <40% | #EF4444 |
+
+### Final Layout
+
 ```
-
-
-
-
-2. **Enhance TreemapChart** in [`components/reports/charts/treemap-chart.tsx`](components/reports/charts/treemap-chart.tsx) to support completion-based coloring
-3. **Add treemap section** to the dashboard layout (new section, keep existing charts)
-
-### Updated Layout
-
-```javascript
 +-----------------------------------------------+
 | Header + KPI Cards                            |
 +-----------------------------------------------+
-| Filters (GCR/PIL/PER, Work Areas, Shift)      |
+| Filters (GCR | PER | PIL, Shift, Time)        |
 +-----------------------------------------------+
-| NEW: Work Area Treemap (full width)           |
-| "Workload by Work Area"                       |
+| Workload by Work Area (Treemap)               |
+| - 1ST FLOOR row with colored cells            |
+| - GROUND FLOOR row with colored cells         |
+| - Category legend + Completion status legend  |
 +-----------------------------------------------+
-| Workload Bars (GCR/PER/PIL) - existing        |
+| Workload by Cargo Type (Bar Chart)            |
+| - GCR/PER/PIL filters + Work Area dropdown    |
+| - Horizontal bars with completion/remaining   |
 +-----------------------------------------------+
-| Advance Planned   |   Screening Summary       |
-| vs Built Chart    |   Chart + Tables          |
+| Advance Planned    |   Screening Summary      |
+| vs Built Chart     |   Chart + Filter         |
+| + Detailed         |   + Detailed             |
+|   Breakdown        |     Breakdown            |
 +-----------------------------------------------+
 ```
 
@@ -263,7 +267,29 @@ Located in [`components/reports/charts/`](components/reports/charts/):
 
 ## File Changes Summary
 
-| File | Changes | Status || --------------------------------------------- | ------------------------- | ---------- || `lib/chart-theme.ts` | Shared chart styling | Done || `components/reports/charts/*` | Reusable chart components | Done || `app/globals.css` | Chart animation keyframes | Done || `components/performance-screen.tsx` | M1 charts + layout | Done || `components/shift-summary-report-screen.tsx` | M2 charts + layout | Done || `components/bdn-dashboard-screen.tsx` | M3 treemap + layout | In Progress || `components/situational-awareness-screen.tsx` | M4 charts + layout | Pending |---
+| File | Changes | Status |
+
+| --------------------------------------------- | --------------------------------- | ----------- |
+
+| `lib/chart-theme.ts` | Shared chart styling | Done |
+
+| `components/reports/charts/*` | Reusable chart components | Done |
+
+| `app/globals.css` | Chart animation keyframes | Done |
+
+| `components/performance-screen.tsx` | M1 charts + layout | Done |
+
+| `components/shift-summary-report-screen.tsx` | M2 charts + layout | Done |
+
+| `components/bdn-dashboard-screen.tsx` | M3 treemap + charts + layout | Done |
+
+| `components/reports/charts/treemap-chart.tsx` | WorkAreaTreemap component | Done |
+
+| `components/work-area-filter-controls.tsx` | Separate GCR/PER/PIL filters | Done |
+
+| `components/situational-awareness-screen.tsx` | M4 charts + layout | Pending |
+
+---
 
 ## Emirates Color Palette
 
@@ -274,6 +300,7 @@ Located in [`components/reports/charts/`](components/reports/charts/):
 --chart-success: #22c55e; /* Green - complete */
 --chart-warning: #f59e0b; /* Amber - in progress */
 --chart-danger: #ef4444; /* Red - behind */
+
 
 
 
