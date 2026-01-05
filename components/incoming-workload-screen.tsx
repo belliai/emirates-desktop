@@ -1,12 +1,20 @@
 "use client"
 
 import { useMemo, useState, useEffect, useRef } from "react"
-import { Plane, Clock, MapPin, Package, Plus, Search, SlidersHorizontal, Settings2, ArrowUpDown } from "lucide-react"
+import { Plane, Clock, MapPin, Package, Plus, Search, SlidersHorizontal, Settings2, ArrowUpDown, TrendingUp, Activity, BarChart3, Layers, ChevronDown, ChevronUp } from "lucide-react"
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell, TooltipProps } from "recharts"
 import { useLoadPlans, type LoadPlan, type ShiftType, type PeriodType, type WaveType } from "@/lib/load-plan-context"
 import { BUP_ALLOCATION_DATA } from "@/lib/bup-allocation-data"
 import type { WorkArea } from "@/lib/work-area-filter-utils"
 import { useWorkAreaFilter, WorkAreaFilterControls, WorkAreaFilterProvider } from "./work-area-filter-controls"
+import { 
+  StatCard, 
+  ChartCard, 
+  AnimatedDonutChart, 
+  TreemapChart, 
+  EnhancedHeatmapGrid 
+} from "./ui/dashboard-charts"
+import { CHART_COLORS } from "@/lib/chart-theme"
 
 // Parse ULD count from ttlPlnUld string (e.g., "06PMC/07AKE" -> {pmc: 6, ake: 7, total: 13})
 function parseULDCount(ttlPlnUld: string): { pmc: number; ake: number; total: number } {
@@ -471,6 +479,110 @@ function IncomingWorkloadScreenContent() {
 
   // Use filtered flights for display
   const displayFlights = filteredFlights
+  
+  // State for collapsible table
+  const [isTableExpanded, setIsTableExpanded] = useState(true)
+
+  // Calculate dashboard KPI stats
+  const dashboardStats = useMemo(() => {
+    const totalFlights = displayFlights.length
+    const totalULDs = displayFlights.reduce((sum, f) => {
+      if (selectedWorkArea === "GCR") return sum + f.gcrBreakdown.total
+      if (selectedWorkArea === "PIL and PER") return sum + f.pilPerBreakdown.total
+      return sum + f.uldBreakdown.total
+    }, 0)
+    
+    // Calculate peak hour
+    const hourCounts: Record<number, number> = {}
+    displayFlights.forEach((flight) => {
+      const hour = parseInt(flight.std.split(":")[0])
+      if (selectedWorkArea === "GCR") {
+        hourCounts[hour] = (hourCounts[hour] || 0) + flight.gcrBreakdown.total
+      } else if (selectedWorkArea === "PIL and PER") {
+        hourCounts[hour] = (hourCounts[hour] || 0) + flight.pilPerBreakdown.total
+      } else {
+        hourCounts[hour] = (hourCounts[hour] || 0) + flight.uldBreakdown.total
+      }
+    })
+    
+    let peakHour = 0
+    let peakCount = 0
+    Object.entries(hourCounts).forEach(([hour, count]) => {
+      if (count > peakCount) {
+        peakHour = parseInt(hour)
+        peakCount = count
+      }
+    })
+
+    const avgULDsPerFlight = totalFlights > 0 ? (totalULDs / totalFlights).toFixed(1) : "0"
+
+    return {
+      totalFlights,
+      totalULDs,
+      peakHour: `${peakHour.toString().padStart(2, "0")}:00`,
+      peakCount,
+      avgULDsPerFlight,
+    }
+  }, [displayFlights, selectedWorkArea])
+
+  // Calculate treemap data for flights by workload
+  const treemapData = useMemo(() => {
+    return displayFlights
+      .map((flight) => {
+        const { period } = determinePeriodAndWave(flight.std)
+        let size = 0
+        if (selectedWorkArea === "GCR") {
+          size = flight.gcrBreakdown.total
+        } else if (selectedWorkArea === "PIL and PER") {
+          size = flight.pilPerBreakdown.total
+        } else {
+          size = flight.uldBreakdown.total
+        }
+        
+        // Assign color based on shift period
+        let color = CHART_COLORS.shift.afternoon
+        if (period === "early-morning") color = CHART_COLORS.shift.earlyMorning
+        else if (period === "late-morning") color = CHART_COLORS.shift.lateMorning
+        else if (period === "afternoon") color = CHART_COLORS.shift.afternoon
+        
+        return {
+          name: flight.flight,
+          size,
+          color,
+        }
+      })
+      .filter((item) => item.size > 0)
+      .sort((a, b) => b.size - a.size)
+      .slice(0, 20) // Top 20 flights for better visualization
+  }, [displayFlights, selectedWorkArea])
+
+  // Calculate heatmap data by hour
+  const heatmapData = useMemo(() => {
+    const hourData: Array<{ hour: string; label: string; value: number }> = []
+    
+    for (let h = 0; h < 24; h++) {
+      hourData.push({
+        hour: `${h.toString().padStart(2, "0")}`,
+        label: `${h.toString().padStart(2, "0")}:00`,
+        value: 0,
+      })
+    }
+    
+    displayFlights.forEach((flight) => {
+      const hour = parseInt(flight.std.split(":")[0])
+      if (hour >= 0 && hour < 24) {
+        if (selectedWorkArea === "GCR") {
+          hourData[hour].value += flight.gcrBreakdown.total
+        } else if (selectedWorkArea === "PIL and PER") {
+          hourData[hour].value += flight.pilPerBreakdown.total
+        } else {
+          hourData[hour].value += flight.uldBreakdown.total
+        }
+      }
+    })
+    
+    return hourData
+  }, [displayFlights, selectedWorkArea])
 
   // Calculate ULD breakdown for graph based on ACTUAL flights in the table and selected work area
   const uldTypeChartData = useMemo(() => {
@@ -544,6 +656,31 @@ function IncomingWorkloadScreenContent() {
           total: uldBreakdownData.total,
         },
       ]
+    }
+  }, [displayFlights, selectedWorkArea])
+
+  // Calculate donut chart data for ULD distribution
+  const donutChartData = useMemo(() => {
+    if (selectedWorkArea === "GCR") {
+      const gcrData = calculateGCRULDBreakdown(displayFlights.map(f => ({ ttlPlnUld: f.ttlPlnUld })))
+      return [
+        { name: "PMC/AMF", value: gcrData.pmcAmf, color: CHART_COLORS.uld.pmc },
+        { name: "ALF/PLA", value: gcrData.alfPla, color: CHART_COLORS.uld.ake },
+        { name: "AKE/AKL", value: gcrData.akeAkl, color: CHART_COLORS.uld.alf },
+      ].filter(item => item.value > 0)
+    } else if (selectedWorkArea === "PIL and PER") {
+      const pilPerData = calculatePilPerULDBreakdown(displayFlights.map(f => ({ ttlPlnUld: f.ttlPlnUld })))
+      return [
+        { name: "AKE/DPE", value: pilPerData.akeDpe, color: CHART_COLORS.uld.ake },
+        { name: "ALF/DQF", value: pilPerData.alfDqf, color: CHART_COLORS.uld.alf },
+        { name: "LD-PMC/AMF", value: pilPerData.ldPmcAmf, color: CHART_COLORS.uld.pmc },
+      ].filter(item => item.value > 0)
+    } else {
+      const uldBreakdownData = calculateULDBreakdown(displayFlights)
+      return [
+        { name: "PMC", value: uldBreakdownData.PMC, color: CHART_COLORS.uld.pmc },
+        { name: "AKE", value: uldBreakdownData.AKE, color: CHART_COLORS.uld.ake },
+      ].filter(item => item.value > 0)
     }
   }, [displayFlights, selectedWorkArea])
 
@@ -772,218 +909,167 @@ function IncomingWorkloadScreenContent() {
           </div>
         </div>
 
-        {/* Graph - Workload by ULD */}
-        <div className="bg-white rounded-lg border border-gray-200 p-6 mb-4">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Workload by ULD</h3>
-          <div className="h-80">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={uldTypeChartData} margin={{ top: 5, right: 5, left: 0, bottom: 5 }} barCategoryGap="35%" barGap={0}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
-                <XAxis
-                  dataKey="type"
-                  tick={{ fontSize: 12, fill: "#6B7280" }}
-                  stroke="#9CA3AF"
-                  type="category"
-                  interval={0}
-                />
-                <YAxis
-                  tick={{ fontSize: 12, fill: "#6B7280" }}
-                  stroke="#9CA3AF"
-                />
-                <Tooltip content={createCustomTooltip(selectedWorkArea)} />
-                <Legend 
-                  wrapperStyle={{ fontSize: "12px", paddingTop: "20px", pointerEvents: "none" }} 
-                  iconSize={12}
-                  content={() => {
-                    if (selectedWorkArea === "GCR") {
-                      return (
-                        <ul className="flex justify-center gap-4 text-xs flex-wrap">
-                          <li className="flex items-center gap-1">
-                            <span 
-                              style={{ 
-                                display: "inline-block",
-                                width: "12px",
-                                height: "12px",
-                                backgroundColor: "#DC2626",
-                                borderRadius: "2px"
-                              }}
-                            />
-                            <span>PMC/AMF</span>
-                          </li>
-                          <li className="flex items-center gap-1">
-                            <span 
-                              style={{ 
-                                display: "inline-block",
-                                width: "12px",
-                                height: "12px",
-                                backgroundColor: "#EF4444",
-                                borderRadius: "2px"
-                              }}
-                            />
-                            <span>ALF/PLA</span>
-                          </li>
-                          <li className="flex items-center gap-1">
-                            <span 
-                              style={{ 
-                                display: "inline-block",
-                                width: "12px",
-                                height: "12px",
-                                backgroundColor: "#F87171",
-                                borderRadius: "2px"
-                              }}
-                            />
-                            <span>AKE/AKL</span>
-                          </li>
-                        </ul>
-                      )
-                    } else if (selectedWorkArea === "PIL and PER") {
-                      return (
-                        <ul className="flex justify-center gap-4 text-xs flex-wrap">
-                          <li className="flex items-center gap-1">
-                            <span 
-                              style={{ 
-                                display: "inline-block",
-                                width: "12px",
-                                height: "12px",
-                                backgroundColor: "#EF4444",
-                                borderRadius: "2px"
-                              }}
-                            />
-                            <span>AKE/DPE</span>
-                          </li>
-                          <li className="flex items-center gap-1">
-                            <span 
-                              style={{ 
-                                display: "inline-block",
-                                width: "12px",
-                                height: "12px",
-                                backgroundColor: "#F87171",
-                                borderRadius: "2px"
-                              }}
-                            />
-                            <span>ALF/DQF</span>
-                          </li>
-                          <li className="flex items-center gap-1">
-                            <span 
-                              style={{ 
-                                display: "inline-block",
-                                width: "12px",
-                                height: "12px",
-                                backgroundColor: "#DC2626",
-                                borderRadius: "2px"
-                              }}
-                            />
-                            <span>LD-PMC/AMF</span>
-                          </li>
-                        </ul>
-                      )
-                    } else {
-                      // "All" - original legend
-                      return (
-                        <ul className="flex justify-center gap-4 text-xs">
-                          <li className="flex items-center gap-1">
-                            <span 
-                              style={{ 
-                                display: "inline-block",
-                                width: "12px",
-                                height: "12px",
-                                backgroundColor: "#DC2626",
-                                borderRadius: "2px"
-                              }}
-                            />
-                            <span>PMC</span>
-                          </li>
-                          <li className="flex items-center gap-1">
-                            <span 
-                              style={{ 
-                                display: "inline-block",
-                                width: "12px",
-                                height: "12px",
-                                backgroundColor: "#EF4444",
-                                borderRadius: "2px"
-                              }}
-                            />
-                            <span>AKE</span>
-                          </li>
-                        </ul>
-                      )
-                    }
-                  }}
-                />
-                <Bar dataKey="value" barSize={60} radius={[4, 4, 0, 0]} name="value">
-                  {uldTypeChartData.map((entry, index) => {
-                    let fillColor = "#DC2626"
-                    
-                    if (selectedWorkArea === "GCR") {
-                      if (entry.type === "PMC/AMF") {
-                        fillColor = "#DC2626" // Red
-                      } else if (entry.type === "ALF/PLA") {
-                        fillColor = "#EF4444" // Lighter red
-                      } else if (entry.type === "AKE/AKL") {
-                        fillColor = "#F87171" // Light red
-                      } else if (entry.type === "Total") {
-                        fillColor = "#DC2626" // Red
-                      }
-                    } else if (selectedWorkArea === "PIL and PER") {
-                      if (entry.type === "AKE/DPE") {
-                        fillColor = "#EF4444" // Lighter red
-                      } else if (entry.type === "ALF/DQF") {
-                        fillColor = "#F87171" // Light red
-                      } else if (entry.type === "LD-PMC/AMF") {
-                        fillColor = "#DC2626" // Red
-                      } else if (entry.type === "Total") {
-                        fillColor = "#DC2626" // Red
-                      }
-                    } else {
-                      // "All" - original colors
-                      if (entry.type === "AKE") {
-                        fillColor = "#EF4444"
-                      } else if (entry.type === "Total") {
-                        fillColor = "#DC2626"
-                      }
-                    }
-                    
-                    return (
-                      <Cell 
-                        key={`cell-${index}`} 
-                        fill={fillColor}
-                      />
-                    )
-                  })}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
+        {/* Dashboard KPI Stats */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4 px-2">
+          <StatCard
+            title="Total Flights"
+            value={dashboardStats.totalFlights}
+            icon={<Plane className="w-5 h-5" />}
+            subtitle="In current view"
+          />
+          <StatCard
+            title="Total ULDs"
+            value={dashboardStats.totalULDs}
+            icon={<Package className="w-5 h-5" />}
+            subtitle="Planned workload"
+          />
+          <StatCard
+            title="Peak Hour"
+            value={dashboardStats.peakHour}
+            icon={<Clock className="w-5 h-5" />}
+            subtitle={`${dashboardStats.peakCount} ULDs`}
+          />
+          <StatCard
+            title="Avg ULDs/Flight"
+            value={dashboardStats.avgULDsPerFlight}
+            icon={<TrendingUp className="w-5 h-5" />}
+            subtitle="Per flight average"
+          />
         </div>
 
-        {/* Flight List Table */}
-        <div className="mx-2 rounded-lg border border-gray-200 overflow-x-auto">
-          <div className="bg-white">
+        {/* Charts Grid */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-4 px-2">
+          {/* ULD Distribution Donut */}
+          <ChartCard 
+            title="ULD Type Distribution" 
+            subtitle="Breakdown by container type"
+          >
+            {donutChartData.length > 0 ? (
+              <AnimatedDonutChart
+                data={donutChartData}
+                centerValue={dashboardStats.totalULDs}
+                centerLabel="Total ULDs"
+                height={280}
+                glowEffect={true}
+              />
+            ) : (
+              <div className="h-[280px] flex items-center justify-center text-gray-400 text-sm">
+                No ULD data available
+              </div>
+            )}
+          </ChartCard>
+
+          {/* Flight Workload Treemap */}
+          <ChartCard 
+            title="Flight Workload Overview" 
+            subtitle="Top flights by ULD count"
+          >
+            {treemapData.length > 0 ? (
+              <TreemapChart
+                data={treemapData}
+                height={280}
+                colorScale={[
+                  CHART_COLORS.shift.earlyMorning,
+                  CHART_COLORS.shift.lateMorning,
+                  CHART_COLORS.shift.afternoon,
+                ]}
+              />
+            ) : (
+              <div className="h-[280px] flex items-center justify-center text-gray-400 text-sm">
+                No flight data available
+              </div>
+            )}
+            <div className="flex items-center justify-center gap-4 mt-3 text-xs">
+              <div className="flex items-center gap-1.5">
+                <div className="w-3 h-3 rounded" style={{ backgroundColor: CHART_COLORS.shift.earlyMorning }} />
+                <span className="text-gray-500">Early Morning</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <div className="w-3 h-3 rounded" style={{ backgroundColor: CHART_COLORS.shift.lateMorning }} />
+                <span className="text-gray-500">Late Morning</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <div className="w-3 h-3 rounded" style={{ backgroundColor: CHART_COLORS.shift.afternoon }} />
+                <span className="text-gray-500">Afternoon</span>
+              </div>
+            </div>
+          </ChartCard>
+
+          {/* Hourly Workload Heatmap */}
+          <ChartCard 
+            title="Hourly Workload Heatmap" 
+            subtitle="ULD distribution across 24 hours"
+          >
+            <div className="py-4">
+              <EnhancedHeatmapGrid
+                data={heatmapData}
+                showLabels={true}
+              />
+            </div>
+          </ChartCard>
+        </div>
+
+        {/* Flight List Table - Collapsible */}
+        <div className="mx-2 rounded-lg border border-gray-200 overflow-hidden bg-white">
+          {/* Collapsible Header */}
+          <button
+            onClick={() => setIsTableExpanded(!isTableExpanded)}
+            className="w-full flex items-center justify-between px-4 py-3 bg-gradient-to-r from-gray-50 to-white hover:from-gray-100 hover:to-gray-50 transition-colors border-b border-gray-200"
+          >
+            <div className="flex items-center gap-3">
+              <Layers className="w-4 h-4 text-[#D71A21]" />
+              <span className="font-semibold text-gray-900">Flight Details</span>
+              <span className="px-2 py-0.5 bg-[#D71A21]/10 text-[#D71A21] text-xs font-medium rounded-full">
+                {displayFlights.length} flights
+              </span>
+            </div>
+            <div className="flex items-center gap-2 text-gray-400">
+              <span className="text-xs">{isTableExpanded ? "Collapse" : "Expand"}</span>
+              {isTableExpanded ? (
+                <ChevronUp className="w-4 h-4" />
+              ) : (
+                <ChevronDown className="w-4 h-4" />
+              )}
+            </div>
+          </button>
+
+          {/* Table Content */}
+          <div
+            className={`overflow-x-auto transition-all duration-300 ${
+              isTableExpanded ? "max-h-[500px] opacity-100" : "max-h-0 opacity-0"
+            }`}
+          >
             <table className="w-full">
-              <thead>
+              <thead className="sticky top-0 z-10">
                 <tr className="bg-[#D71A21] text-white">
-                  <th className="px-2 py-1 text-left font-semibold text-xs">
+                  <th className="px-3 py-2 text-left font-semibold text-xs">
                     <div className="flex items-center gap-2">
                       <Plane className="w-4 h-4 flex-shrink-0" />
                       <span className="whitespace-nowrap">Flight</span>
                     </div>
                   </th>
-                  <th className="px-2 py-1 text-left font-semibold text-xs">
+                  <th className="px-3 py-2 text-left font-semibold text-xs">
                     <div className="flex items-center gap-2">
                       <Clock className="w-4 h-4 flex-shrink-0" />
                       <span className="whitespace-nowrap">STD</span>
                     </div>
                   </th>
-                  <th className="px-2 py-1 text-left font-semibold text-xs">
+                  <th className="px-3 py-2 text-left font-semibold text-xs">
                     <div className="flex items-center gap-2">
                       <MapPin className="w-4 h-4 flex-shrink-0" />
                       <span className="whitespace-nowrap">Route</span>
                     </div>
                   </th>
-                  <th className="px-2 py-1 text-left font-semibold text-xs">
+                  <th className="px-3 py-2 text-left font-semibold text-xs">
                     <div className="flex items-center gap-2">
                       <Package className="w-4 h-4 flex-shrink-0" />
                       <span className="whitespace-nowrap">Planned ULDs</span>
+                    </div>
+                  </th>
+                  <th className="px-3 py-2 text-left font-semibold text-xs">
+                    <div className="flex items-center gap-2">
+                      <BarChart3 className="w-4 h-4 flex-shrink-0" />
+                      <span className="whitespace-nowrap">Period</span>
                     </div>
                   </th>
                 </tr>
@@ -991,27 +1077,48 @@ function IncomingWorkloadScreenContent() {
               <tbody>
                 {displayFlights.length === 0 ? (
                   <tr>
-                    <td colSpan={4} className="px-3 py-2 text-center text-gray-500 text-sm">
-                      {allFlights.length === 0 ? "No load plans available" : "No flights match the selected filters"}
+                    <td colSpan={5} className="px-4 py-8 text-center text-gray-500 text-sm">
+                      <div className="flex flex-col items-center gap-2">
+                        <Plane className="w-8 h-8 text-gray-300" />
+                        <span>{allFlights.length === 0 ? "No load plans available" : "No flights match the selected filters"}</span>
+                      </div>
                     </td>
                   </tr>
                 ) : (
-                  displayFlights.map((flight) => (
-                    <tr key={flight.flight} className="border-b border-gray-100 last:border-b-0 hover:bg-gray-50">
-                      <td className="px-2 py-1 font-semibold text-[#D71A21] text-xs whitespace-nowrap truncate">
-                        {flight.flight}
-                      </td>
-                      <td className="px-2 py-1 text-gray-900 text-xs whitespace-nowrap truncate">{flight.std}</td>
-                      <td className="px-2 py-1 text-gray-900 text-xs whitespace-nowrap truncate">{flight.route}</td>
-                      <td className="px-2 py-1 text-gray-900 text-xs whitespace-nowrap truncate font-semibold">
-                        {selectedWorkArea === "GCR" 
-                          ? flight.gcrBreakdown.total 
-                          : selectedWorkArea === "PIL and PER" 
-                          ? flight.pilPerBreakdown.total 
-                          : flight.uldBreakdown.total}
-                      </td>
-                    </tr>
-                  ))
+                  displayFlights.map((flight) => {
+                    const { period } = determinePeriodAndWave(flight.std)
+                    const periodLabel = period === "early-morning" ? "Early Morning" : period === "late-morning" ? "Late Morning" : "Afternoon"
+                    const periodColor = period === "early-morning" ? "bg-orange-100 text-orange-700" : period === "late-morning" ? "bg-red-100 text-red-700" : "bg-rose-100 text-rose-700"
+                    
+                    return (
+                      <tr key={flight.flight} className="border-b border-gray-100 last:border-b-0 hover:bg-red-50/30 transition-colors">
+                        <td className="px-3 py-2 font-semibold text-[#D71A21] text-xs whitespace-nowrap">
+                          {flight.flight}
+                        </td>
+                        <td className="px-3 py-2 text-gray-900 text-xs whitespace-nowrap font-medium">
+                          {flight.std}
+                        </td>
+                        <td className="px-3 py-2 text-gray-600 text-xs whitespace-nowrap">
+                          {flight.route}
+                        </td>
+                        <td className="px-3 py-2 text-xs whitespace-nowrap">
+                          <span className="font-bold text-gray-900">
+                            {selectedWorkArea === "GCR" 
+                              ? flight.gcrBreakdown.total 
+                              : selectedWorkArea === "PIL and PER" 
+                              ? flight.pilPerBreakdown.total 
+                              : flight.uldBreakdown.total}
+                          </span>
+                          <span className="text-gray-400 ml-1">ULDs</span>
+                        </td>
+                        <td className="px-3 py-2 text-xs whitespace-nowrap">
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium ${periodColor}`}>
+                            {periodLabel}
+                          </span>
+                        </td>
+                      </tr>
+                    )
+                  })
                 )}
               </tbody>
             </table>

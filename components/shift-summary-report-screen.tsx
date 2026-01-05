@@ -5,7 +5,7 @@ import { EditableField } from "./editable-field"
 import { ExcelCell } from "./excel-cell"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
-import { Copy, FileText, Plus, Search, Clock, X, Settings2, ArrowUpDown, SlidersHorizontal, Loader2 } from "lucide-react"
+import { Copy, FileText, Plus, Search, Clock, X, Settings2, ArrowUpDown, SlidersHorizontal, Loader2, Users, Zap, Package, TrendingUp } from "lucide-react"
 import UWSDelayReportModal from "./uws-delay-report-modal"
 import { 
   fetchShiftSummaryData, 
@@ -13,6 +13,14 @@ import {
   type StaffDetail as SupabaseStaffDetail,
   type FlightAllocation
 } from "@/lib/shift-summary-supabase"
+import {
+  GaugeChart,
+  StatCard,
+  ChartCard,
+  StackedAreaChart,
+  HorizontalBarChart,
+} from "@/components/ui/dashboard-charts"
+import { CHART_COLORS } from "@/lib/chart-theme"
 
 // Filter types
 type WorkArea = "GCR" | "PIL and PER"
@@ -1029,6 +1037,124 @@ TOTAL\t${totalPending.pmcAmf}\t${totalPending.alfPla}\t${totalPending.akeRke}\t$
                 Copy Total Advance vs Total Pending
               </Button>
             </div>
+          </div>
+        </div>
+
+        {/* ============================================ */}
+        {/* Dashboard Overview Section */}
+        {/* ============================================ */}
+        <div className="mb-6">
+          {/* Hero KPI Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+            <StatCard
+              title="Total ULDs Built"
+              value={shiftEfficiency.totalUld.toLocaleString()}
+              subtitle="This shift"
+              icon={<Package className="w-6 h-6" />}
+              variant="hero"
+            />
+            <StatCard
+              title="Total Staff Hours"
+              value={shiftEfficiency.totalHours.toLocaleString()}
+              subtitle="Combined hours"
+              icon={<Clock className="w-6 h-6" />}
+              variant="hero"
+            />
+            <StatCard
+              title="Shift Efficiency"
+              value={`${shiftEfficiency.efficiency.toFixed(2)} ULDs/hr`}
+              subtitle="Average per person"
+              icon={<Zap className="w-6 h-6" />}
+              trend={{ value: 8, label: "vs target" }}
+              variant="hero"
+            />
+            <StatCard
+              title="Active Teams"
+              value={`${ekOnFloor.length + tgOnFloor.length + dlOnFloor.length}`}
+              subtitle="Staff on floor"
+              icon={<Users className="w-6 h-6" />}
+              variant="hero"
+            />
+          </div>
+
+          {/* Charts Grid */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* Chart 2.1: Efficiency Gauge Dashboard */}
+            <ChartCard
+              title="Team Efficiency"
+              subtitle="Units per hour by team"
+            >
+              <div className="flex items-center justify-around py-4">
+                <GaugeChart
+                  value={ekEfficiency.efficiency}
+                  maxValue={3}
+                  label="EK"
+                  subtitle={`${ekEfficiency.totalUld} ULDs`}
+                  color={CHART_COLORS.team.ek}
+                  size="md"
+                  animationDelay={0}
+                />
+                <GaugeChart
+                  value={tgEfficiency.efficiency}
+                  maxValue={3}
+                  label="TG"
+                  subtitle={`${tgEfficiency.totalUld} ULDs`}
+                  color={CHART_COLORS.team.tg}
+                  size="md"
+                  animationDelay={200}
+                />
+                <GaugeChart
+                  value={dlEfficiency.efficiency}
+                  maxValue={3}
+                  label="DL"
+                  subtitle={`${dlEfficiency.totalUld} ULDs`}
+                  color={CHART_COLORS.team.dl}
+                  size="md"
+                  animationDelay={400}
+                />
+              </div>
+              <div className="flex justify-center gap-8 text-xs text-gray-500 pt-2 border-t">
+                <span>Target: <strong className="text-gray-900">2.0 ULD/hr</strong></span>
+                <span>Avg: <strong className="text-gray-900">{((ekEfficiency.efficiency + tgEfficiency.efficiency + dlEfficiency.efficiency) / 3).toFixed(2)} ULD/hr</strong></span>
+              </div>
+            </ChartCard>
+
+            {/* Chart 2.2: ULD Production Timeline */}
+            <ChartCard
+              title="ULD Production by Period"
+              subtitle="Planned vs Built across shift windows"
+            >
+              <StackedAreaChart
+                data={[
+                  { period: "Early Morning", planned: advancePlanned.firstWave, built: advanceBuilt.firstWave, pending: advancePending.firstWave },
+                  { period: "Late Morning", planned: advancePlanned.secondWave, built: advanceBuilt.secondWave, pending: advancePending.secondWave },
+                  { period: "Afternoon", planned: Math.round(advancePlanned.total * 0.3), built: Math.round(advanceBuilt.total * 0.25), pending: Math.round(advancePending.total * 0.35) },
+                ]}
+                dataKeys={[
+                  { key: "built", name: "Built", color: CHART_COLORS.completion.complete },
+                  { key: "pending", name: "Pending", color: CHART_COLORS.completion.inProgress },
+                ]}
+                xAxisKey="period"
+                height={220}
+              />
+            </ChartCard>
+
+            {/* Chart 2.3: Resource Utilization Comparison */}
+            <ChartCard
+              title="Resource Utilization"
+              subtitle="Planned vs Actual staffing"
+            >
+              <HorizontalBarChart
+                data={[
+                  { name: "Staff Hours", planned: plannedResources.staffHours, actual: actualResources.staffHours },
+                  { name: "Operators", planned: plannedResources.operatorCount, actual: actualResources.operatorCount },
+                  { name: "Drivers", planned: plannedResources.driverCount, actual: actualResources.driverCount },
+                  { name: "Warehouse", planned: plannedResources.warehouse, actual: actualResources.warehouse },
+                ]}
+                showComparison={true}
+                height={220}
+              />
+            </ChartCard>
           </div>
         </div>
 

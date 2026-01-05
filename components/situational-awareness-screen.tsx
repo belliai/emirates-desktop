@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect, useMemo, useRef } from "react"
-import { ChevronRight, ChevronDown, Plane, Calendar, Package, Users, Clock, FileText, Phone, User, Filter, X, Plus, Search, SlidersHorizontal, Settings2, ArrowUpDown } from "lucide-react"
+import { ChevronRight, ChevronDown, Plane, Calendar, Package, Users, Clock, FileText, Phone, User, Filter, X, Plus, Search, SlidersHorizontal, Settings2, ArrowUpDown, Activity, Target, Zap, TrendingUp, BarChart3, Radar as RadarIcon, Eye } from "lucide-react"
 import LoadPlanDetailScreen from "./load-plan-detail-screen"
 import type { LoadPlanDetail, AWBRow, ULDSection } from "./load-plan-types"
 import type { ULDEntry } from "./uld-number-modal"
@@ -14,9 +14,12 @@ import { shouldIncludeULDSection } from "@/lib/work-area-filter-utils"
 import { useWorkAreaFilter, WorkAreaFilterControls, WorkAreaFilterProvider } from "./work-area-filter-controls"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from "recharts"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell, ReferenceLine, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, PieChart, Pie } from "recharts"
 import BCRModal from "./bcr-modal"
 import { BUP_ALLOCATION_DATA } from "@/lib/bup-allocation-data"
+import { CompletionRing, ChartCard, StatCard, RadarChartComponent } from "@/components/ui/dashboard-charts"
+import { CHART_COLORS, TOOLTIP_STYLE, CHART_ANIMATION, getCompletionColor } from "@/lib/chart-theme"
 
 // Types for completion tracking
 type CompletionStatus = "green" | "amber" | "red"
@@ -654,6 +657,67 @@ function SituationalAwarenessScreenContent() {
   const currentWorkAreaData = workAreaData[workAreaFilter === "overall" ? "overall" : (selectedWorkAreaForWorkload as keyof typeof workAreaData)] || workAreaData.overall
   const maxBarValue = 100
 
+  // Calculate overall completion percentage for hero ring
+  const overallCompletion = useMemo(() => {
+    if (flightCompletions.size === 0) return { percentage: 0, completed: 0, total: 0 }
+    
+    let totalPlanned = 0
+    let totalCompleted = 0
+    
+    flightCompletions.forEach((completion) => {
+      totalPlanned += completion.totalPlannedULDs
+      totalCompleted += completion.completedULDs
+    })
+    
+    return {
+      percentage: totalPlanned > 0 ? Math.round((totalCompleted / totalPlanned) * 100) : 0,
+      completed: totalCompleted,
+      total: totalPlanned,
+    }
+  }, [flightCompletions])
+
+  // Flight completion data for bar chart (sorted by completion %)
+  const flightCompletionChartData = useMemo(() => {
+    const data = filteredLoadPlans.map((plan) => {
+      const completion = flightCompletions.get(plan.flight) || calculateFlightCompletion(plan)
+      return {
+        flight: plan.flight,
+        completion: completion.completionPercentage,
+        completed: completion.completedULDs,
+        total: completion.totalPlannedULDs,
+        status: completion.status,
+      }
+    })
+    // Sort by completion percentage descending
+    return data.sort((a, b) => b.completion - a.completion).slice(0, 10) // Top 10 flights
+  }, [filteredLoadPlans, flightCompletions])
+
+  // Work area radar data
+  const workAreaRadarData = useMemo(() => {
+    const gcr = currentWorkAreaData.GCR
+    const per = currentWorkAreaData.PER
+    const pil = currentWorkAreaData.PIL
+    
+    const gcrCompletion = gcr.total > 0 ? Math.round(((gcr.total - gcr.remaining) / gcr.total) * 100) : 0
+    const perCompletion = per.total > 0 ? Math.round(((per.total - per.remaining) / per.total) * 100) : 0
+    const pilCompletion = pil.total > 0 ? Math.round(((pil.total - pil.remaining) / pil.total) * 100) : 0
+    
+    return [
+      { subject: "GCR", completion: gcrCompletion, capacity: Math.round((gcr.total / maxBarValue) * 100), fullMark: 100 },
+      { subject: "PER", completion: perCompletion, capacity: Math.round((per.total / maxBarValue) * 100), fullMark: 100 },
+      { subject: "PIL", completion: pilCompletion, capacity: Math.round((pil.total / maxBarValue) * 100), fullMark: 100 },
+    ]
+  }, [currentWorkAreaData, maxBarValue])
+
+  // Summary stats
+  const summaryStats = useMemo(() => {
+    const greenCount = Array.from(flightCompletions.values()).filter(c => c.status === "green").length
+    const amberCount = Array.from(flightCompletions.values()).filter(c => c.status === "amber").length
+    const redCount = Array.from(flightCompletions.values()).filter(c => c.status === "red").length
+    
+    return { greenCount, amberCount, redCount }
+  }, [flightCompletions])
+
   // Read-only view with progress bar
   if (selectedFlight) {
     if (isLoadingDetail) {
@@ -752,33 +816,229 @@ function SituationalAwarenessScreenContent() {
 
   return (
     <>
-      <div className="min-h-screen bg-gray-50 p-4">
+      <div className="min-h-screen bg-gradient-to-br from-gray-50 via-gray-50 to-red-50/30 p-4">
         <div className="max-w-full">
-          {/* Header */}
-          <div className="flex justify-between items-center mb-4 px-2">
-            <div>
-              <h2 className="text-lg font-semibold text-gray-900">Flights View</h2>
-              <p className="text-sm text-gray-500">Shift-level at-a-glance view with completion tracking</p>
-            </div>
-            {/* Legend */}
-            <div className="flex items-center gap-4 text-xs">
-              <div className="flex items-center gap-1.5">
-                <div className="w-3 h-3 rounded bg-green-500"></div>
-                <span className="text-gray-600">≥80% Complete</span>
+          {/* Mission Control Header */}
+          <div className="mb-6">
+            <div className="flex items-center gap-3 mb-2">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-red-600 to-red-700 flex items-center justify-center shadow-lg shadow-red-500/20">
+                <Activity className="w-5 h-5 text-white" />
               </div>
-              <div className="flex items-center gap-1.5">
-                <div className="w-3 h-3 rounded bg-amber-500"></div>
-                <span className="text-gray-600">50-79% Complete</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <div className="w-3 h-3 rounded bg-red-500"></div>
-                <span className="text-gray-600">&lt;50% Complete</span>
+              <div>
+                <h1 className="text-2xl font-bold text-gray-900">Mission Control</h1>
+                <p className="text-sm text-gray-500">Real-time situational awareness dashboard</p>
               </div>
             </div>
           </div>
 
-          {/* Filters */}
-          <div className="flex items-center gap-2 mb-4 px-2 flex-wrap">
+          {/* Dashboard Hero Section */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 mb-6">
+            {/* Overall Completion Ring - Hero */}
+            <div className="lg:col-span-4">
+              <div className="bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 rounded-2xl p-6 shadow-xl border border-slate-700/50 h-full">
+                <div className="flex items-center gap-2 mb-4">
+                  <Target className="w-5 h-5 text-red-400" />
+                  <h3 className="text-sm font-semibold text-white">Overall Shift Progress</h3>
+                </div>
+                <div className="flex flex-col items-center">
+                  <CompletionRing
+                    percentage={overallCompletion.percentage}
+                    size="xl"
+                    showPercentage={true}
+                    className="mb-4"
+                  />
+                  <div className="text-center">
+                    <div className="text-lg font-semibold text-white">
+                      {overallCompletion.completed} / {overallCompletion.total} ULDs
+                    </div>
+                    <div className="text-xs text-slate-400 mt-1">Marked Complete</div>
+                  </div>
+                </div>
+                {/* Mini stats */}
+                <div className="grid grid-cols-3 gap-2 mt-6 pt-4 border-t border-slate-700/50">
+                  <div className="text-center">
+                    <div className="text-lg font-bold text-green-400">{summaryStats.greenCount}</div>
+                    <div className="text-[10px] text-slate-400">On Track</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-lg font-bold text-amber-400">{summaryStats.amberCount}</div>
+                    <div className="text-[10px] text-slate-400">At Risk</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-lg font-bold text-red-400">{summaryStats.redCount}</div>
+                    <div className="text-[10px] text-slate-400">Behind</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Flight Completion Bar Chart */}
+            <div className="lg:col-span-5">
+              <ChartCard
+                title="Flight Completion Status"
+                subtitle="Top 10 flights by completion rate"
+                className="h-full"
+              >
+                <div className="h-[280px]">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart
+                      data={flightCompletionChartData}
+                      layout="vertical"
+                      margin={{ top: 5, right: 30, left: 60, bottom: 5 }}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" horizontal={false} />
+                      <XAxis
+                        type="number"
+                        domain={[0, 100]}
+                        tick={{ fontSize: 11, fill: "#6B7280" }}
+                        tickFormatter={(v) => `${v}%`}
+                      />
+                      <YAxis
+                        type="category"
+                        dataKey="flight"
+                        tick={{ fontSize: 11, fill: "#374151" }}
+                        width={55}
+                      />
+                      <Tooltip
+                        contentStyle={TOOLTIP_STYLE.contentStyle}
+                        labelStyle={TOOLTIP_STYLE.labelStyle}
+                        formatter={(value: number, name: string, props: { payload: { completed: number; total: number } }) => [
+                          `${value}% (${props.payload.completed}/${props.payload.total})`,
+                          "Completion",
+                        ]}
+                      />
+                      <ReferenceLine
+                        x={80}
+                        stroke="#22C55E"
+                        strokeDasharray="5 5"
+                        strokeWidth={1}
+                        strokeOpacity={0.7}
+                      />
+                      <Bar
+                        dataKey="completion"
+                        radius={[0, 4, 4, 0]}
+                        isAnimationActive={true}
+                        animationDuration={CHART_ANIMATION.duration}
+                      >
+                        {flightCompletionChartData.map((entry, index) => (
+                          <Cell
+                            key={`cell-${index}`}
+                            fill={
+                              entry.status === "green"
+                                ? CHART_COLORS.completion.complete
+                                : entry.status === "amber"
+                                ? CHART_COLORS.completion.inProgress
+                                : CHART_COLORS.completion.notStarted
+                            }
+                          />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+                <div className="flex items-center justify-center gap-4 pt-2 border-t border-gray-100 mt-2">
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-3 h-3 rounded-sm bg-green-500" />
+                    <span className="text-xs text-gray-600">≥80%</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-3 h-3 rounded-sm bg-amber-500" />
+                    <span className="text-xs text-gray-600">50-79%</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-3 h-3 rounded-sm bg-red-500" />
+                    <span className="text-xs text-gray-600">&lt;50%</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-6 border-t-2 border-dashed border-green-500 opacity-70" />
+                    <span className="text-xs text-gray-600">Target</span>
+                  </div>
+                </div>
+              </ChartCard>
+            </div>
+
+            {/* Work Area Radar */}
+            <div className="lg:col-span-3">
+              <ChartCard
+                title="Work Area Balance"
+                subtitle="Completion vs Capacity"
+                className="h-full"
+              >
+                <div className="h-[260px]">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <RadarChart data={workAreaRadarData} margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
+                      <PolarGrid stroke="#E5E7EB" />
+                      <PolarAngleAxis
+                        dataKey="subject"
+                        tick={{ fontSize: 12, fill: "#374151", fontWeight: 600 }}
+                      />
+                      <PolarRadiusAxis
+                        angle={30}
+                        domain={[0, 100]}
+                        tick={{ fontSize: 10, fill: "#9CA3AF" }}
+                        tickFormatter={(v) => `${v}%`}
+                      />
+                      <Radar
+                        name="Completion"
+                        dataKey="completion"
+                        stroke={CHART_COLORS.completion.complete}
+                        fill={CHART_COLORS.completion.complete}
+                        fillOpacity={0.4}
+                        isAnimationActive={true}
+                        animationDuration={CHART_ANIMATION.duration}
+                      />
+                      <Radar
+                        name="Capacity"
+                        dataKey="capacity"
+                        stroke={CHART_COLORS.workArea.gcr}
+                        fill={CHART_COLORS.workArea.gcr}
+                        fillOpacity={0.2}
+                        isAnimationActive={true}
+                        animationDuration={CHART_ANIMATION.duration}
+                        animationBegin={CHART_ANIMATION.staggerDelay}
+                      />
+                      <Tooltip
+                        contentStyle={TOOLTIP_STYLE.contentStyle}
+                        labelStyle={TOOLTIP_STYLE.labelStyle}
+                        formatter={(value: number) => [`${value}%`, ""]}
+                      />
+                      <Legend
+                        wrapperStyle={{ fontSize: "11px", paddingTop: "5px" }}
+                        iconType="circle"
+                        iconSize={8}
+                      />
+                    </RadarChart>
+                  </ResponsiveContainer>
+                </div>
+              </ChartCard>
+            </div>
+          </div>
+
+          {/* Tabbed Content Area */}
+          <Tabs defaultValue="flights" className="mb-6">
+            <TabsList className="bg-white border border-gray-200 shadow-sm mb-4">
+              <TabsTrigger value="flights" className="gap-2 data-[state=active]:bg-red-50 data-[state=active]:text-red-700">
+                <Plane className="w-4 h-4" />
+                Flights View
+              </TabsTrigger>
+              <TabsTrigger value="workload" className="gap-2 data-[state=active]:bg-red-50 data-[state=active]:text-red-700">
+                <BarChart3 className="w-4 h-4" />
+                Workload
+              </TabsTrigger>
+              <TabsTrigger value="incoming" className="gap-2 data-[state=active]:bg-red-50 data-[state=active]:text-red-700">
+                <TrendingUp className="w-4 h-4" />
+                Incoming
+              </TabsTrigger>
+              <TabsTrigger value="bcr" className="gap-2 data-[state=active]:bg-red-50 data-[state=active]:text-red-700">
+                <FileText className="w-4 h-4" />
+                BCR Reports
+              </TabsTrigger>
+            </TabsList>
+
+            {/* Flights Tab */}
+            <TabsContent value="flights" className="mt-0">
+              {/* Filters */}
+              <div className="flex items-center gap-2 mb-4 px-2 flex-wrap">
             {/* Default View Dropdown */}
             <div className="flex items-center">
               <select
@@ -1321,8 +1581,34 @@ function SituationalAwarenessScreenContent() {
                   </table>
                 </div>
               </div>
-            </CollapsibleContent>
-          </Collapsible>
+              </CollapsibleContent>
+            </Collapsible>
+            </TabsContent>
+
+            {/* Workload Tab */}
+            <TabsContent value="workload" className="mt-0">
+              <div className="text-center text-gray-500 py-12">
+                <BarChart3 className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+                <p className="text-sm">Workload analysis coming soon</p>
+              </div>
+            </TabsContent>
+
+            {/* Incoming Tab */}
+            <TabsContent value="incoming" className="mt-0">
+              <div className="text-center text-gray-500 py-12">
+                <TrendingUp className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+                <p className="text-sm">Incoming workload view coming soon</p>
+              </div>
+            </TabsContent>
+
+            {/* BCR Tab */}
+            <TabsContent value="bcr" className="mt-0">
+              <div className="text-center text-gray-500 py-12">
+                <FileText className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+                <p className="text-sm">BCR Reports view coming soon</p>
+              </div>
+            </TabsContent>
+          </Tabs>
         </div>
       </div>
 

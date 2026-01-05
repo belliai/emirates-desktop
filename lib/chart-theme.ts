@@ -161,22 +161,23 @@ export const CHART_ANIMATION = {
   staggerDelay: 200,
 } as const
 
-// Tooltip styling
+// Tooltip styling (clean white style like shadcn)
 export const TOOLTIP_STYLE = {
   contentStyle: {
-    backgroundColor: "rgba(0, 0, 0, 0.85)",
-    border: "1px solid rgba(215, 26, 33, 0.3)",
-    borderRadius: "8px",
-    boxShadow: "0 4px 20px rgba(0, 0, 0, 0.3)",
-    backdropFilter: "blur(8px)",
+    backgroundColor: "#ffffff",
+    border: "1px solid #E5E7EB",
+    borderRadius: "6px",
+    boxShadow: "0 1px 3px rgba(0, 0, 0, 0.1), 0 1px 2px rgba(0, 0, 0, 0.06)",
+    padding: "8px 12px",
   },
   labelStyle: {
-    color: "#fff",
+    color: "#111827",
     fontWeight: "600",
     marginBottom: "4px",
+    fontSize: "13px",
   },
   itemStyle: {
-    color: "#E5E7EB",
+    color: "#6B7280",
     fontSize: "12px",
   },
 } as const

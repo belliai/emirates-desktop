@@ -260,8 +260,8 @@
 
 /* Chart card styling */
 .chart-card {
-  @apply bg-white rounded-xl border border-gray-100 shadow-sm;
-  @apply hover:shadow-md transition-shadow duration-300;
+  @apply bg-white rounded-xl border border-gray-200;
+  @apply hover:border-gray-300 transition-colors duration-200;
 }
 
 .chart-card-header {
@@ -282,8 +282,8 @@
 
 /* Stat card styling for dashboard KPIs */
 .stat-card {
-  @apply bg-white rounded-xl border border-gray-100 p-4;
-  @apply hover:border-red-200 transition-colors duration-200;
+  @apply bg-white rounded-xl border border-gray-200 p-4;
+  @apply hover:border-gray-300 transition-colors duration-200;
 }
 
 .stat-card-value {
@@ -295,7 +295,7 @@
 }
 
 .stat-card-trend {
-  @apply flex items-center gap-1 text-xs mt-2;
+  @apply flex items-center gap-1 text-xs;
 }
 
 .stat-card-trend.positive {
@@ -414,4 +414,54 @@
   );
   animation: shimmer 1.5s infinite;
   background-size: 200% 100%;
+}
+
+/* Treemap animations */
+@keyframes treemapFadeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* Heatmap pulse animation */
+@keyframes heatmapPulse {
+  from {
+    opacity: 0;
+    transform: scale(0.8);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* Slow pulse for center values */
+.animate-pulse-slow {
+  animation: chartPulse 3s ease-in-out infinite;
+}
+
+/* Enhanced donut glow effect */
+.donut-glow {
+  filter: drop-shadow(0 0 8px rgba(215, 26, 33, 0.4));
+}
+
+/* Treemap hover effect */
+.treemap-cell:hover {
+  filter: brightness(1.1);
+  transform: scale(1.02);
+  transition: all 0.2s ease-out;
+}
+
+/* Heatmap cell hover */
+.heatmap-cell {
+  @apply transition-all duration-200;
+}
+
+.heatmap-cell:hover {
+  @apply scale-110 shadow-lg z-10;
 }
