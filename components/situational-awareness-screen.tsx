@@ -2220,7 +2220,6 @@ function IncomingWorkloadTabContent({
           {(() => {
             const allPieData = [
               { name: "AKE", value: uldBreakdownData.AKE, fill: "#DC2626" },
-              { name: "BULK", value: uldBreakdownData.BULK, fill: "#EF4444" },
               { name: "PMC", value: uldBreakdownData.PMC, fill: "#FCA5A5" },
             ];
             // Filter out zero values to avoid gaps in the chart
