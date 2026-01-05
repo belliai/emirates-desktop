@@ -8,7 +8,7 @@ import type { ULDEntry } from "./uld-number-modal"
 import { useLoadPlans, type LoadPlan } from "@/lib/load-plan-context"
 import { getLoadPlansFromSupabase, getLoadPlanDetailFromSupabase } from "@/lib/load-plans-supabase"
 import { parseULDSection } from "@/lib/uld-parser"
-import { getULDEntriesFromStorage } from "@/lib/uld-storage"
+import { getULDEntriesFromStorage, getULDEntriesFromSupabase } from "@/lib/uld-storage"
 import { useWorkAreaFilter, WorkAreaFilterControls, WorkAreaFilterProvider } from "./work-area-filter-controls"
 import type { WorkArea, PilPerSubFilter } from "@/lib/work-area-filter-utils"
 import { shouldIncludeULDSection } from "@/lib/work-area-filter-utils"
@@ -221,19 +221,26 @@ function calculateTotalPlannedULDs(loadPlanDetail: LoadPlanDetail, workAreaFilte
 }
 
 /**
- * Calculate total marked ULDs from saved ULD numbers in localStorage, filtered by work area
- * A marked ULD is one that has a non-empty ULD number assigned
+ * Calculate total marked ULDs from saved ULD entries, filtered by work area
+ * A marked ULD is one that has been checked (is_checked = true)
  * @param flightNumber - The flight number
  * @param loadPlanDetail - The load plan detail (needed to check ULD section SHC codes)
  * @param workAreaFilter - Optional work area filter ("All", "GCR", or "PIL and PER")
  * @param pilPerSubFilter - Optional PIL/PER sub-filter ("Both", "PIL only", or "PER only")
+ * @param cachedEntries - Optional pre-fetched ULD entries from Supabase
  */
-function calculateTotalMarkedULDs(flightNumber: string, loadPlanDetail: LoadPlanDetail, workAreaFilter?: WorkArea, pilPerSubFilter?: PilPerSubFilter): number {
+function calculateTotalMarkedULDs(
+  flightNumber: string, 
+  loadPlanDetail: LoadPlanDetail, 
+  workAreaFilter?: WorkArea, 
+  pilPerSubFilter?: PilPerSubFilter,
+  cachedEntries?: Map<string, ULDEntry[]>
+): number {
   if (typeof window === 'undefined') return 0
   
   try {
-    // Use utility function to get entries with checked state
-    const entriesMap = getULDEntriesFromStorage(flightNumber, loadPlanDetail.sectors)
+    // Use pre-fetched entries from Supabase if available, otherwise fall back to localStorage
+    const entriesMap = cachedEntries || getULDEntriesFromStorage(flightNumber, loadPlanDetail.sectors)
     
     let markedCount = 0
     
@@ -318,6 +325,7 @@ function FlightsViewScreenContent() {
   const [isLoading, setIsLoading] = useState(true)
   const [flightCompletions, setFlightCompletions] = useState<Map<string, FlightCompletion>>(new Map())
   const [loadPlanDetailsCache, setLoadPlanDetailsCache] = useState<Map<string, LoadPlanDetail>>(new Map())
+  const [uldEntriesCache, setUldEntriesCache] = useState<Map<string, Map<string, ULDEntry[]>>>(new Map())
   // Work area filter hook - now uses shared context
   const { selectedWorkArea, pilPerSubFilter } = useWorkAreaFilter()
   const [selectedShift, setSelectedShift] = useState<Shift>("All" as Shift)
@@ -344,8 +352,9 @@ function FlightsViewScreenContent() {
         if (supabaseLoadPlans.length > 0) {
           setLoadPlans(supabaseLoadPlans)
           
-          // Fetch load plan details for all flights to enable filtered completion calculations
+          // Fetch load plan details AND ULD entries for all flights to enable filtered completion calculations
           const detailsCache = new Map<string, LoadPlanDetail>()
+          const entriesCache = new Map<string, Map<string, ULDEntry[]>>()
           const completions = new Map<string, FlightCompletion>()
           
           await Promise.all(
@@ -354,6 +363,10 @@ function FlightsViewScreenContent() {
                 const detail = await getLoadPlanDetailFromSupabase(plan.flight)
                 if (detail) {
                   detailsCache.set(plan.flight, detail)
+                  
+                  // Also fetch ULD entries from Supabase for this flight
+                  const uldEntries = await getULDEntriesFromSupabase(plan.flight, detail.sectors)
+                  entriesCache.set(plan.flight, uldEntries)
                 }
               } catch (err) {
                 console.error(`[FlightsViewScreen] Error fetching detail for ${plan.flight}:`, err)
@@ -362,6 +375,7 @@ function FlightsViewScreenContent() {
           )
           
           setLoadPlanDetailsCache(detailsCache)
+          setUldEntriesCache(entriesCache)
           
           // Calculate initial completions (will be recalculated when filter changes)
           supabaseLoadPlans.forEach(plan => {
@@ -390,11 +404,12 @@ function FlightsViewScreenContent() {
     
     loadPlans.forEach(plan => {
       const cachedDetail = loadPlanDetailsCache.get(plan.flight)
+      const cachedEntries = uldEntriesCache.get(plan.flight)
       
       // Always use detail-based calculation if available (same as load plan detail screen)
       if (cachedDetail) {
         const totalPlannedULDs = calculateTotalPlannedULDs(cachedDetail, selectedWorkArea, pilPerSubFilter)
-        const totalMarkedULDs = calculateTotalMarkedULDs(plan.flight, cachedDetail, selectedWorkArea, pilPerSubFilter)
+        const totalMarkedULDs = calculateTotalMarkedULDs(plan.flight, cachedDetail, selectedWorkArea, pilPerSubFilter, cachedEntries)
         const completionPercentage = totalPlannedULDs > 0 
           ? Math.round((totalMarkedULDs / totalPlannedULDs) * 100) 
           : 0
@@ -421,7 +436,7 @@ function FlightsViewScreenContent() {
     })
     
     setFlightCompletions(recalculatedCompletions)
-  }, [loadPlans, loadPlanDetailsCache, selectedWorkArea, pilPerSubFilter, uldUpdateTrigger])
+  }, [loadPlans, loadPlanDetailsCache, uldEntriesCache, selectedWorkArea, pilPerSubFilter, uldUpdateTrigger])
 
   // Generate hourly time options (00:00 to 23:00)
   const timeOptions = useMemo(() => {
