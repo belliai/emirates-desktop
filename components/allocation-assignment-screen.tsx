@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useRef, useState } from "react"
-import { Calendar, User, Phone, Plus, Search, SlidersHorizontal, Settings2, ArrowUpDown, Plane, ChevronsUpDown, Check, MapPin, FileText } from "lucide-react"
+import { Calendar, Clock, User, Phone, Plus, Search, SlidersHorizontal, Settings2, ArrowUpDown, Plane, ChevronsUpDown, Check, MapPin, FileText } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
@@ -92,6 +92,7 @@ type CombinedRow = {
   carrier: string
   flightNo: string
   flightKey: string
+  date: string
   etd: string
   routing: string
   staff: string
@@ -261,18 +262,20 @@ export default function AllocationAssignmentScreen() {
   }, [flightAssignments])
 
   const loadPlanMap = useMemo(() => {
-    const map = new Map<string, { std: string; pax: string; acftType: string }>()
+    const map = new Map<string, { std: string; pax: string; acftType: string; date: string }>()
     loadPlans.forEach((plan) => {
       const normalizedKey = normalizeFlightKey(plan.flight)
       map.set(plan.flight, {
         std: plan.std,
         pax: plan.pax,
         acftType: plan.acftType,
+        date: plan.date || "",
       })
       map.set(normalizedKey, {
         std: plan.std,
         pax: plan.pax,
         acftType: plan.acftType,
+        date: plan.date || "",
       })
     })
     return map
@@ -290,6 +293,7 @@ export default function AllocationAssignmentScreen() {
       shiftType,
       period,
       wave,
+      date: inputDate,
     }: {
       flightNo: string
       carrier: string
@@ -300,6 +304,7 @@ export default function AllocationAssignmentScreen() {
       shiftType: ShiftType
       period: PeriodType
       wave: WaveType | null
+      date?: string
     }) => {
       const normalizedNo = normalizeFlightNo(flightNo)
       const flightKey = `${carrier}${normalizedNo}`
@@ -313,6 +318,7 @@ export default function AllocationAssignmentScreen() {
       const std = assignment?.std || loadPlan?.std || etd
       const staff = assignment?.name || ""
       const mobile = staff ? getMobileForStaff(staff) : ""
+      const date = inputDate || assignment?.date || loadPlan?.date || ""
 
       // Calculate completion from load plan detail cache
       let completionPercentage = 0
@@ -330,6 +336,7 @@ export default function AllocationAssignmentScreen() {
         carrier,
         flightNo,
         flightKey,
+        date,
         etd,
         routing,
         staff,
@@ -384,6 +391,7 @@ export default function AllocationAssignmentScreen() {
         shiftType,
         period,
         wave,
+        date: plan.date || "",
       })
     })
 
@@ -777,7 +785,10 @@ export default function AllocationAssignmentScreen() {
                       <div className="flex items-center gap-1.5"><Plane className="w-4 h-4" />Flight</div>
                     </th>
                     <th className="px-3 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
-                      <div className="flex items-center gap-1.5"><Calendar className="w-4 h-4" />ETD</div>
+                      <div className="flex items-center gap-1.5"><Calendar className="w-4 h-4" />Date</div>
+                    </th>
+                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
+                      <div className="flex items-center gap-1.5"><Clock className="w-4 h-4" />ETD</div>
                     </th>
                     <th className="px-3 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
                       <div className="flex items-center gap-1.5"><MapPin className="w-4 h-4" />Routing</div>
@@ -821,6 +832,7 @@ export default function AllocationAssignmentScreen() {
                           />
                         </td>
                         <td className="px-3 py-3 whitespace-nowrap text-sm font-medium text-gray-900">{row.carrier}{row.flightNo}</td>
+                        <td className="px-3 py-3 whitespace-nowrap text-sm text-gray-700">{row.date || "-"}</td>
                         <td className="px-3 py-3 whitespace-nowrap text-sm text-gray-700">{row.etd}</td>
                         <td className={`px-3 py-3 whitespace-nowrap text-sm text-gray-700 ${originColor}`}>{row.routing || "-"}</td>
                         <td className="px-3 py-3 whitespace-nowrap text-xs">

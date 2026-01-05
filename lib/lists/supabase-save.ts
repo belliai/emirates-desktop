@@ -259,8 +259,9 @@ export async function saveListsDataToSupabase({
     const stdTime = parseTimeString(results.header.std)
     const preparedOn = parseDateTimeString(results.header.preparedOn)
 
-    // Format date to YYYY-MM-DD
-    const flightDateStr = flightDate.toISOString().split('T')[0]
+    // Format date to YYYY-MM-DD using LOCAL date (not UTC) to avoid timezone shifting
+    // toISOString() converts to UTC which can shift the day backwards in timezones ahead of UTC
+    const flightDateStr = `${flightDate.getFullYear()}-${String(flightDate.getMonth() + 1).padStart(2, '0')}-${String(flightDate.getDate()).padStart(2, '0')}`
     
     // Ensure required fields are not null
     const flightNumber = results.header.flightNumber?.trim() || "UNKNOWN"
@@ -269,10 +270,11 @@ export async function saveListsDataToSupabase({
     const isCorrectVersion = results.header.isCorrectVersion === true
     console.log(`[v0] Load plan mode: ${isCorrectVersion ? 'REVISED (contains cor/corr)' : 'ADDITIONAL'}`)
     
-    console.log("[v0] Parsed data for load_plan:", {
+    console.log("[v0] 📅 Parsed data for load_plan:", {
       flight_number: flightNumber,
       flight_date: flightDateStr,
       date_original: results.header.date,
+      flightDateObject: flightDate,
       isCorrectVersion,
     })
 
@@ -303,6 +305,13 @@ export async function saveListsDataToSupabase({
     
     if (existingLoadPlan) {
       existingLoadPlanId = existingLoadPlan.id
+      console.log("[v0] 📋 Found EXISTING load plan:", {
+        id: existingLoadPlan.id,
+        existingAdjustedTtlPlnUld: existingLoadPlan.adjusted_ttl_pln_uld,
+        existingTotalPlannedUld: existingLoadPlan.total_planned_uld,
+        existingCourAllocation: existingLoadPlan.cour_allocation,
+        existingRampTransferUlds: existingLoadPlan.ramp_transfer_ulds,
+      })
       
       // Compare key fields to detect changes in load_plan
       const newTotalPlannedUld = results.header.ttlPlnUld || null
@@ -398,12 +407,13 @@ export async function saveListsDataToSupabase({
       uldExclusions.rampTransferUlds
     )
     
-    console.log("[v0] ULD Exclusions:", {
+    console.log("[v0] 🔄 FRESH CALCULATION - ULD Exclusions:", {
       original: results.header.ttlPlnUld,
       courAllocation: uldExclusions.courAllocation,
       mailAllocation: uldExclusions.mailAllocation,
       rampTransferUlds: uldExclusions.rampTransferUlds,
       adjusted: adjustedTtlPlnUld,
+      existingLoadPlanFound: !!existingLoadPlan,
     })
 
     // 1. Prepare insert/update data (core fields only - ULD exclusion fields added separately)
@@ -434,6 +444,8 @@ export async function saveListsDataToSupabase({
       ramp_transfer_ulds: uldExclusions.rampTransferUlds || null,
       adjusted_ttl_pln_uld: adjustedTtlPlnUld || null,
     }
+    
+    console.log("[v0] 💾 ULD exclusion fields to save:", uldExclusionFields)
     
     // Log header data for debugging
     console.log("[v0] Header data to save:", {

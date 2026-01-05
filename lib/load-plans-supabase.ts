@@ -637,8 +637,25 @@ export async function deleteLoadPlanFromSupabase(flightNumber: string): Promise<
     }
 
     const loadPlanId = loadPlan.id
+    console.log(`[LoadPlans] 🗑️ Deleting load plan ${flightNumber} with ID: ${loadPlanId}`)
 
-    // Delete all load_plan_items associated with this load plan first
+    // Delete all uld_entries associated with this load plan first
+    const { error: uldEntriesDeleteError } = await supabase
+      .from("uld_entries")
+      .delete()
+      .eq("load_plan_id", loadPlanId)
+
+    if (uldEntriesDeleteError) {
+      console.warn("[LoadPlans] Warning deleting ULD entries (may not exist):", {
+        code: uldEntriesDeleteError.code,
+        message: uldEntriesDeleteError.message,
+      })
+      // Continue even if uld_entries deletion fails - table might not exist
+    } else {
+      console.log(`[LoadPlans] ✅ Deleted ULD entries for ${flightNumber}`)
+    }
+
+    // Delete all load_plan_items associated with this load plan
     const { error: itemsDeleteError } = await supabase
       .from("load_plan_items")
       .delete()
@@ -652,7 +669,7 @@ export async function deleteLoadPlanFromSupabase(flightNumber: string): Promise<
       return { success: false, error: `Failed to delete load plan items: ${itemsDeleteError.message}` }
     }
 
-    console.log(`[LoadPlans] Successfully deleted load plan items for ${flightNumber}`)
+    console.log(`[LoadPlans] ✅ Deleted load plan items for ${flightNumber}`)
 
     // Now delete the load plan itself
     const { error: loadPlanDeleteError } = await supabase
@@ -668,7 +685,7 @@ export async function deleteLoadPlanFromSupabase(flightNumber: string): Promise<
       return { success: false, error: `Failed to delete load plan: ${loadPlanDeleteError.message}` }
     }
 
-    console.log(`[LoadPlans] Successfully deleted load plan ${flightNumber}`)
+    console.log(`[LoadPlans] ✅ Successfully deleted load plan ${flightNumber} (ID: ${loadPlanId})`)
     return { success: true }
   } catch (error) {
     console.error("[LoadPlans] Error deleting load plan:", error)

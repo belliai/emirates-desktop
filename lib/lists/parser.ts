@@ -3,6 +3,7 @@ import { extractImagesFromDOCX } from "./file-extractors"
 import { detectCriticalFromImages } from "./ocr-detector"
 
 export function parseHeader(content: string, fileName?: string): LoadPlanHeader {
+  console.warn("[v0] ⭐⭐⭐ parseHeader called - START ⭐⭐⭐")
   // Detect "cor" or "corr" in header or filename - indicates revised/correction load plan (not additional)
   // Check first 20 lines for patterns like "COR", "CORR", "CORRECT VERSION", "CORRECTION", etc.
   const firstLines = content.split("\n").slice(0, 20).join("\n").toLowerCase()
@@ -16,9 +17,37 @@ export function parseHeader(content: string, fileName?: string): LoadPlanHeader 
   const flightMatch = content.match(/EK\s*(\d{4})/i)
   const flightNumber = flightMatch ? `EK${flightMatch[1]}` : ""
 
-  // Parse date - support multiple months, not just Oct
-  const dateMatch = content.match(/(\d{1,2})\s*[-]?\s*(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)(?:\s*[-]?\s*(\d{4}))?/i)
-  const date = dateMatch ? dateMatch[0] : ""
+  // Parse flight date - specifically look for date right after flight number (EK0181 / 05Jan)
+  // This is more reliable than just finding any date in the content
+  const flightDateMatch = content.match(/EK\s*\d{4}\s*\/\s*(\d{1,2})\s*[-]?\s*(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)(?:\s*[-]?\s*(\d{4}))?/i)
+  
+  // Fallback to general date pattern if flight-specific pattern doesn't match
+  const generalDateMatch = content.match(/(\d{1,2})\s*[-]?\s*(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)(?:\s*[-]?\s*(\d{4}))?/i)
+  
+  // Prefer flight date pattern, fallback to general
+  let date = ""
+  if (flightDateMatch) {
+    // Reconstruct the date from the flight pattern match (groups 1, 2, 3 are day, month, year)
+    date = flightDateMatch[1] + flightDateMatch[2] + (flightDateMatch[3] ? flightDateMatch[3] : "")
+  } else if (generalDateMatch) {
+    date = generalDateMatch[0]
+  }
+  
+  // Debug: Log what date was extracted and from where
+  // Also check for the flight line specifically
+  const flightLineMatch = content.match(/EK\s*\d{4}[^\n]*/i)
+  console.log("[v0] 📅 Date parsing debug:", {
+    extractedDate: date,
+    flightLine: flightLineMatch ? flightLineMatch[0].substring(0, 100) : "No flight line found",
+    flightDateMatch: flightDateMatch ? {
+      fullMatch: flightDateMatch[0],
+      day: flightDateMatch[1],
+      month: flightDateMatch[2],
+      year: flightDateMatch[3] || "(no year - will use current)",
+    } : "❌ No flight date pattern (EKxxxx / date) found - check if '/' exists between flight# and date",
+    generalDateMatch: generalDateMatch ? generalDateMatch[0] : "No general date found",
+    usedPattern: flightDateMatch ? "✅ flight-specific (EKxxxx / date)" : "⚠️ general fallback (might pick wrong date!)",
+  })
 
   const acftTypeMatch = content.match(/ACFT\s+TYPE:\s*(\S+)/i)
   const aircraftType = acftTypeMatch ? acftTypeMatch[1] : ""
