@@ -55,7 +55,7 @@ const BOTH_PIL_PER_ULD_DATA = {
   mdQ6Q7: PIL_ULD_DATA.mdQ6Q7 + PER_ULD_DATA.mdQ6Q7,
 }
 
-// Data from CSV for Advance Planned v/s Built
+// Data from CSV for Processed vs Remaining
 const bdnData = {
   shift1: {
     timeRange: "0600-0900",
@@ -66,12 +66,12 @@ const bdnData = {
       sclrPcs: 0,
       total: 336,
     },
-    built: {
-      built: { pmcAmf: 105, alfPla: 5, akeRke: 68, sclrPcs: 0, total: 178 },
+    processed: {
+      processed: { pmcAmf: 105, alfPla: 5, akeRke: 68, sclrPcs: 0, total: 178 },
       thru: { pmcAmf: 0, alfPla: 0, akeRke: 0, sclrPcs: 0, total: 0 },
       total: { pmcAmf: 105, alfPla: 5, akeRke: 68, sclrPcs: 0, total: 178 },
     },
-    pending: {
+    remaining: {
       pmcAmf: 105,
       alfPla: 5,
       akeRke: 48,
@@ -88,12 +88,12 @@ const bdnData = {
       sclrPcs: 0,
       total: 255,
     },
-    built: {
-      built: { pmcAmf: 63, alfPla: 10, akeRke: 31, sclrPcs: 0, total: 104 },
+    processed: {
+      processed: { pmcAmf: 63, alfPla: 10, akeRke: 31, sclrPcs: 0, total: 104 },
       thru: { pmcAmf: 0, alfPla: 0, akeRke: 0, sclrPcs: 0, total: 0 },
       total: { pmcAmf: 63, alfPla: 10, akeRke: 31, sclrPcs: 0, total: 104 },
     },
-    pending: {
+    remaining: {
       pmcAmf: 96,
       alfPla: 7,
       akeRke: 48,
@@ -103,34 +103,34 @@ const bdnData = {
   },
 }
 
-const advanceChartData = [
+const processedChartData = [
   {
     shift: "0600-0900",
     planned: bdnData.shift1.planned.total,
-    advance: bdnData.shift1.built.total.total,
-    pending: bdnData.shift1.pending.total,
-    advancePMC: bdnData.shift1.built.total.pmcAmf,
-    advanceALF: bdnData.shift1.built.total.alfPla,
-    advanceAKE: bdnData.shift1.built.total.akeRke,
-    advanceSCLR: bdnData.shift1.built.total.sclrPcs,
-    pendingPMC: bdnData.shift1.pending.pmcAmf,
-    pendingALF: bdnData.shift1.pending.alfPla,
-    pendingAKE: bdnData.shift1.pending.akeRke,
-    pendingSCLR: bdnData.shift1.pending.sclrPcs,
+    processed: bdnData.shift1.processed.total.total,
+    remaining: bdnData.shift1.remaining.total,
+    processedPMC: bdnData.shift1.processed.total.pmcAmf,
+    processedALF: bdnData.shift1.processed.total.alfPla,
+    processedAKE: bdnData.shift1.processed.total.akeRke,
+    processedSCLR: bdnData.shift1.processed.total.sclrPcs,
+    remainingPMC: bdnData.shift1.remaining.pmcAmf,
+    remainingALF: bdnData.shift1.remaining.alfPla,
+    remainingAKE: bdnData.shift1.remaining.akeRke,
+    remainingSCLR: bdnData.shift1.remaining.sclrPcs,
   },
   {
     shift: "0901-1259",
     planned: bdnData.shift2.planned.total,
-    advance: bdnData.shift2.built.total.total,
-    pending: bdnData.shift2.pending.total,
-    advancePMC: bdnData.shift2.built.total.pmcAmf,
-    advanceALF: bdnData.shift2.built.total.alfPla,
-    advanceAKE: bdnData.shift2.built.total.akeRke,
-    advanceSCLR: bdnData.shift2.built.total.sclrPcs,
-    pendingPMC: bdnData.shift2.pending.pmcAmf,
-    pendingALF: bdnData.shift2.pending.alfPla,
-    pendingAKE: bdnData.shift2.pending.akeRke,
-    pendingSCLR: bdnData.shift2.pending.sclrPcs,
+    processed: bdnData.shift2.processed.total.total,
+    remaining: bdnData.shift2.remaining.total,
+    processedPMC: bdnData.shift2.processed.total.pmcAmf,
+    processedALF: bdnData.shift2.processed.total.alfPla,
+    processedAKE: bdnData.shift2.processed.total.akeRke,
+    processedSCLR: bdnData.shift2.processed.total.sclrPcs,
+    remainingPMC: bdnData.shift2.remaining.pmcAmf,
+    remainingALF: bdnData.shift2.remaining.alfPla,
+    remainingAKE: bdnData.shift2.remaining.akeRke,
+    remainingSCLR: bdnData.shift2.remaining.sclrPcs,
   },
 ]
 
@@ -201,8 +201,8 @@ function CustomTooltip({ active, payload, label }: { active?: boolean; payload?:
   )
 }
 
-// Custom tooltip for Advance Planned v/s Built chart
-function AdvanceTooltip({ active, payload }: { active?: boolean; payload?: Array<{ payload?: Record<string, number> }> }) {
+// Custom tooltip for Processed vs Remaining chart
+function ProcessedTooltip({ active, payload }: { active?: boolean; payload?: Array<{ payload?: Record<string, number> }> }) {
   if (active && payload && payload.length) {
     const data = payload[0].payload
     if (!data) return null
@@ -210,50 +210,50 @@ function AdvanceTooltip({ active, payload }: { active?: boolean; payload?: Array
       <div className="bg-white border border-gray-300 rounded-lg shadow-lg p-4 text-xs">
         <div className="font-semibold text-gray-900 mb-3 text-sm">{data.shift}</div>
         <div className="space-y-2">
-          <div className="font-semibold text-gray-700">Advance Built:</div>
+          <div className="font-semibold text-gray-700">Processed:</div>
           <div className="pl-2 space-y-1">
             <div className="flex justify-between gap-4">
               <span className="text-gray-600">PMC-AMF:</span>
-              <span className="font-semibold">{data.advancePMC}</span>
+              <span className="font-semibold">{data.processedPMC}</span>
             </div>
             <div className="flex justify-between gap-4">
               <span className="text-gray-600">ALF-PLA:</span>
-              <span className="font-semibold">{data.advanceALF}</span>
+              <span className="font-semibold">{data.processedALF}</span>
             </div>
             <div className="flex justify-between gap-4">
               <span className="text-gray-600">AKE-RKE:</span>
-              <span className="font-semibold">{data.advanceAKE}</span>
+              <span className="font-semibold">{data.processedAKE}</span>
             </div>
             <div className="flex justify-between gap-4">
               <span className="text-gray-600">SCLR Pcs:</span>
-              <span className="font-semibold">{data.advanceSCLR}</span>
+              <span className="font-semibold">{data.processedSCLR}</span>
             </div>
             <div className="flex justify-between gap-4 pt-1 border-t border-gray-200 mt-1">
               <span className="font-semibold text-gray-700">Total:</span>
-              <span className="font-semibold">{data.advance}</span>
+              <span className="font-semibold">{data.processed}</span>
             </div>
           </div>
-          <div className="font-semibold text-gray-700 mt-3">Pending:</div>
+          <div className="font-semibold text-gray-700 mt-3">Remaining:</div>
           <div className="pl-2 space-y-1">
             <div className="flex justify-between gap-4">
               <span className="text-gray-600">PMC-AMF:</span>
-              <span className="font-semibold">{data.pendingPMC}</span>
+              <span className="font-semibold">{data.remainingPMC}</span>
             </div>
             <div className="flex justify-between gap-4">
               <span className="text-gray-600">ALF-PLA:</span>
-              <span className="font-semibold">{data.pendingALF}</span>
+              <span className="font-semibold">{data.remainingALF}</span>
             </div>
             <div className="flex justify-between gap-4">
               <span className="text-gray-600">AKE-RKE:</span>
-              <span className="font-semibold">{data.pendingAKE}</span>
+              <span className="font-semibold">{data.remainingAKE}</span>
             </div>
             <div className="flex justify-between gap-4">
               <span className="text-gray-600">SCLR Pcs:</span>
-              <span className="font-semibold">{data.pendingSCLR}</span>
+              <span className="font-semibold">{data.remainingSCLR}</span>
             </div>
             <div className="flex justify-between gap-4 pt-1 border-t border-gray-200 mt-1">
               <span className="font-semibold text-gray-700">Total:</span>
-              <span className="font-semibold">{data.pending}</span>
+              <span className="font-semibold">{data.remaining}</span>
             </div>
           </div>
           <div className="flex justify-between gap-4 pt-2 border-t border-gray-300 mt-2">
@@ -434,9 +434,9 @@ export default function BDNDashboardScreen() {
               <option value="PER only">PER only</option>
             </select>
           )}
-
-          <div className="w-px h-6 bg-gray-200" />
-
+              
+              <div className="w-px h-6 bg-gray-200" />
+              
           {/* Module Filter - filtered based on active chip */}
           <select
             id="module-filter"
@@ -450,30 +450,30 @@ export default function BDNDashboardScreen() {
               </option>
             ))}
           </select>
-        </div>
+            </div>
 
         {/* Workload by ULD Graph */}
         <div className="bg-white rounded-lg border border-gray-200 p-6 mb-4">
           <h3 className="text-lg font-semibold text-gray-900 mb-4">Workload by ULD{chartTitleSuffix}</h3>
-          <div className="h-80">
-            <ResponsiveContainer width="100%" height="100%">
+              <div className="h-80">
+                <ResponsiveContainer width="100%" height="100%">
               <BarChart data={chartData} margin={{ top: 5, right: 5, left: 0, bottom: 5 }} barCategoryGap="35%" barGap={0}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
-                <XAxis
+                    <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
+                    <XAxis
                   dataKey="type"
-                  tick={{ fontSize: 12, fill: "#6B7280" }}
-                  stroke="#9CA3AF"
+                      tick={{ fontSize: 12, fill: "#6B7280" }}
+                      stroke="#9CA3AF"
                   type="category"
                   interval={0}
-                />
-                <YAxis
-                  tick={{ fontSize: 12, fill: "#6B7280" }}
-                  stroke="#9CA3AF"
-                />
-                <Tooltip content={<CustomTooltip />} />
-                <Legend 
+                    />
+                    <YAxis
+                      tick={{ fontSize: 12, fill: "#6B7280" }}
+                      stroke="#9CA3AF"
+                    />
+                    <Tooltip content={<CustomTooltip />} />
+                    <Legend
                   wrapperStyle={{ fontSize: "12px", paddingTop: "20px", pointerEvents: "none" }} 
-                  iconSize={12}
+                      iconSize={12}
                   content={() => {
                     if (isShowingPilPer) {
                       return (
@@ -528,21 +528,21 @@ export default function BDNDashboardScreen() {
 
         {/* Lower Half - Split into Left and Right */}
         <div className="flex gap-4">
-          {/* Left Half - Advance Planned v/s Built */}
+          {/* Left Half - Processed vs Remaining */}
           <div className="w-1/2 space-y-4">
             {/* Single Bar Chart */}
             <div className="bg-white rounded-lg border border-gray-200 p-6">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">Advance Planned v/s Built</h3>
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">Processed vs Remaining</h3>
               <div className="h-80">
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={advanceChartData}>
+                  <BarChart data={processedChartData}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
                     <XAxis dataKey="shift" tick={{ fontSize: 12, fill: "#6B7280" }} stroke="#9CA3AF" />
                     <YAxis tick={{ fontSize: 12, fill: "#6B7280" }} stroke="#9CA3AF" />
-                    <Tooltip content={<AdvanceTooltip />} />
+                    <Tooltip content={<ProcessedTooltip />} />
                     <Legend wrapperStyle={{ fontSize: "12px", paddingTop: "20px" }} iconSize={12} />
-                    <Bar dataKey="advance" stackId="stack" fill="#DC2626" name="Advance Built" radius={[0, 0, 0, 0]} />
-                    <Bar dataKey="pending" stackId="stack" fill="rgba(220, 38, 38, 0.4)" name="Pending" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="processed" stackId="stack" fill="#DC2626" name="Processed" radius={[0, 0, 0, 0]} />
+                    <Bar dataKey="remaining" stackId="stack" fill="rgba(220, 38, 38, 0.4)" name="Remaining" radius={[4, 4, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -561,7 +561,7 @@ export default function BDNDashboardScreen() {
                   <div className="p-4 space-y-6">
                     {/* Shift 1: 0600-0900 */}
                     <div className="space-y-4">
-                      <h4 className="text-base font-semibold text-gray-900">Advance planned v/s Built ({bdnData.shift1.timeRange})</h4>
+                      <h4 className="text-base font-semibold text-gray-900">Processed vs Remaining ({bdnData.shift1.timeRange})</h4>
                       <div>
                         <div className="text-sm font-medium text-gray-700 mb-2">Planned</div>
                         <table className="w-full text-xs border border-gray-300">
@@ -588,7 +588,7 @@ export default function BDNDashboardScreen() {
                         </table>
                       </div>
                       <div>
-                        <div className="text-sm font-medium text-gray-700 mb-2">Advance built</div>
+                        <div className="text-sm font-medium text-gray-700 mb-2">Processed</div>
                         <table className="w-full text-xs border border-gray-300">
                           <thead>
                             <tr className="bg-gray-50">
@@ -602,34 +602,34 @@ export default function BDNDashboardScreen() {
                           </thead>
                           <tbody>
                             <tr>
-                              <td className="px-3 py-2 border border-gray-300 font-medium">Built</td>
-                              <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift1.built.built.pmcAmf}</td>
-                              <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift1.built.built.alfPla}</td>
-                              <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift1.built.built.akeRke}</td>
-                              <td className="px-3 py-2 border border-gray-300 text-center bg-yellow-100">{bdnData.shift1.built.built.sclrPcs}</td>
-                              <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift1.built.built.total}</td>
+                              <td className="px-3 py-2 border border-gray-300 font-medium">Processed</td>
+                              <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift1.processed.processed.pmcAmf}</td>
+                              <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift1.processed.processed.alfPla}</td>
+                              <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift1.processed.processed.akeRke}</td>
+                              <td className="px-3 py-2 border border-gray-300 text-center bg-yellow-100">{bdnData.shift1.processed.processed.sclrPcs}</td>
+                              <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift1.processed.processed.total}</td>
                             </tr>
                             <tr>
                               <td className="px-3 py-2 border border-gray-300 font-medium">Thru</td>
-                              <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift1.built.thru.pmcAmf}</td>
-                              <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift1.built.thru.alfPla}</td>
-                              <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift1.built.thru.akeRke}</td>
-                              <td className="px-3 py-2 border border-gray-300 text-center bg-yellow-100">{bdnData.shift1.built.thru.sclrPcs}</td>
-                              <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift1.built.thru.total}</td>
+                              <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift1.processed.thru.pmcAmf}</td>
+                              <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift1.processed.thru.alfPla}</td>
+                              <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift1.processed.thru.akeRke}</td>
+                              <td className="px-3 py-2 border border-gray-300 text-center bg-yellow-100">{bdnData.shift1.processed.thru.sclrPcs}</td>
+                              <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift1.processed.thru.total}</td>
                             </tr>
                             <tr className="bg-gray-50 font-semibold">
                               <td className="px-3 py-2 border border-gray-300">TOTAL</td>
-                              <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift1.built.total.pmcAmf}</td>
-                              <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift1.built.total.alfPla}</td>
-                              <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift1.built.total.akeRke}</td>
-                              <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift1.built.total.sclrPcs}</td>
-                              <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift1.built.total.total}</td>
+                              <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift1.processed.total.pmcAmf}</td>
+                              <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift1.processed.total.alfPla}</td>
+                              <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift1.processed.total.akeRke}</td>
+                              <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift1.processed.total.sclrPcs}</td>
+                              <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift1.processed.total.total}</td>
                             </tr>
                           </tbody>
                         </table>
                       </div>
                       <div>
-                        <div className="text-sm font-medium text-gray-700 mb-2">Pending</div>
+                        <div className="text-sm font-medium text-gray-700 mb-2">Remaining</div>
                         <table className="w-full text-xs border border-gray-300">
                           <thead>
                             <tr className="bg-gray-50">
@@ -644,11 +644,11 @@ export default function BDNDashboardScreen() {
                           <tbody>
                             <tr>
                               <td className="px-3 py-2 border border-gray-300 font-medium">To action</td>
-                              <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift1.pending.pmcAmf}</td>
-                              <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift1.pending.alfPla}</td>
-                              <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift1.pending.akeRke}</td>
-                              <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift1.pending.sclrPcs}</td>
-                              <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift1.pending.total}</td>
+                              <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift1.remaining.pmcAmf}</td>
+                              <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift1.remaining.alfPla}</td>
+                              <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift1.remaining.akeRke}</td>
+                              <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift1.remaining.sclrPcs}</td>
+                              <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift1.remaining.total}</td>
                             </tr>
                           </tbody>
                         </table>
@@ -657,7 +657,7 @@ export default function BDNDashboardScreen() {
 
                     {/* Shift 2: 0901-1259 */}
                     <div className="space-y-4 border-t border-gray-300 pt-6">
-                      <h4 className="text-base font-semibold text-gray-900">Advance planned v/s Built ({bdnData.shift2.timeRange})</h4>
+                      <h4 className="text-base font-semibold text-gray-900">Processed vs Remaining ({bdnData.shift2.timeRange})</h4>
                       <div>
                         <div className="text-sm font-medium text-gray-700 mb-2">Planned</div>
                         <table className="w-full text-xs border border-gray-300">
@@ -684,7 +684,7 @@ export default function BDNDashboardScreen() {
                         </table>
                       </div>
                       <div>
-                        <div className="text-sm font-medium text-gray-700 mb-2">Advance built</div>
+                        <div className="text-sm font-medium text-gray-700 mb-2">Processed</div>
                         <table className="w-full text-xs border border-gray-300">
                           <thead>
                             <tr className="bg-gray-50">
@@ -698,34 +698,34 @@ export default function BDNDashboardScreen() {
                           </thead>
                           <tbody>
                             <tr>
-                              <td className="px-3 py-2 border border-gray-300 font-medium">Built</td>
-                              <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift2.built.built.pmcAmf}</td>
-                              <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift2.built.built.alfPla}</td>
-                              <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift2.built.built.akeRke}</td>
-                              <td className="px-3 py-2 border border-gray-300 text-center bg-yellow-100">{bdnData.shift2.built.built.sclrPcs}</td>
-                              <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift2.built.built.total}</td>
+                              <td className="px-3 py-2 border border-gray-300 font-medium">Processed</td>
+                              <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift2.processed.processed.pmcAmf}</td>
+                              <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift2.processed.processed.alfPla}</td>
+                              <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift2.processed.processed.akeRke}</td>
+                              <td className="px-3 py-2 border border-gray-300 text-center bg-yellow-100">{bdnData.shift2.processed.processed.sclrPcs}</td>
+                              <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift2.processed.processed.total}</td>
                             </tr>
                             <tr>
                               <td className="px-3 py-2 border border-gray-300 font-medium">Thru</td>
-                              <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift2.built.thru.pmcAmf}</td>
-                              <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift2.built.thru.alfPla}</td>
-                              <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift2.built.thru.akeRke}</td>
-                              <td className="px-3 py-2 border border-gray-300 text-center bg-yellow-100">{bdnData.shift2.built.thru.sclrPcs}</td>
-                              <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift2.built.thru.total}</td>
+                              <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift2.processed.thru.pmcAmf}</td>
+                              <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift2.processed.thru.alfPla}</td>
+                              <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift2.processed.thru.akeRke}</td>
+                              <td className="px-3 py-2 border border-gray-300 text-center bg-yellow-100">{bdnData.shift2.processed.thru.sclrPcs}</td>
+                              <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift2.processed.thru.total}</td>
                             </tr>
                             <tr className="bg-gray-50 font-semibold">
                               <td className="px-3 py-2 border border-gray-300">TOTAL</td>
-                              <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift2.built.total.pmcAmf}</td>
-                              <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift2.built.total.alfPla}</td>
-                              <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift2.built.total.akeRke}</td>
-                              <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift2.built.total.sclrPcs}</td>
-                              <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift2.built.total.total}</td>
+                              <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift2.processed.total.pmcAmf}</td>
+                              <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift2.processed.total.alfPla}</td>
+                              <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift2.processed.total.akeRke}</td>
+                              <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift2.processed.total.sclrPcs}</td>
+                              <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift2.processed.total.total}</td>
                             </tr>
                           </tbody>
                         </table>
                       </div>
                       <div>
-                        <div className="text-sm font-medium text-gray-700 mb-2">Pending</div>
+                        <div className="text-sm font-medium text-gray-700 mb-2">Remaining</div>
                         <table className="w-full text-xs border border-gray-300">
                           <thead>
                             <tr className="bg-gray-50">
@@ -740,20 +740,20 @@ export default function BDNDashboardScreen() {
                           <tbody>
                             <tr>
                               <td className="px-3 py-2 border border-gray-300 font-medium">To action</td>
-                              <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift2.pending.pmcAmf}</td>
-                              <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift2.pending.alfPla}</td>
-                              <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift2.pending.akeRke}</td>
-                              <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift2.pending.sclrPcs}</td>
-                              <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift2.pending.total}</td>
+                              <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift2.remaining.pmcAmf}</td>
+                              <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift2.remaining.alfPla}</td>
+                              <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift2.remaining.akeRke}</td>
+                              <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift2.remaining.sclrPcs}</td>
+                              <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift2.remaining.total}</td>
                             </tr>
                           </tbody>
                         </table>
                       </div>
                     </div>
 
-                    {/* Total Advance */}
+                    {/* Total Processed */}
                     <div className="space-y-4 border-t border-gray-300 pt-6">
-                      <h4 className="text-base font-semibold text-gray-900">Total Advance</h4>
+                      <h4 className="text-base font-semibold text-gray-900">Total Processed</h4>
                       <table className="w-full text-xs border border-gray-300">
                         <thead>
                           <tr className="bg-gray-50">
@@ -768,35 +768,35 @@ export default function BDNDashboardScreen() {
                         <tbody>
                           <tr>
                             <td className="px-3 py-2 border border-gray-300 font-medium">{bdnData.shift1.timeRange}</td>
-                            <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift1.built.total.pmcAmf}</td>
-                            <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift1.built.total.alfPla}</td>
-                            <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift1.built.total.akeRke}</td>
-                            <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift1.built.total.sclrPcs}</td>
-                            <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift1.built.total.total}</td>
+                            <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift1.processed.total.pmcAmf}</td>
+                            <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift1.processed.total.alfPla}</td>
+                            <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift1.processed.total.akeRke}</td>
+                            <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift1.processed.total.sclrPcs}</td>
+                            <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift1.processed.total.total}</td>
                           </tr>
                           <tr>
                             <td className="px-3 py-2 border border-gray-300 font-medium">{bdnData.shift2.timeRange}</td>
-                            <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift2.built.total.pmcAmf}</td>
-                            <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift2.built.total.alfPla}</td>
-                            <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift2.built.total.akeRke}</td>
-                            <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift2.built.total.sclrPcs}</td>
-                            <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift2.built.total.total}</td>
+                            <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift2.processed.total.pmcAmf}</td>
+                            <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift2.processed.total.alfPla}</td>
+                            <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift2.processed.total.akeRke}</td>
+                            <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift2.processed.total.sclrPcs}</td>
+                            <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift2.processed.total.total}</td>
                           </tr>
                           <tr className="bg-gray-50 font-semibold">
                             <td className="px-3 py-2 border border-gray-300">TOTAL</td>
-                            <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift1.built.total.pmcAmf + bdnData.shift2.built.total.pmcAmf}</td>
-                            <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift1.built.total.alfPla + bdnData.shift2.built.total.alfPla}</td>
-                            <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift1.built.total.akeRke + bdnData.shift2.built.total.akeRke}</td>
-                            <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift1.built.total.sclrPcs + bdnData.shift2.built.total.sclrPcs}</td>
-                            <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift1.built.total.total + bdnData.shift2.built.total.total}</td>
+                            <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift1.processed.total.pmcAmf + bdnData.shift2.processed.total.pmcAmf}</td>
+                            <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift1.processed.total.alfPla + bdnData.shift2.processed.total.alfPla}</td>
+                            <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift1.processed.total.akeRke + bdnData.shift2.processed.total.akeRke}</td>
+                            <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift1.processed.total.sclrPcs + bdnData.shift2.processed.total.sclrPcs}</td>
+                            <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift1.processed.total.total + bdnData.shift2.processed.total.total}</td>
                           </tr>
                         </tbody>
                       </table>
                     </div>
 
-                    {/* Total Pending */}
+                    {/* Total Remaining */}
                     <div className="space-y-4 border-t border-gray-300 pt-6">
-                      <h4 className="text-base font-semibold text-gray-900">Total Pending</h4>
+                      <h4 className="text-base font-semibold text-gray-900">Total Remaining</h4>
                       <table className="w-full text-xs border border-gray-300">
                         <thead>
                           <tr className="bg-gray-50">
@@ -811,27 +811,27 @@ export default function BDNDashboardScreen() {
                         <tbody>
                           <tr>
                             <td className="px-3 py-2 border border-gray-300 font-medium">{bdnData.shift1.timeRange}</td>
-                            <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift1.pending.pmcAmf}</td>
-                            <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift1.pending.alfPla}</td>
-                            <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift1.pending.akeRke}</td>
-                            <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift1.pending.sclrPcs}</td>
-                            <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift1.pending.total}</td>
+                            <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift1.remaining.pmcAmf}</td>
+                            <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift1.remaining.alfPla}</td>
+                            <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift1.remaining.akeRke}</td>
+                            <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift1.remaining.sclrPcs}</td>
+                            <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift1.remaining.total}</td>
                           </tr>
                           <tr>
                             <td className="px-3 py-2 border border-gray-300 font-medium">{bdnData.shift2.timeRange}</td>
-                            <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift2.pending.pmcAmf}</td>
-                            <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift2.pending.alfPla}</td>
-                            <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift2.pending.akeRke}</td>
-                            <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift2.pending.sclrPcs}</td>
-                            <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift2.pending.total}</td>
+                            <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift2.remaining.pmcAmf}</td>
+                            <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift2.remaining.alfPla}</td>
+                            <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift2.remaining.akeRke}</td>
+                            <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift2.remaining.sclrPcs}</td>
+                            <td className="px-3 py-2 border border-gray-300 text-center">{bdnData.shift2.remaining.total}</td>
                           </tr>
                           <tr className="bg-red-50 font-semibold">
                             <td className="px-3 py-2 border border-gray-300">TOTAL</td>
-                            <td className="px-3 py-2 border border-gray-300 text-center text-red-600">{bdnData.shift1.pending.pmcAmf + bdnData.shift2.pending.pmcAmf}</td>
-                            <td className="px-3 py-2 border border-gray-300 text-center text-red-600">{bdnData.shift1.pending.alfPla + bdnData.shift2.pending.alfPla}</td>
-                            <td className="px-3 py-2 border border-gray-300 text-center text-red-600">{bdnData.shift1.pending.akeRke + bdnData.shift2.pending.akeRke}</td>
-                            <td className="px-3 py-2 border border-gray-300 text-center text-red-600">{bdnData.shift1.pending.sclrPcs + bdnData.shift2.pending.sclrPcs}</td>
-                            <td className="px-3 py-2 border border-gray-300 text-center text-red-600">{bdnData.shift1.pending.total + bdnData.shift2.pending.total}</td>
+                            <td className="px-3 py-2 border border-gray-300 text-center text-red-600">{bdnData.shift1.remaining.pmcAmf + bdnData.shift2.remaining.pmcAmf}</td>
+                            <td className="px-3 py-2 border border-gray-300 text-center text-red-600">{bdnData.shift1.remaining.alfPla + bdnData.shift2.remaining.alfPla}</td>
+                            <td className="px-3 py-2 border border-gray-300 text-center text-red-600">{bdnData.shift1.remaining.akeRke + bdnData.shift2.remaining.akeRke}</td>
+                            <td className="px-3 py-2 border border-gray-300 text-center text-red-600">{bdnData.shift1.remaining.sclrPcs + bdnData.shift2.remaining.sclrPcs}</td>
+                            <td className="px-3 py-2 border border-gray-300 text-center text-red-600">{bdnData.shift1.remaining.total + bdnData.shift2.remaining.total}</td>
                           </tr>
                         </tbody>
                       </table>
@@ -840,7 +840,7 @@ export default function BDNDashboardScreen() {
                 </div>
               </CollapsibleContent>
             </Collapsible>
-          </div>
+                  </div>
 
           {/* Right Half - Screening Summary */}
           <div className="w-1/2 space-y-4">
@@ -889,7 +889,7 @@ export default function BDNDashboardScreen() {
                 <div className="bg-white rounded-lg border border-gray-200 p-4 flex items-center justify-between hover:bg-gray-50 transition-colors">
                   <h3 className="text-lg font-semibold text-gray-900">Detailed Breakdown</h3>
                   {isScreeningTableOpen ? <ChevronDown className="w-5 h-5 text-gray-600" /> : <ChevronRight className="w-5 h-5 text-gray-600" />}
-                </div>
+                              </div>
               </CollapsibleTrigger>
               <CollapsibleContent>
                 <div className="bg-white rounded-lg border border-gray-200 border-t-0 overflow-hidden">
@@ -986,8 +986,8 @@ export default function BDNDashboardScreen() {
                             </tr>
                           </tbody>
                         </table>
-                      </div>
-                    </div>
+                              </div>
+                            </div>
 
                     {/* US SCREENING & LOADING DETAILS Table */}
                     <div className="space-y-4 border-t border-gray-300 pt-6">
