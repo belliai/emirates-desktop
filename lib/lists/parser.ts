@@ -209,14 +209,20 @@ export function parseUldAllocation(allocation: string, normalize: boolean = fals
   const result = new Map<string, number>()
   if (!allocation) return result
   
-  // Match patterns like "02QKE", "3PMC", "07AKE", etc.
-  // Pattern: optional digits followed by ULD type
-  const pattern = /(\d+)?(PMC|AKE|QKE|AKL|AMF|ALF|PLA|PAG|AMP|RKE|BULK)/gi
+  // Match patterns like "02QKE", "3PMC", "07AKE", "6RAP", etc.
+  // Pattern: digits (1-2) followed by any 2-4 letter ULD type code, or BULK
+  // This flexible pattern auto-captures new ULD types without code changes
+  const pattern = /(\d{1,2})([A-Z]{2,4})|\b(BULK)\b/gi
   const matches = allocation.matchAll(pattern)
   
   for (const match of matches) {
-    const count = match[1] ? parseInt(match[1], 10) : 1
-    const type = normalize ? normalizeUldType(match[2]) : match[2].toUpperCase()
+    // Handle two match types:
+    // 1. "6RAP", "02PMC" etc: match[1]=digits, match[2]=type
+    // 2. "BULK": match[3]="BULK"
+    const isBulk = match[3] !== undefined
+    const count = isBulk ? 1 : (match[1] ? parseInt(match[1], 10) : 1)
+    const rawType = isBulk ? match[3] : match[2]
+    const type = normalize ? normalizeUldType(rawType) : rawType.toUpperCase()
     result.set(type, (result.get(type) || 0) + count)
   }
   
@@ -361,7 +367,8 @@ export function parseUldExclusions(content: string, shipments?: Shipment[]): {
   // Find RAMP TRANSFER section and count ULD lines within it
   let inRampTransfer = false
   const rampTransferAllocation = new Map<string, number>()
-  const uldLinePattern = /^XX\s*(\d+)?(PMC|AKE|QKE|AKL|AMF|ALF|PLA|PAG|AMP|RKE|BULK)\s*XX$/i
+  // Flexible pattern: matches "XX 6RAP XX", "XX 02PMC XX", "XX BULK XX", etc.
+  const uldLinePattern = /^XX\s*(?:(\d{1,2})([A-Z]{2,4})|(BULK))\s*XX$/i
   
   console.log('[v0] Scanning for RAMP TRANSFER ULD lines...')
   
@@ -386,11 +393,15 @@ export function parseUldExclusions(content: string, shipments?: Shipment[]): {
       }
       
       // Match ULD lines within RAMP TRANSFER section
-      // Format: "XX 02PMC XX", "XX 2AKE XX", etc.
+      // Format: "XX 02PMC XX", "XX 2AKE XX", "XX 6RAP XX", etc.
       const uldMatch = trimmed.match(uldLinePattern)
       if (uldMatch) {
-        const count = uldMatch[1] ? parseInt(uldMatch[1], 10) : 1
-        const type = uldMatch[2].toUpperCase()
+        // Handle two match types:
+        // 1. "XX 6RAP XX" etc: uldMatch[1]=digits, uldMatch[2]=type
+        // 2. "XX BULK XX": uldMatch[3]="BULK"
+        const isBulk = uldMatch[3] !== undefined
+        const count = isBulk ? 1 : (uldMatch[1] ? parseInt(uldMatch[1], 10) : 1)
+        const type = isBulk ? uldMatch[3].toUpperCase() : uldMatch[2].toUpperCase()
         rampTransferAllocation.set(type, (rampTransferAllocation.get(type) || 0) + count)
         console.log('[v0] Found RAMP TRANSFER ULD line:', trimmed, '→', count, type)
       }

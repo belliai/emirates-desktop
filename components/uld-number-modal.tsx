@@ -101,7 +101,8 @@ export function ULDNumberModal({
   const prevInitialWorkTypesRef = useRef<string>("")
   
   // Available ULD types for dropdown
-  const availableTypes = ["PMC", "AKE", "QKE", "AKL", "AMF", "ALF", "PLA", "PAG", "AMP", "RKE", "BULK"]
+  // Note: The parser uses a flexible pattern to auto-capture new types, but dropdown needs predefined list
+  const availableTypes = ["PMC", "AKE", "QKE", "AKL", "AMF", "ALF", "PLA", "PAG", "AMP", "RKE", "RAP", "BULK"]
 
   useEffect(() => {
     // Only initialize when modal opens or when initial values actually change

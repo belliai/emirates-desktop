@@ -78,9 +78,11 @@ export function parseULDSection(uldString: string): { count: number; types: stri
     return { count: 0, types: [], expandedTypes: [] }
   }
   
-  // Match patterns like "01PMC", "02AKE", "BULK", etc.
-  // Pattern: digits followed by ULD type code (PMC, AKE, AKL, AMF, ALF, PLA, etc.) or BULK
-  const uldPattern = /\b(\d+)?(PMC|AKE|QKE|AKL|AMF|ALF|PLA|PAG|AMP|RKE|BULK)\b/gi
+  // Match patterns like "01PMC", "02AKE", "6RAP", "BULK", etc.
+  // Pattern: digits (1-2) followed by any 2-4 uppercase letter ULD type code
+  // This flexible pattern auto-captures new ULD types (RAP, RKN, etc.) without code changes
+  // BULK is handled specially as it typically appears without a number prefix
+  const uldPattern = /\b(\d{1,2})([A-Z]{2,4})\b|\b(BULK)\b/gi
   const matches = Array.from(cleaned.matchAll(uldPattern))
   
   if (!matches || matches.length === 0) {
@@ -91,8 +93,12 @@ export function parseULDSection(uldString: string): { count: number; types: stri
   const uniqueTypes: string[] = []
   
   for (const match of matches) {
-    const numberStr = match[1] || "1"
-    const type = match[2].toUpperCase()
+    // Handle two match types:
+    // 1. "6RAP", "02PMC" etc: match[1]=digits, match[2]=type
+    // 2. "BULK": match[3]="BULK"
+    const isBulk = match[3] !== undefined
+    const numberStr = isBulk ? "1" : (match[1] || "1")
+    const type = isBulk ? match[3].toUpperCase() : match[2].toUpperCase()
     const count = parseInt(numberStr, 10) || 1
     
     // Add unique type if not already present

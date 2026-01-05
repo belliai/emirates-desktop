@@ -401,14 +401,18 @@ export async function getLoadPlanDetailFromSupabase(flightNumber: string): Promi
       const sectorRampTransferUldSections: any[] = []
       
       // Helper function to get total ULD count from ULD string
-      // E.g., "XX 01PMC XX" → 1, "XX 02PMC XX" → 2, "XX 01PMC/02AKE XX" → 3
+      // E.g., "XX 01PMC XX" → 1, "XX 02PMC XX" → 2, "XX 01PMC/02AKE XX" → 3, "XX 6RAP XX" → 6
+      // Flexible pattern auto-captures new ULD types without code changes
       const getUldTotalCount = (uld: string): number => {
         if (!uld) return 0
-        const uldPattern = /(\d+)\s*(PMC|AKE|QKE|AKL|AMF|ALF|PLA|PAG|AMP|RKE|BULK)/gi
+        // Pattern: digits + any 2-4 letter type, or BULK
+        const uldPattern = /(\d{1,2})([A-Z]{2,4})|\b(BULK)\b/gi
         let total = 0
         let match
         while ((match = uldPattern.exec(uld)) !== null) {
-          total += parseInt(match[1], 10) || 1
+          // match[1] = digits for regular ULDs, match[3] = "BULK"
+          const count = match[3] ? 1 : (parseInt(match[1], 10) || 1)
+          total += count
         }
         return total || 1
       }
