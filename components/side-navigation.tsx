@@ -64,7 +64,7 @@ export default function SideNavigation({ currentScreen, onNavigate, onSettingsCl
       defaultOpen: true,
       items: [
         { id: "staff", label: "Staff Performance", icon: Users },
-        { id: "bcr", label: "Build-up Completion", icon: FileText },
+        { id: "bcr", label: "BCRs", icon: FileText },
         { id: "shift-summary-report", label: "Shift Summary Report", icon: FileText },
         { id: "bdn-dashboard", label: "Workload Visibility", icon: ClipboardList },
         { id: "situational-awareness", label: "Situational Awareness", icon: Activity },
