@@ -1,26 +1,158 @@
 "use client"
 
 import { useState, useEffect, useMemo, useRef } from "react"
-import { ChevronRight, ChevronDown, Plane, Calendar, Package, Users, Clock, FileText, Phone, User, Filter, X, Plus, Search, SlidersHorizontal, Settings2, ArrowUpDown } from "lucide-react"
+import { ChevronRight, Plane, Calendar, Package, Users, Clock, FileText, Phone, User, Filter, X, Plus, Settings2, ChevronDown, Search, ArrowUpDown, SlidersHorizontal, MapPin } from "lucide-react"
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from "recharts"
 import LoadPlanDetailScreen from "./load-plan-detail-screen"
 import type { LoadPlanDetail, AWBRow, ULDSection } from "./load-plan-types"
 import type { ULDEntry } from "./uld-number-modal"
-import { useLoadPlans, type LoadPlan, type SentBCR, type ShiftType, type PeriodType, type WaveType } from "@/lib/load-plan-context"
+import { useLoadPlans, type LoadPlan } from "@/lib/load-plan-context"
 import { getLoadPlansFromSupabase, getLoadPlanDetailFromSupabase } from "@/lib/load-plans-supabase"
 import { parseULDSection } from "@/lib/uld-parser"
 import { getULDEntriesFromStorage } from "@/lib/uld-storage"
 import type { WorkArea, PilPerSubFilter } from "@/lib/work-area-filter-utils"
 import { shouldIncludeULDSection } from "@/lib/work-area-filter-utils"
-import { useWorkAreaFilter, WorkAreaFilterControls, WorkAreaFilterProvider } from "./work-area-filter-controls"
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from "recharts"
-import BCRModal from "./bcr-modal"
-import { BUP_ALLOCATION_DATA } from "@/lib/bup-allocation-data"
 
 // Types for completion tracking
 type CompletionStatus = "green" | "amber" | "red"
 type Shift = "All" | "9am to 9pm" | "9pm to 9am"
+
+// Module type and options
+type Module = "All" | "PAX & PF build-up EUR (1st floor, E)" | "PAX & PF build-up AFR (1st floor, F)" | "PAX & PF build-up ME, SubCon, Asia (1st floor, G)" | "Build-up AUS (1st floor, H)" | "US Screening Flights (1st floor, I)" | "Freighter & PAX Breakdown & build-up (Ground floor, F)" | "IND/PAK Build-up (Ground floor, G)" | "PER (Ground floor, H)" | "PIL (Ground floor, I)"
+
+// All modules
+const ALL_MODULES: Module[] = [
+  "All",
+  "PAX & PF build-up EUR (1st floor, E)",
+  "PAX & PF build-up AFR (1st floor, F)",
+  "PAX & PF build-up ME, SubCon, Asia (1st floor, G)",
+  "Build-up AUS (1st floor, H)",
+  "US Screening Flights (1st floor, I)",
+  "Freighter & PAX Breakdown & build-up (Ground floor, F)",
+  "IND/PAK Build-up (Ground floor, G)",
+  "PER (Ground floor, H)",
+  "PIL (Ground floor, I)",
+]
+
+// GCR modules (everything except PIL and PER)
+const GCR_MODULES: Module[] = [
+  "All",
+  "PAX & PF build-up EUR (1st floor, E)",
+  "PAX & PF build-up AFR (1st floor, F)",
+  "PAX & PF build-up ME, SubCon, Asia (1st floor, G)",
+  "Build-up AUS (1st floor, H)",
+  "US Screening Flights (1st floor, I)",
+  "Freighter & PAX Breakdown & build-up (Ground floor, F)",
+  "IND/PAK Build-up (Ground floor, G)",
+]
+
+// PIL/PER modules
+const PIL_MODULE: Module = "PIL (Ground floor, I)"
+const PER_MODULE: Module = "PER (Ground floor, H)"
+
+// Hardcoded ULD data for Current Shift Workload chart
+const GCR_ULD_DATA = {
+  pmcAmf: 45,
+  alfPla: 32,
+  akeRke: 58,
+}
+
+const PIL_ULD_DATA = {
+  akeDpe: 28,
+  alfDqf: 19,
+  ldPmcAmf: 35,
+  mdQ6Q7: 22,
+}
+
+const PER_ULD_DATA = {
+  akeDpe: 41,
+  alfDqf: 27,
+  ldPmcAmf: 48,
+  mdQ6Q7: 31,
+}
+
+const BOTH_PIL_PER_ULD_DATA = {
+  akeDpe: PIL_ULD_DATA.akeDpe + PER_ULD_DATA.akeDpe,
+  alfDqf: PIL_ULD_DATA.alfDqf + PER_ULD_DATA.alfDqf,
+  ldPmcAmf: PIL_ULD_DATA.ldPmcAmf + PER_ULD_DATA.ldPmcAmf,
+  mdQ6Q7: PIL_ULD_DATA.mdQ6Q7 + PER_ULD_DATA.mdQ6Q7,
+}
+
+// Parse ULD count from ttlPlnUld string (e.g., "06PMC/07AKE" -> {pmc: 6, ake: 7, total: 13})
+function parseULDCount(ttlPlnUld: string): { pmc: number; ake: number; total: number } {
+  if (!ttlPlnUld) return { pmc: 0, ake: 0, total: 0 }
+  const pmcMatch = ttlPlnUld.match(/(\d+)PMC/i)
+  const akeMatch = ttlPlnUld.match(/(\d+)AKE/i)
+  const pmc = pmcMatch ? parseInt(pmcMatch[1]) : 0
+  const ake = akeMatch ? parseInt(akeMatch[1]) : 0
+  return { pmc, ake, total: pmc + ake }
+}
+
+// Custom tooltip for Current Shift Workload chart
+function WorkloadTooltip({ active, payload, label }: { active?: boolean; payload?: Array<{ value?: number }>; label?: string }) {
+  if (!active || !payload || !payload.length) return null
+
+  const value = typeof payload[0]?.value === 'number' ? payload[0].value : 0
+  if (value <= 0) return null
+
+  return (
+    <div className="bg-white border border-gray-300 rounded px-3 py-2 shadow-lg">
+      <p className="font-semibold text-sm mb-1">{label}</p>
+      <div className="flex items-center gap-2 text-xs">
+        <span
+          style={{
+            display: "inline-block",
+            width: "10px",
+            height: "10px",
+            backgroundColor: "#DC2626",
+            borderRadius: "2px"
+          }}
+        />
+        <span>{value} ULDs</span>
+      </div>
+    </div>
+  )
+}
+
+// Custom tooltip for Incoming Workload chart
+function IncomingWorkloadTooltip({ active, payload, label }: { active?: boolean; payload?: Array<{ value?: number }>; label?: string }) {
+  if (!active || !payload || !payload.length) return null
+
+  const value = typeof payload[0]?.value === 'number' ? payload[0].value : 0
+  if (value <= 0) return null
+
+  return (
+    <div className="bg-white border border-gray-300 rounded px-2 py-1.5 shadow-lg">
+      <p className="font-semibold text-xs mb-0.5">{label}</p>
+      <div className="flex items-center gap-1 text-[10px]">
+        <span
+          style={{
+            display: "inline-block",
+            width: "8px",
+            height: "8px",
+            backgroundColor: "#2563EB",
+            borderRadius: "2px"
+          }}
+        />
+        <span>{value} ULDs</span>
+      </div>
+    </div>
+  )
+}
+
+// Filter types
+type FilterColumn = "Flight" | "Date" | "ACFT TYPE" | "ACFT REG" | "Route" | "STD" | "TTL PLN ULD" | "Completion"
+type FilterOperator = "equals" | "contains" | "greaterThan" | "lessThan" | "greaterThanOrEqual" | "lessThanOrEqual" | "is" | "timeRange"
+type ActiveFilter = {
+  id: string
+  column: FilterColumn
+  operator: FilterOperator
+  value: string | string[] // string[] for multi-select toggle buttons
+}
+
+// Sort types
+type SortColumn = "Flight" | "Date" | "STD" | "Completion" | null
+type SortDirection = "asc" | "desc"
 
 // Two 9-9 shifts
 const SHIFTS: Shift[] = ["All", "9am to 9pm", "9pm to 9am"]
@@ -48,35 +180,6 @@ function getShiftFromStd(std: string): Shift {
   return "9pm to 9am"
 }
 
-// Determine period and wave based on STD time (for new shift structure)
-function determinePeriodAndWave(std: string): { period: PeriodType; wave: WaveType | null; shiftType: ShiftType } {
-  const [hours, minutes] = std.split(":").map(Number)
-  const timeInMinutes = hours * 60 + (minutes || 0)
-  
-  // Night Shift Early Morning: 00:01-05:59
-  if (timeInMinutes >= 1 && timeInMinutes < 360) {
-    return { period: "early-morning", wave: null, shiftType: "night" }
-  }
-  // Night Shift Late Morning First Wave: 06:00-09:00
-  if (timeInMinutes >= 360 && timeInMinutes <= 540) {
-    return { period: "late-morning", wave: "first-wave", shiftType: "night" }
-  }
-  // Night Shift Late Morning Second Wave: 09:01-12:59
-  if (timeInMinutes > 540 && timeInMinutes < 780) {
-    return { period: "late-morning", wave: "second-wave", shiftType: "night" }
-  }
-  // Day Shift Afternoon First Wave: 13:00-15:59
-  if (timeInMinutes >= 780 && timeInMinutes < 960) {
-    return { period: "afternoon", wave: "first-wave", shiftType: "day" }
-  }
-  // Day Shift Afternoon Second Wave: 16:00-23:59
-  if (timeInMinutes >= 960 && timeInMinutes <= 1439) {
-    return { period: "afternoon", wave: "second-wave", shiftType: "day" }
-  }
-  // Default to early morning for edge cases
-  return { period: "early-morning", wave: null, shiftType: "night" }
-}
-
 type FlightCompletion = {
   flight: string
   totalPlannedULDs: number
@@ -88,7 +191,7 @@ type FlightCompletion = {
   shift: Shift
 }
 
-// Hardcoded staff data for demo
+// Hardcoded staff data for demo - in production this would come from a database
 const STAFF_DATA: Record<string, { name: string; contact: string }> = {
   "EK0544": { name: "David Belisario", contact: "+971 50 123 4567" },
   "EK0205": { name: "Harley Quinn", contact: "+971 50 987 6543" },
@@ -102,6 +205,7 @@ const STAFF_DATA: Record<string, { name: string; contact: string }> = {
   "EK1024": { name: "Chandler Bing", contact: "+971 50 999 0000" },
 }
 
+// Hardcoded completion data for demo - in production this would be calculated
 const COMPLETION_DATA: Record<string, { completedULDs: number }> = {
   "EK0544": { completedULDs: 8 },
   "EK0205": { completedULDs: 3 },
@@ -115,17 +219,20 @@ const COMPLETION_DATA: Record<string, { completedULDs: number }> = {
   "EK1024": { completedULDs: 6 },
 }
 
+// Shift assignments - based on STD times for demo
 const SHIFT_DATA: Record<string, string> = {
-  "EK0544": "02:50",
-  "EK0720": "03:15",
-  "EK0205": "06:30",
-  "EK1024": "22:30",
-  "EK0301": "09:45",
-  "EK0402": "10:35",
-  "EK0112": "11:20",
-  "EK0618": "14:45",
-  "EK0832": "16:30",
-  "EK0915": "19:00",
+  // 9pm to 9am (Night shift - overnight)
+  "EK0544": "02:50",  // 2:50 AM - Night
+  "EK0720": "03:15",  // 3:15 AM - Night
+  "EK0205": "06:30",  // 6:30 AM - Night
+  "EK1024": "22:30",  // 10:30 PM - Night
+  // 9am to 9pm (Day shift)
+  "EK0301": "09:45",  // 9:45 AM - Day
+  "EK0402": "10:35",  // 10:35 AM - Day
+  "EK0112": "11:20",  // 11:20 AM - Day
+  "EK0618": "14:45",  // 2:45 PM - Day
+  "EK0832": "16:30",  // 4:30 PM - Day
+  "EK0915": "19:00",  // 7:00 PM - Day
 }
 
 function getCompletionStatus(percentage: number): CompletionStatus {
@@ -143,6 +250,7 @@ function getStatusColor(status: CompletionStatus): string {
 }
 
 function parseTTLPlnUld(ttlPlnUld: string): number {
+  // Parse strings like "06PMC/07AKE" or "05PMC/10AKE" to get total ULD count
   let total = 0
   const pmcMatch = ttlPlnUld.match(/(\d+)PMC/i)
   const akeMatch = ttlPlnUld.match(/(\d+)AKE/i)
@@ -150,14 +258,18 @@ function parseTTLPlnUld(ttlPlnUld: string): number {
   if (pmcMatch) total += parseInt(pmcMatch[1], 10)
   if (akeMatch) total += parseInt(akeMatch[1], 10)
   
+  // If we couldn't parse anything, try to extract any number
   if (total === 0) {
     const anyNumber = ttlPlnUld.match(/(\d+)/)
     if (anyNumber) total = parseInt(anyNumber[1], 10)
   }
   
-  return total || 1
+  return total || 1 // Return at least 1 to avoid division by zero
 }
 
+/**
+ * Calculate total planned ULDs from load plan detail, filtered by work area
+ */
 function calculateTotalPlannedULDs(loadPlanDetail: LoadPlanDetail, workAreaFilter?: WorkArea, pilPerSubFilter?: PilPerSubFilter): number {
   // Get entries from localStorage if they exist
   let entriesMap: Map<string, ULDEntry[]> = new Map()
@@ -170,7 +282,6 @@ function calculateTotalPlannedULDs(loadPlanDetail: LoadPlanDetail, workAreaFilte
   }
   
   // Count from ULD sections, using entries.length if entries exist for that section
-  // Otherwise use parseULDSection count
   let total = 0
   loadPlanDetail.sectors.forEach((sector, sectorIndex) => {
     sector.uldSections.forEach((uldSection, uldSectionIndex) => {
@@ -182,12 +293,14 @@ function calculateTotalPlannedULDs(loadPlanDetail: LoadPlanDetail, workAreaFilte
         const entries = entriesMap.get(key)
         
         if (entries && entries.length > 0) {
-          // Use entries.length if entries exist (reflects additions/subtractions via modal)
-          total += entries.length
+          // Exclude BULK entries from count
+          const nonBulkEntries = entries.filter(e => (e as { type?: string }).type?.toUpperCase() !== "BULK")
+          total += nonBulkEntries.length
         } else {
-          // Use parseULDSection count if no entries exist for this section
-          const { count } = parseULDSection(uldSection.uld)
-          total += count
+          // Exclude BULK from parseULDSection count
+          const { expandedTypes } = parseULDSection(uldSection.uld)
+          const nonBulkCount = expandedTypes.filter(t => t.toUpperCase() !== "BULK").length
+          total += nonBulkCount
         }
       }
     })
@@ -204,19 +317,26 @@ function calculateTotalPlannedULDs(loadPlanDetail: LoadPlanDetail, workAreaFilte
   return total || 1 // Return at least 1 to avoid division by zero
 }
 
+/**
+ * Calculate total marked ULDs from saved ULD numbers in localStorage, filtered by work area
+ */
 function calculateTotalMarkedULDs(flightNumber: string, loadPlanDetail: LoadPlanDetail, workAreaFilter?: WorkArea, pilPerSubFilter?: PilPerSubFilter): number {
   if (typeof window === 'undefined') return 0
   
   try {
+    // Use utility function to get entries with checked state
     const entriesMap = getULDEntriesFromStorage(flightNumber, loadPlanDetail.sectors)
     
     let markedCount = 0
     
+    // Count checked ULD entries, filtered by work area
     entriesMap.forEach((entries, key) => {
+      // Parse sectorIndex and uldSectionIndex from key format: "sectorIndex-uldSectionIndex"
       const [sectorIndexStr, uldSectionIndexStr] = key.split('-')
       const sectorIndex = parseInt(sectorIndexStr, 10)
       const uldSectionIndex = parseInt(uldSectionIndexStr, 10)
       
+      // Check if this ULD section matches the filter
       const sector = loadPlanDetail.sectors[sectorIndex]
       if (sector && sector.uldSections[uldSectionIndex]) {
         const uldSection = sector.uldSections[uldSectionIndex]
@@ -225,8 +345,10 @@ function calculateTotalMarkedULDs(flightNumber: string, loadPlanDetail: LoadPlan
         const shouldInclude = shouldIncludeULDSection(uldSection, workAreaFilter || "All", pilPerSubFilter)
         
         if (shouldInclude) {
+          // Count only checked entries, excluding BULK
           entries.forEach((entry) => {
-            if (entry.checked) {
+            const entryType = (entry as { type?: string }).type?.toUpperCase()
+            if (entry.checked && entryType !== "BULK") {
               markedCount++
             }
           })
@@ -236,6 +358,7 @@ function calculateTotalMarkedULDs(flightNumber: string, loadPlanDetail: LoadPlan
     
     return markedCount
   } catch (e) {
+    console.error(`[SituationalAwarenessScreen] Error reading ULD numbers for ${flightNumber}:`, e)
     return 0
   }
 }
@@ -243,6 +366,7 @@ function calculateTotalMarkedULDs(flightNumber: string, loadPlanDetail: LoadPlan
 function calculateFlightCompletion(loadPlan: LoadPlan, loadedAWBCount?: number): FlightCompletion {
   const totalPlannedULDs = parseTTLPlnUld(loadPlan.ttlPlnUld)
   
+  // Use hardcoded data for demo, or calculate from loaded AWBs
   const completionInfo = COMPLETION_DATA[loadPlan.flight]
   const completedULDs = loadedAWBCount !== undefined 
     ? Math.min(loadedAWBCount, totalPlannedULDs)
@@ -252,6 +376,8 @@ function calculateFlightCompletion(loadPlan: LoadPlan, loadedAWBCount?: number):
   const status = getCompletionStatus(completionPercentage)
   
   const staffInfo = STAFF_DATA[loadPlan.flight] || { name: "Unassigned", contact: "-" }
+  
+  // Calculate shift from STD - use demo data or actual STD from load plan
   const stdTime = SHIFT_DATA[loadPlan.flight] || loadPlan.std || "00:00"
   const shift = getShiftFromStd(stdTime)
   
@@ -267,79 +393,142 @@ function calculateFlightCompletion(loadPlan: LoadPlan, loadedAWBCount?: number):
   }
 }
 
-// Work area data for workload section
-const workAreaData = {
-  overall: {
-    GCR: { total: 85, remaining: 45 },
-    PER: { total: 62, remaining: 28 },
-    PIL: { total: 48, remaining: 22 },
-  },
-  E75: {
-    GCR: { total: 35, remaining: 18 },
-    PER: { total: 25, remaining: 12 },
-    PIL: { total: 20, remaining: 9 },
-  },
-  L22: {
-    GCR: { total: 28, remaining: 15 },
-    PER: { total: 20, remaining: 8 },
-    PIL: { total: 15, remaining: 7 },
-  },
+// Derive WorkArea from chip states
+function deriveWorkArea(isGcrActive: boolean, isPilPerActive: boolean): WorkArea {
+  if (isGcrActive && isPilPerActive) return "All"
+  if (isGcrActive) return "GCR"
+  if (isPilPerActive) return "PIL and PER"
+  return "All"
 }
 
-// Parse ULD count for incoming workload
-function parseULDCount(ttlPlnUld: string): { pmc: number; ake: number; bulk: number; total: number } {
-  if (!ttlPlnUld) return { pmc: 0, ake: 0, bulk: 0, total: 0 }
-  const pmcMatch = ttlPlnUld.match(/(\d+)PMC/i)
-  const akeMatch = ttlPlnUld.match(/(\d+)AKE/i)
-  const bulkMatch = ttlPlnUld.match(/(\d+)BULK/i)
-  const pmc = pmcMatch ? parseInt(pmcMatch[1]) : 0
-  const ake = akeMatch ? parseInt(akeMatch[1]) : 0
-  const bulk = bulkMatch ? parseInt(bulkMatch[1]) : 0
-  return { pmc, ake, bulk, total: pmc + ake + bulk }
-}
-
-function extractDestination(pax: string): string {
-  if (!pax) return "DXB-JFK"
-  const parts = pax.split("/")
-  const origin = parts[0] || "DXB"
-  const destination = parts[1] || "JFK"
-  return `${origin}-${destination}`
-}
-
-// Wrapper component that provides the WorkAreaFilter context
 export default function SituationalAwarenessScreen() {
-  return (
-    <WorkAreaFilterProvider>
-      <SituationalAwarenessScreenContent />
-    </WorkAreaFilterProvider>
-  )
-}
-
-// Inner component that uses the shared WorkAreaFilter context
-function SituationalAwarenessScreenContent() {
-  const { loadPlans, setLoadPlans, sentBCRs } = useLoadPlans()
+  const { loadPlans, setLoadPlans } = useLoadPlans()
   const [selectedLoadPlan, setSelectedLoadPlan] = useState<LoadPlanDetail | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [flightCompletions, setFlightCompletions] = useState<Map<string, FlightCompletion>>(new Map())
   const [loadPlanDetailsCache, setLoadPlanDetailsCache] = useState<Map<string, LoadPlanDetail>>(new Map())
-  // Work area filter hook
-  const { selectedWorkArea, pilPerSubFilter } = useWorkAreaFilter()
+  
+  // Chip states - both can be active simultaneously
+  const [isGcrActive, setIsGcrActive] = useState(true)
+  const [isPilPerActive, setIsPilPerActive] = useState(true)
+  const [pilPerSubFilter, setPilPerSubFilter] = useState<PilPerSubFilter>("Both")
+  
+  // Derive work area from chip states
+  const selectedWorkArea = deriveWorkArea(isGcrActive, isPilPerActive)
+  
   const [selectedShift, setSelectedShift] = useState<Shift>("All" as Shift)
+  const [selectedModule, setSelectedModule] = useState<Module>("All")
   const [customTimeRange, setCustomTimeRange] = useState<{ start: string; end: string } | null>(null)
   const [showTimeRangePicker, setShowTimeRangePicker] = useState(false)
   const timeRangePickerRef = useRef<HTMLDivElement>(null)
-  const [selectedFlight, setSelectedFlight] = useState<string | null>(null)
-  const [isLoadingDetail, setIsLoadingDetail] = useState(false)
-  const [workAreaFilter, setWorkAreaFilter] = useState<"overall" | "sortByWorkArea">("overall")
-  const [selectedWorkAreaForWorkload, setSelectedWorkAreaForWorkload] = useState<string>("E75")
-  const [selectedBCR, setSelectedBCR] = useState<SentBCR | null>(null)
-  const [showBCRModal, setShowBCRModal] = useState(false)
   const [uldUpdateTrigger, setUldUpdateTrigger] = useState(0) // Trigger for progress bar recalculation
   const [showAddFilterDropdown, setShowAddFilterDropdown] = useState(false)
   const [showViewOptions, setShowViewOptions] = useState(false)
-  const [searchQuery, setSearchQuery] = useState("")
   const addFilterRef = useRef<HTMLDivElement>(null)
   const viewOptionsRef = useRef<HTMLDivElement>(null)
+  const [activeFilters, setActiveFilters] = useState<ActiveFilter[]>([])
+  const [editingFilterId, setEditingFilterId] = useState<string | null>(null)
+  const [sortColumn, setSortColumn] = useState<SortColumn>(null)
+  const [sortDirection, setSortDirection] = useState<SortDirection>("desc")
+
+  // Filter available modules based on active chips
+  const availableModules = useMemo(() => {
+    // Both chips active - show all modules
+    if (isGcrActive && isPilPerActive) {
+      return ALL_MODULES
+    }
+    // Only GCR active
+    if (isGcrActive && !isPilPerActive) {
+      return GCR_MODULES
+    }
+    // Only PIL/PER active
+    if (!isGcrActive && isPilPerActive) {
+      if (pilPerSubFilter === "PIL only") {
+        return ["All", PIL_MODULE] as Module[]
+      }
+      if (pilPerSubFilter === "PER only") {
+        return ["All", PER_MODULE] as Module[]
+      }
+      // Both PIL and PER
+      return ["All", PER_MODULE, PIL_MODULE] as Module[]
+    }
+    // Neither active (shouldn't happen, but fallback)
+    return ALL_MODULES
+  }, [isGcrActive, isPilPerActive, pilPerSubFilter])
+  
+  // Handle chip toggle - allow both to be active, but at least one must stay on
+  const handleGcrToggle = () => {
+    if (isGcrActive && !isPilPerActive) return // Can't turn off if it's the only one
+    setIsGcrActive(!isGcrActive)
+    if (!isGcrActive) {
+      // Turning GCR on
+    } else {
+      // Turning GCR off - reset to All if current selection is a GCR module
+      if (selectedModule !== "All" && GCR_MODULES.includes(selectedModule) && selectedModule !== "All") {
+        setSelectedModule("All")
+      }
+    }
+  }
+  
+  const handlePilPerToggle = () => {
+    if (isPilPerActive && !isGcrActive) return // Can't turn off if it's the only one
+    setIsPilPerActive(!isPilPerActive)
+    if (!isPilPerActive) {
+      // Turning PIL/PER on
+      setPilPerSubFilter("Both")
+    } else {
+      // Turning PIL/PER off - reset to All if current selection is PIL or PER
+      if (selectedModule === PIL_MODULE || selectedModule === PER_MODULE) {
+        setSelectedModule("All")
+      }
+    }
+  }
+  
+  // Handle PIL/PER sub-filter change
+  const handlePilPerSubFilterChange = (newFilter: PilPerSubFilter) => {
+    setPilPerSubFilter(newFilter)
+    // Reset module if current selection is no longer available
+    if (newFilter === "PIL only" && selectedModule === PER_MODULE) {
+      setSelectedModule("All")
+    } else if (newFilter === "PER only" && selectedModule === PIL_MODULE) {
+      setSelectedModule("All")
+    }
+  }
+  
+  // Handle module selection - triggers reverse flow when both chips are active
+  const handleModuleChange = (module: Module) => {
+    setSelectedModule(module)
+    
+    // Reverse flow: selecting a specific module updates chip state
+    if (module === "All") {
+      // "All" doesn't change chip state
+      return
+    }
+    
+    // Check if this is a PIL/PER module
+    if (module === PIL_MODULE) {
+      // Activate PIL/PER only, set sub-filter to PIL only
+      setIsGcrActive(false)
+      setIsPilPerActive(true)
+      setPilPerSubFilter("PIL only")
+    } else if (module === PER_MODULE) {
+      // Activate PIL/PER only, set sub-filter to PER only
+      setIsGcrActive(false)
+      setIsPilPerActive(true)
+      setPilPerSubFilter("PER only")
+    } else if (GCR_MODULES.includes(module)) {
+      // This is a GCR module - activate GCR only
+      setIsGcrActive(true)
+      setIsPilPerActive(false)
+    }
+  }
+  
+  // Ensure selected module is valid when available modules change
+  useEffect(() => {
+    if (selectedModule !== "All" && !availableModules.includes(selectedModule)) {
+      setSelectedModule("All")
+    }
+  }, [availableModules, selectedModule])
 
   // Fetch load plans from Supabase on mount
   useEffect(() => {
@@ -350,6 +539,7 @@ function SituationalAwarenessScreenContent() {
         if (supabaseLoadPlans.length > 0) {
           setLoadPlans(supabaseLoadPlans)
           
+          // Fetch load plan details for all flights to enable filtered completion calculations
           const detailsCache = new Map<string, LoadPlanDetail>()
           const completions = new Map<string, FlightCompletion>()
           
@@ -368,6 +558,7 @@ function SituationalAwarenessScreenContent() {
           
           setLoadPlanDetailsCache(detailsCache)
           
+          // Calculate initial completions (will be recalculated when filter changes)
           supabaseLoadPlans.forEach(plan => {
             completions.set(plan.flight, calculateFlightCompletion(plan))
           })
@@ -395,7 +586,8 @@ function SituationalAwarenessScreenContent() {
     loadPlans.forEach(plan => {
       const cachedDetail = loadPlanDetailsCache.get(plan.flight)
       
-      if (cachedDetail && selectedWorkArea !== "All") {
+      // Always use detail-based calculation if available (same as load plan detail screen)
+      if (cachedDetail) {
         const totalPlannedULDs = calculateTotalPlannedULDs(cachedDetail, selectedWorkArea, pilPerSubFilter)
         const totalMarkedULDs = calculateTotalMarkedULDs(plan.flight, cachedDetail, selectedWorkArea, pilPerSubFilter)
         const completionPercentage = totalPlannedULDs > 0 
@@ -418,6 +610,7 @@ function SituationalAwarenessScreenContent() {
           shift,
         })
       } else {
+        // Fall back to default calculation only if no detail available
         recalculatedCompletions.set(plan.flight, calculateFlightCompletion(plan))
       }
     })
@@ -425,6 +618,7 @@ function SituationalAwarenessScreenContent() {
     setFlightCompletions(recalculatedCompletions)
   }, [loadPlans, loadPlanDetailsCache, selectedWorkArea, pilPerSubFilter, uldUpdateTrigger])
 
+  // Generate hourly time options (00:00 to 23:00)
   const timeOptions = useMemo(() => {
     const options: string[] = []
     for (let hour = 0; hour < 24; hour++) {
@@ -455,12 +649,98 @@ function SituationalAwarenessScreenContent() {
     }
   }, [showTimeRangePicker, showAddFilterDropdown, showViewOptions])
 
+  // Apply active filters to load plans
+  function applyActiveFilters(plan: LoadPlan, completion: FlightCompletion): boolean {
+    return activeFilters.every(filter => {
+      switch (filter.column) {
+        case "Completion": {
+          const completionPercent = completion.completionPercentage
+          const status = completion.status
+          
+          // Handle "is" operator with multi-select status toggles
+          if (filter.operator === "is") {
+            if (Array.isArray(filter.value)) {
+              // If no statuses selected, show all
+              if (filter.value.length === 0) return true
+              // Check if flight status matches any selected status
+              return filter.value.includes(status)
+            }
+            return true
+          }
+          
+          // Handle > and < operators with percentage values
+          if (filter.operator === "greaterThan" || filter.operator === "lessThan") {
+            const value = typeof filter.value === "string" ? filter.value.trim() : ""
+            if (!value) return true
+            
+            const filterValue = parseFloat(value)
+            if (isNaN(filterValue)) return true
+            
+            switch (filter.operator) {
+              case "greaterThan":
+                return completionPercent > filterValue
+              case "lessThan":
+                return completionPercent < filterValue
+              default:
+                return true
+            }
+          }
+          
+          return true
+        }
+        case "STD": {
+          // Handle time range filter
+          if (filter.operator === "timeRange") {
+            const value = typeof filter.value === "string" ? filter.value : ""
+            const [startTime, endTime] = value.split("-")
+            if (!startTime || !endTime) return true
+            
+            const stdTime = plan.std || "00:00"
+            const stdHours = parseStdToHours(stdTime)
+            const startHours = parseStdToHours(startTime)
+            const endHours = parseStdToHours(endTime)
+            
+            // Handle overnight ranges (e.g., 22:00 to 06:00)
+            if (endHours < startHours) {
+              return stdHours >= startHours || stdHours <= endHours
+            } else {
+              return stdHours >= startHours && stdHours <= endHours
+            }
+          }
+          
+          // Handle equals operator
+          if (filter.operator === "equals") {
+            const value = typeof filter.value === "string" ? filter.value.trim() : ""
+            if (!value) return true
+            const stdTime = plan.std || "00:00"
+            return stdTime === value
+          }
+          
+          return true
+        }
+        // Placeholder for other columns - will be implemented later
+        case "Flight":
+        case "Date":
+        case "ACFT TYPE":
+        case "ACFT REG":
+        case "Route":
+        case "TTL PLN ULD":
+          return true // Not implemented yet
+        default:
+          return true
+      }
+    })
+  }
+
+  // Filter and sort load plans based on selected shift and custom time range
   const filteredLoadPlans = useMemo(() => {
-    let filtered = loadPlans.filter(plan => {
+    const filtered = loadPlans.filter(plan => {
       const completion = flightCompletions.get(plan.flight) || calculateFlightCompletion(plan)
       
+      // Check shift filter
       const matchesShift = selectedShift === "All" || completion.shift === selectedShift
       
+      // Check custom time range filter
       let matchesTimeRange = true
       if (customTimeRange) {
         const stdTime = plan.std || "00:00"
@@ -468,32 +748,51 @@ function SituationalAwarenessScreenContent() {
         const startHours = parseStdToHours(customTimeRange.start)
         const endHours = parseStdToHours(customTimeRange.end)
         
+        // Handle overnight ranges (e.g., 22:00 to 06:00)
         if (endHours < startHours) {
+          // Overnight range: flight time must be >= start OR <= end
           matchesTimeRange = stdHours >= startHours || stdHours <= endHours
         } else {
+          // Normal range: flight time must be >= start AND <= end
           matchesTimeRange = stdHours >= startHours && stdHours <= endHours
         }
       }
       
-      return matchesShift && matchesTimeRange
+      // Check active filters
+      const matchesActiveFilters = applyActiveFilters(plan, completion)
+      
+      return matchesShift && matchesTimeRange && matchesActiveFilters
     })
-
-    // Filter by search query
-    if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase()
-      filtered = filtered.filter((plan) => 
-        plan.flight.toLowerCase().includes(query) ||
-        plan.date?.toLowerCase().includes(query) ||
-        plan.acftType?.toLowerCase().includes(query) ||
-        plan.acftReg?.toLowerCase().includes(query) ||
-        plan.std?.toLowerCase().includes(query)
-      )
-    }
-
-    // Sort by STD descending (most recent first)
-    // Combines date and STD time for proper chronological sorting
+    
+    // Apply sorting
     return filtered.sort((a, b) => {
-      // Parse date and STD for comparison
+      // If a sort column is selected, sort by that column
+      if (sortColumn) {
+        const completionA = flightCompletions.get(a.flight) || calculateFlightCompletion(a)
+        const completionB = flightCompletions.get(b.flight) || calculateFlightCompletion(b)
+        
+        let comparison = 0
+        switch (sortColumn) {
+          case "Flight":
+            comparison = (a.flight || "").localeCompare(b.flight || "")
+            break
+          case "Date":
+            comparison = (a.date || "").localeCompare(b.date || "")
+            break
+          case "STD":
+            const hoursA = parseStdToHours(a.std || "00:00")
+            const hoursB = parseStdToHours(b.std || "00:00")
+            comparison = hoursA - hoursB
+            break
+          case "Completion":
+            comparison = completionA.completionPercentage - completionB.completionPercentage
+            break
+        }
+        
+        return sortDirection === "asc" ? comparison : -comparison
+      }
+      
+      // Default sort: by Date and STD descending (latest flights first)
       const dateA = a.date || ""
       const dateB = b.date || ""
       const stdA = a.std || "00:00"
@@ -509,13 +808,15 @@ function SituationalAwarenessScreenContent() {
       const hoursB = parseStdToHours(stdB)
       return hoursB - hoursA
     })
-  }, [loadPlans, flightCompletions, selectedShift, customTimeRange, searchQuery])
+  }, [loadPlans, flightCompletions, selectedShift, customTimeRange, activeFilters, sortColumn, sortDirection])
 
+  // Count flights by shift for filter badges
   const filterCounts = useMemo(() => {
     const counts = {
       shifts: {} as Record<Shift, number>,
     }
     
+    // Initialize shift counts
     SHIFTS.forEach(shift => {
       counts.shifts[shift] = 0
     })
@@ -529,10 +830,144 @@ function SituationalAwarenessScreenContent() {
     return counts
   }, [loadPlans, flightCompletions])
 
+  // Current Shift Workload chart data (based on chip state)
+  const currentShiftWorkloadData = useMemo(() => {
+    // GCR active
+    if (isGcrActive) {
+      return [
+        { type: "PMC-AMF", value: GCR_ULD_DATA.pmcAmf, color: "#DC2626" },
+        { type: "ALF-PLA", value: GCR_ULD_DATA.alfPla, color: "#EF4444" },
+        { type: "AKE-RKE", value: GCR_ULD_DATA.akeRke, color: "#F87171" },
+      ]
+    }
+    
+    // PIL/PER active
+    let data = BOTH_PIL_PER_ULD_DATA
+    
+    if (pilPerSubFilter === "PIL only") {
+      data = PIL_ULD_DATA
+    } else if (pilPerSubFilter === "PER only") {
+      data = PER_ULD_DATA
+    }
+    
+    return [
+      { type: "AKE/DPE", value: data.akeDpe, color: "#DC2626" },
+      { type: "ALF/DQF", value: data.alfDqf, color: "#EF4444" },
+      { type: "LD-PMC/AMF", value: data.ldPmcAmf, color: "#F87171" },
+      { type: "MD-Q6/Q7", value: data.mdQ6Q7, color: "#FCA5A5" },
+    ]
+  }, [isGcrActive, pilPerSubFilter])
+
+  // Chart title suffix for Current Shift Workload
+  const workloadChartTitleSuffix = useMemo(() => {
+    if (isGcrActive) return " (GCR)"
+    if (pilPerSubFilter === "PIL only") return " (PIL)"
+    if (pilPerSubFilter === "PER only") return " (PER)"
+    return " (PIL + PER)"
+  }, [isGcrActive, pilPerSubFilter])
+
+  // Is showing PIL/PER data
+  const isShowingPilPer = !isGcrActive
+
+  // Incoming Workload chart data (calculated from actual load plans)
+  const incomingWorkloadData = useMemo(() => {
+    let pmcTotal = 0
+    let akeTotal = 0
+    
+    loadPlans.forEach(plan => {
+      const breakdown = parseULDCount(plan.ttlPlnUld)
+      pmcTotal += breakdown.pmc
+      akeTotal += breakdown.ake
+    })
+    
+    return [
+      { type: "PMC", value: pmcTotal, color: "#2563EB" },
+      { type: "AKE", value: akeTotal, color: "#3B82F6" },
+      { type: "Total", value: pmcTotal + akeTotal, color: "#1D4ED8" },
+    ]
+  }, [loadPlans])
+
+  // Top 5 flights for incoming workload mini table
+  const topIncomingFlights = useMemo(() => {
+    return filteredLoadPlans.slice(0, 5).map(plan => ({
+      flight: plan.flight,
+      std: plan.std,
+      route: plan.pax || "",
+      totalULDs: parseULDCount(plan.ttlPlnUld).total,
+    }))
+  }, [filteredLoadPlans])
+
+  // Track selected flight for blank view
+  const [selectedFlight, setSelectedFlight] = useState<string | null>(null)
+  const [isLoadingDetail, setIsLoadingDetail] = useState(false)
+
+  // Sort handlers
+  function handleSort(column: SortColumn) {
+    if (sortColumn === column) {
+      // Toggle direction if clicking same column
+      setSortDirection(prev => prev === "asc" ? "desc" : "asc")
+    } else {
+      // New column - default to desc for Completion (highest first), asc for STD (earliest first)
+      setSortColumn(column)
+      setSortDirection(column === "Completion" ? "desc" : "asc")
+    }
+  }
+
+  // Add filter handlers
+  function handleAddFilter(column: FilterColumn) {
+    let defaultOperator: FilterOperator = "contains"
+    let defaultValue: string | string[] = ""
+    
+    if (column === "Completion") {
+      defaultOperator = "is"
+      defaultValue = [] // Empty array for toggle buttons
+    } else if (column === "STD") {
+      defaultOperator = "timeRange"
+      defaultValue = "09:00-21:00"
+    }
+    
+    const newFilter: ActiveFilter = {
+      id: `${Date.now()}-${Math.random()}`,
+      column,
+      operator: defaultOperator,
+      value: defaultValue
+    }
+    setActiveFilters(prev => [...prev, newFilter])
+    setEditingFilterId(newFilter.id)
+    setShowAddFilterDropdown(false)
+  }
+
+  function handleRemoveFilter(filterId: string) {
+    setActiveFilters(prev => prev.filter(f => f.id !== filterId))
+    if (editingFilterId === filterId) {
+      setEditingFilterId(null)
+    }
+  }
+
+  function handleUpdateFilter(filterId: string, updates: Partial<ActiveFilter>) {
+    setActiveFilters(prev => prev.map(f => 
+      f.id === filterId ? { ...f, ...updates } : f
+    ))
+  }
+
+  function toggleCompletionStatus(filterId: string, statusKey: string) {
+    setActiveFilters(prev => prev.map(filter => {
+      if (filter.id !== filterId) return filter
+      
+      const currentValue = Array.isArray(filter.value) ? filter.value : []
+      const newValue = currentValue.includes(statusKey)
+        ? currentValue.filter(s => s !== statusKey)
+        : [...currentValue, statusKey]
+      
+      return { ...filter, value: newValue }
+    }))
+  }
+
   const handleRowClick = async (loadPlan: LoadPlan) => {
     setSelectedFlight(loadPlan.flight)
     setIsLoadingDetail(true)
     try {
+      // Check cache first
       const cachedDetail = loadPlanDetailsCache.get(loadPlan.flight)
       if (cachedDetail) {
         setSelectedLoadPlan(cachedDetail)
@@ -540,8 +975,10 @@ function SituationalAwarenessScreenContent() {
         return
       }
       
+      // Fetch if not in cache
       const supabaseDetail = await getLoadPlanDetailFromSupabase(loadPlan.flight)
       if (supabaseDetail) {
+        // Update cache
         setLoadPlanDetailsCache(prev => {
           const updated = new Map(prev)
           updated.set(loadPlan.flight, supabaseDetail)
@@ -549,6 +986,7 @@ function SituationalAwarenessScreenContent() {
         })
         setSelectedLoadPlan(supabaseDetail)
       } else {
+        // If no load plan detail found, show blank view
         setSelectedLoadPlan(null)
       }
     } catch (err) {
@@ -559,103 +997,9 @@ function SituationalAwarenessScreenContent() {
     }
   }
 
-  // Incoming workload data
-  const allFlights = useMemo(() => {
-    return loadPlans
-      .map((plan) => ({
-        flight: plan.flight,
-        std: plan.std,
-        date: plan.date,
-        destination: extractDestination(plan.pax),
-        uldBreakdown: parseULDCount(plan.ttlPlnUld),
-        ttlPlnUld: plan.ttlPlnUld,
-      }))
-      .sort((a, b) => {
-        // Sort by STD descending (most recent first)
-        // Combines date and STD time for proper chronological sorting
-        const dateA = a.date || ""
-        const dateB = b.date || ""
-        const stdA = a.std || "00:00"
-        const stdB = b.std || "00:00"
-        
-        // Compare dates first (descending - latest date first)
-        if (dateA !== dateB) {
-          return dateB.localeCompare(dateA)
-        }
-        
-        // If same date, compare STD times (descending - latest time first)
-        const hoursA = parseStdToHours(stdA)
-        const hoursB = parseStdToHours(stdB)
-        return hoursB - hoursA
-      })
-  }, [loadPlans])
-
-  const incomingFlightsLogic = useMemo(() => {
-    const bupFlightNumbers = new Set(
-      BUP_ALLOCATION_DATA.map((a) => {
-        return a.flightNo.startsWith("EK") ? a.flightNo : `EK${a.flightNo}`
-      })
-    )
-
-    return allFlights.filter((flight) => {
-      const normalizedFlight = flight.flight.startsWith("EK") ? flight.flight : `EK${flight.flight}`
-      return !bupFlightNumbers.has(normalizedFlight)
-    })
-  }, [allFlights])
-
-  const displayFlights = allFlights
-
-  const uldBreakdownData = useMemo(() => {
-    let totalPMC = 0
-    let totalAKE = 0
-    let totalBulk = 0
-
-    displayFlights.forEach((flight) => {
-      const parsed = parseULDCount(flight.ttlPlnUld)
-      totalPMC += parsed.pmc
-      totalAKE += parsed.ake
-      totalBulk += parsed.bulk
-      if (parsed.pmc === 0 && parsed.ake === 0 && parsed.bulk === 0) {
-        const totalMatch = flight.ttlPlnUld.match(/(\d+)/)
-        if (totalMatch) {
-          totalBulk += parseInt(totalMatch[1])
-        }
-      }
-    })
-
-    return {
-      PMC: totalPMC,
-      AKE: totalAKE,
-      BULK: totalBulk,
-      total: totalPMC + totalAKE + totalBulk,
-    }
-  }, [displayFlights])
-
-  const uldTypeChartData = useMemo(() => [
-    {
-      type: "PMC",
-      value: uldBreakdownData.PMC,
-      color: "#DC2626",
-    },
-    {
-      type: "AKE",
-      value: uldBreakdownData.AKE,
-      color: "#EF4444",
-    },
-    {
-      type: "Total",
-      pmcAke: uldBreakdownData.PMC + uldBreakdownData.AKE,
-      bulk: uldBreakdownData.BULK,
-      total: uldBreakdownData.total,
-      color: "#DC2626",
-    },
-  ], [uldBreakdownData])
-
-  const currentWorkAreaData = workAreaData[workAreaFilter === "overall" ? "overall" : (selectedWorkAreaForWorkload as keyof typeof workAreaData)] || workAreaData.overall
-  const maxBarValue = 100
-
   // Read-only view with progress bar
   if (selectedFlight) {
+    // Show loading state while fetching
     if (isLoadingDetail) {
       return (
         <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -667,6 +1011,7 @@ function SituationalAwarenessScreenContent() {
       )
     }
     
+    // If we have a load plan detail, show it with progress bar
     if (selectedLoadPlan) {
       // Recalculate progress when ULD entries are updated (uldUpdateTrigger changes)
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -680,6 +1025,7 @@ function SituationalAwarenessScreenContent() {
       
       return (
         <div className="min-h-screen bg-gray-50">
+          {/* Progress Bar */}
           <div className="bg-white border-b border-gray-200 px-4 py-3">
             <div className="max-w-full">
               <div className="flex items-center justify-between mb-2">
@@ -709,6 +1055,7 @@ function SituationalAwarenessScreenContent() {
             </div>
           </div>
           
+          {/* Read-only Load Plan Detail Screen */}
           <LoadPlanDetailScreen
             loadPlan={selectedLoadPlan}
             onBack={() => {
@@ -722,10 +1069,12 @@ function SituationalAwarenessScreenContent() {
               // Trigger re-render to recalculate progress bar
               setUldUpdateTrigger(prev => prev + 1)
             }}
+            // No onSave - makes it read-only
           />
         </div>
       )
     } else {
+      // Blank view when no load plan detail is found
       return (
         <div className="min-h-screen bg-gray-50 flex items-center justify-center">
           <div className="text-center">
@@ -742,7 +1091,7 @@ function SituationalAwarenessScreenContent() {
               }}
               className="px-4 py-2 bg-[#D71A21] text-white rounded-md hover:bg-[#B0151A] transition-colors"
             >
-              Back to Situational Awareness
+              Back to Flights View
             </button>
           </div>
         </div>
@@ -751,494 +1100,679 @@ function SituationalAwarenessScreenContent() {
   }
 
   return (
-    <>
-      <div className="min-h-screen bg-gray-50 p-4">
-        <div className="max-w-full">
-          {/* Header */}
-          <div className="flex justify-between items-center mb-4 px-2">
-            <div>
-              <h2 className="text-lg font-semibold text-gray-900">Flights View</h2>
-              <p className="text-sm text-gray-500">Shift-level at-a-glance view with completion tracking</p>
+    <div className="min-h-screen bg-gray-50 p-4">
+      <div className="max-w-full">
+        {/* Header */}
+        <div className="flex justify-between items-center mb-4 px-2">
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900">Flights View</h2>
+            <p className="text-sm text-gray-500">Shift-level at-a-glance view with completion tracking</p>
+          </div>
+          {/* Legend */}
+          <div className="flex items-center gap-4 text-xs">
+            <div className="flex items-center gap-1.5">
+              <div className="w-3 h-3 rounded bg-green-500"></div>
+              <span className="text-gray-600">≥80% Complete</span>
             </div>
-            {/* Legend */}
-            <div className="flex items-center gap-4 text-xs">
-              <div className="flex items-center gap-1.5">
-                <div className="w-3 h-3 rounded bg-green-500"></div>
-                <span className="text-gray-600">≥80% Complete</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <div className="w-3 h-3 rounded bg-amber-500"></div>
-                <span className="text-gray-600">50-79% Complete</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <div className="w-3 h-3 rounded bg-red-500"></div>
-                <span className="text-gray-600">&lt;50% Complete</span>
-              </div>
+            <div className="flex items-center gap-1.5">
+              <div className="w-3 h-3 rounded bg-amber-500"></div>
+              <span className="text-gray-600">50-79% Complete</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <div className="w-3 h-3 rounded bg-red-500"></div>
+              <span className="text-gray-600">&lt;50% Complete</span>
             </div>
           </div>
+        </div>
 
-          {/* Filters */}
-          <div className="flex items-center gap-2 mb-4 px-2 flex-wrap">
-            {/* Default View Dropdown */}
-            <div className="flex items-center">
-              <select
-                className="px-2 py-1.5 text-xs border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-[#D71A21] focus:border-transparent"
-              >
-                <option value="default">≡ Default</option>
-                <option value="custom">Custom View</option>
-              </select>
-            </div>
+        {/* Filters */}
+        <div className="flex items-center gap-2 mb-4 px-2 flex-wrap">
+          {/* Default View Dropdown */}
+          <div className="flex items-center">
+            <select
+              className="px-2 py-1.5 text-xs border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-[#D71A21] focus:border-transparent"
+            >
+              <option value="default">≡ Default</option>
+              <option value="custom">Custom View</option>
+            </select>
+          </div>
 
-            {/* Add Filter Dropdown */}
-            <div className="relative" ref={addFilterRef}>
-              <button
-                type="button"
-                onClick={() => setShowAddFilterDropdown(!showAddFilterDropdown)}
-                className="flex items-center gap-1 px-2 py-1.5 text-xs border border-gray-300 rounded-md bg-white hover:border-gray-400 transition-colors"
-              >
-                <Plus className="w-3 h-3" />
-                <span>Add Filter</span>
-              </button>
-              
-              {showAddFilterDropdown && (
-                <div className="absolute top-full left-0 mt-1 z-50 bg-white border border-gray-200 rounded-lg shadow-lg w-48">
-                  <div className="p-2">
-                    <div className="relative mb-2">
-                      <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 w-3 h-3 text-gray-400" />
-                      <input
-                        type="text"
-                        placeholder="Search column..."
-                        className="w-full pl-7 pr-2 py-1.5 text-xs border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-[#D71A21]"
-                      />
+          {/* Search Flights */}
+          <div className="relative">
+            <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 w-3 h-3 text-gray-400" />
+            <input
+              type="text"
+              placeholder="Search flights..."
+              className="pl-7 pr-2 py-1.5 text-xs border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-[#D71A21] focus:border-transparent w-32"
+            />
+          </div>
+
+          <div className="w-px h-6 bg-gray-200" />
+
+          {/* GCR Chip Toggle */}
+          <button
+            type="button"
+            onClick={handleGcrToggle}
+            className={`px-3 py-1.5 text-xs rounded-md transition-colors ${
+              isGcrActive
+                ? "bg-gray-200 text-gray-900 font-medium"
+                : "bg-white text-gray-600 border border-gray-300 hover:bg-gray-50"
+            } ${isGcrActive && !isPilPerActive ? "cursor-not-allowed opacity-70" : "cursor-pointer"}`}
+          >
+            GCR
+          </button>
+          
+          {/* PIL/PER Chip Toggle */}
+          <button
+            type="button"
+            onClick={handlePilPerToggle}
+            className={`px-3 py-1.5 text-xs rounded-md transition-colors ${
+              isPilPerActive
+                ? "bg-gray-200 text-gray-900 font-medium"
+                : "bg-white text-gray-600 border border-gray-300 hover:bg-gray-50"
+            } ${isPilPerActive && !isGcrActive ? "cursor-not-allowed opacity-70" : "cursor-pointer"}`}
+          >
+            PIL/PER
+          </button>
+          
+          {/* PIL/PER Sub-filter dropdown - only visible when PIL/PER is active AND GCR is not */}
+          {isPilPerActive && !isGcrActive && (
+            <select
+              value={pilPerSubFilter}
+              onChange={(e) => handlePilPerSubFilterChange(e.target.value as PilPerSubFilter)}
+              className="px-2 py-1.5 text-xs border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-[#D71A21] focus:border-transparent cursor-pointer"
+            >
+              <option value="Both">Both</option>
+              <option value="PIL only">PIL only</option>
+              <option value="PER only">PER only</option>
+            </select>
+          )}
+
+          {/* Shift Filter - Compact */}
+          <select
+            id="shift-filter"
+            value={selectedShift}
+            onChange={(e) => {
+              setSelectedShift(e.target.value as Shift)
+              if (e.target.value !== "All") setCustomTimeRange(null)
+            }}
+            className="px-2 py-1.5 text-xs border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-[#D71A21] focus:border-transparent"
+          >
+            {SHIFTS.map(shift => (
+              <option key={shift} value={shift}>
+                Shift: {shift} ({filterCounts.shifts[shift] || 0})
+              </option>
+            ))}
+          </select>
+
+          {/* Time Range - Compact */}
+          <div className="relative" ref={timeRangePickerRef}>
+            <button
+              type="button"
+              onClick={() => setShowTimeRangePicker(!showTimeRangePicker)}
+              className={`flex items-center gap-1 px-2 py-1.5 text-xs border rounded-md bg-white transition-colors ${
+                customTimeRange ? "border-[#D71A21] text-[#D71A21]" : "border-gray-300 text-gray-700 hover:border-gray-400"
+              }`}
+            >
+              <Clock className="w-3 h-3" />
+              <span>{customTimeRange ? `${customTimeRange.start}-${customTimeRange.end}` : "Time"}</span>
+              {customTimeRange && (
+                <X className="w-3 h-3" onClick={(e) => { e.stopPropagation(); setCustomTimeRange(null) }} />
+              )}
+            </button>
+            
+            {showTimeRangePicker && (
+              <div className="absolute top-full left-0 mt-1 z-50 bg-white border border-gray-200 rounded-lg shadow-lg p-3 w-56">
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-xs font-semibold text-gray-900">Time Range</h3>
+                  <button onClick={() => setShowTimeRangePicker(false)} className="text-gray-400 hover:text-gray-600">
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+                <div className="flex items-center gap-2 mb-2">
+                  <select
+                    value={customTimeRange?.start || "00:00"}
+                    onChange={(e) => setCustomTimeRange(prev => ({ start: e.target.value, end: prev?.end || e.target.value }))}
+                    className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded"
+                  >
+                    {timeOptions.map(time => <option key={time} value={time}>{time}</option>)}
+                  </select>
+                  <span className="text-xs text-gray-400">to</span>
+                  <select
+                    value={customTimeRange?.end || "23:00"}
+                    onChange={(e) => setCustomTimeRange(prev => ({ start: prev?.start || "00:00", end: e.target.value }))}
+                    className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded"
+                  >
+                    {timeOptions.map(time => <option key={time} value={time}>{time}</option>)}
+                  </select>
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={() => { setCustomTimeRange(null); setShowTimeRangePicker(false) }} className="flex-1 px-2 py-1 text-xs border rounded">Clear</button>
+                  <button onClick={() => setShowTimeRangePicker(false)} className="flex-1 px-2 py-1 text-xs bg-[#D71A21] text-white rounded">Apply</button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="w-px h-6 bg-gray-200" />
+
+          {/* Module Filter - filtered based on active chip */}
+          <select
+            id="module-filter"
+            value={selectedModule}
+            onChange={(e) => handleModuleChange(e.target.value as Module)}
+            className="px-2 py-1.5 text-xs border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-[#D71A21] focus:border-transparent max-w-40 truncate"
+          >
+            {availableModules.map(module => (
+              <option key={module} value={module}>
+                {module === "All" ? "Module: All" : module.length > 30 ? module.slice(0, 30) + "..." : module}
+              </option>
+            ))}
+          </select>
+
+          <div className="flex-1" />
+
+          {/* View Options Panel */}
+          <div className="relative" ref={viewOptionsRef}>
+            <button
+              type="button"
+              onClick={() => setShowViewOptions(!showViewOptions)}
+              className="flex items-center gap-1 px-2 py-1.5 text-xs border border-gray-300 rounded-md bg-white hover:border-gray-400 transition-colors"
+            >
+              <SlidersHorizontal className="w-3 h-3" />
+            </button>
+            
+            {showViewOptions && (
+              <div className="absolute top-full right-0 mt-1 z-50 bg-white border border-gray-200 rounded-lg shadow-lg w-64">
+                <div className="p-3">
+                  <h3 className="text-sm font-semibold text-gray-900 mb-3">View Options</h3>
+                  
+                  {/* Show Flights */}
+                  <div className="mb-3">
+                    <div className="flex items-center gap-1.5 text-xs text-gray-600 mb-1.5">
+                      <Plane className="w-3 h-3 text-[#D71A21]" />
+                      <span>Show Flights</span>
                     </div>
-                    <div className="space-y-0.5">
-                      {["Flight Number", "Departure Date", "Destination", "Origin", "Departure", "Arrival", "Weight (kg)", "Volume (m³)"].map((col) => (
-                        <button
-                          key={col}
-                          className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-gray-700 hover:bg-gray-50 rounded transition-colors text-left"
-                          onClick={() => setShowAddFilterDropdown(false)}
+                    <select className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded">
+                      <option>Show Upcoming Flights Only</option>
+                      <option>Show All Flights</option>
+                      <option>Show Past Flights</option>
+                    </select>
+                  </div>
+                  
+                  {/* Ordering */}
+                  <div className="mb-3">
+                    <div className="flex items-center gap-1.5 text-xs text-gray-600 mb-1.5">
+                      <ArrowUpDown className="w-3 h-3" />
+                      <span>Ordering</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <select className="flex-1 px-2 py-1.5 text-xs border border-gray-200 rounded">
+                        <option>Departure Time</option>
+                        <option>Flight Number</option>
+                        <option>Completion %</option>
+                      </select>
+                      <button className="p-1.5 border border-gray-200 rounded hover:bg-gray-50">
+                        <ArrowUpDown className="w-3 h-3 text-gray-500" />
+                      </button>
+                    </div>
+                  </div>
+                  
+                  {/* Display Fields */}
+                  <div>
+                    <div className="flex items-center gap-1.5 text-xs text-gray-600 mb-1.5">
+                      <Settings2 className="w-3 h-3" />
+                      <span>Display Fields</span>
+                    </div>
+                    <div className="flex flex-wrap gap-1">
+                      {["Flight Number", "Departure Date", "Destination", "Origin", "Departure", "Arrival", "Weight (kg)", "Volume (m³)", "Status", "Tail Number", "Aircraft Type"].map((field) => (
+                        <span
+                          key={field}
+                          className="px-1.5 py-0.5 text-[10px] bg-[#D71A21]/10 text-[#D71A21] border border-[#D71A21]/20 rounded cursor-pointer hover:bg-[#D71A21]/20 transition-colors"
                         >
-                          <span className="text-gray-400">≡</span>
-                          {col}
-                        </button>
+                          {field}
+                        </span>
                       ))}
                     </div>
                   </div>
                 </div>
-              )}
-            </div>
+              </div>
+            )}
+          </div>
 
-            {/* Search Flights */}
-            <div className="relative">
-              <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 w-3 h-3 text-gray-400" />
-              <input
-                type="text"
-                placeholder="Search flights..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-7 pr-2 py-1.5 text-xs border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-[#D71A21] focus:border-transparent w-32"
-              />
-            </div>
-
-            <div className="w-px h-6 bg-gray-200" />
-
-            {/* Work Area Filter */}
-            <WorkAreaFilterControls />
-
-            {/* Shift Filter - Compact */}
-            <select
-              id="shift-filter"
-              value={selectedShift}
-              onChange={(e) => {
-                setSelectedShift(e.target.value as Shift)
-                if (e.target.value !== "All") {
-                  setCustomTimeRange(null)
-                }
-              }}
-              className="px-2 py-1.5 text-xs border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-[#D71A21] focus:border-transparent"
+          {/* Flight count */}
+          <div className="text-xs text-gray-500 whitespace-nowrap">
+            {filteredLoadPlans.length} of {loadPlans.length} flights
+          </div>
+        </div>
+        {/* Active Filters Row */}
+        <div className="flex items-center gap-2 mb-4 px-2 flex-wrap">
+          {/* Add Filter Dropdown */}
+          <div className="relative" ref={addFilterRef}>
+            <button
+              type="button"
+              onClick={() => setShowAddFilterDropdown(!showAddFilterDropdown)}
+              className="flex items-center gap-1 px-2 py-1.5 text-xs border border-gray-300 rounded-md bg-white hover:border-gray-400 transition-colors"
             >
-              {SHIFTS.map(shift => (
-                <option key={shift} value={shift}>
-                  Shift: {shift} ({filterCounts.shifts[shift] || 0})
-                </option>
-              ))}
-            </select>
-
-            {/* Time Range - Compact */}
-            <div className="relative" ref={timeRangePickerRef}>
-              <button
-                type="button"
-                onClick={() => setShowTimeRangePicker(!showTimeRangePicker)}
-                className={`flex items-center gap-1 px-2 py-1.5 text-xs border rounded-md bg-white transition-colors ${
-                  customTimeRange ? "border-[#D71A21] text-[#D71A21]" : "border-gray-300 text-gray-700 hover:border-gray-400"
-                }`}
-              >
-                <Clock className="w-3 h-3" />
-                <span>{customTimeRange ? `${customTimeRange.start}-${customTimeRange.end}` : "Time"}</span>
-                {customTimeRange && (
-                  <X className="w-3 h-3" onClick={(e) => { e.stopPropagation(); setCustomTimeRange(null) }} />
-                )}
-              </button>
-              
-              {showTimeRangePicker && (
-                <div className="absolute top-full left-0 mt-1 z-50 bg-white border border-gray-200 rounded-lg shadow-lg p-3 w-56">
-                  <div className="flex items-center justify-between mb-2">
-                    <h3 className="text-xs font-semibold text-gray-900">Time Range</h3>
-                    <button onClick={() => setShowTimeRangePicker(false)} className="text-gray-400 hover:text-gray-600">
-                      <X className="w-3 h-3" />
-                    </button>
+              <Plus className="w-3 h-3" />
+              <span>Add Filter</span>
+            </button>
+            
+            {showAddFilterDropdown && (
+              <div className="absolute top-full left-0 mt-1 z-50 bg-white border border-gray-200 rounded-lg shadow-lg w-48">
+                <div className="p-2">
+                  <div className="relative mb-2">
+                    <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 w-3 h-3 text-gray-400" />
+                    <input
+                      type="text"
+                      placeholder="Search column..."
+                      className="w-full pl-7 pr-2 py-1.5 text-xs border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-[#D71A21]"
+                    />
                   </div>
-                  <div className="flex items-center gap-2 mb-2">
-                    <select
-                      value={customTimeRange?.start || "00:00"}
-                      onChange={(e) => setCustomTimeRange(prev => ({ start: e.target.value, end: prev?.end || e.target.value }))}
-                      className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded"
-                    >
-                      {timeOptions.map(time => <option key={time} value={time}>{time}</option>)}
-                    </select>
-                    <span className="text-xs text-gray-400">to</span>
-                    <select
-                      value={customTimeRange?.end || "23:00"}
-                      onChange={(e) => setCustomTimeRange(prev => ({ start: prev?.start || "00:00", end: e.target.value }))}
-                      className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded"
-                    >
-                      {timeOptions.map(time => <option key={time} value={time}>{time}</option>)}
-                    </select>
-                  </div>
-                  <div className="flex gap-2">
-                    <button onClick={() => { setCustomTimeRange(null); setShowTimeRangePicker(false) }} className="flex-1 px-2 py-1 text-xs border rounded">Clear</button>
-                    <button onClick={() => setShowTimeRangePicker(false)} className="flex-1 px-2 py-1 text-xs bg-[#D71A21] text-white rounded">Apply</button>
+                  <div className="space-y-0.5">
+                    {(["Flight", "Date", "ACFT TYPE", "ACFT REG", "Route", "STD", "TTL PLN ULD", "Completion"] as FilterColumn[]).map((col) => (
+                      <button
+                        key={col}
+                        className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-gray-700 hover:bg-gray-50 rounded transition-colors text-left"
+                        onClick={() => handleAddFilter(col)}
+                      >
+                        <Filter className="w-3 h-3 text-gray-400" />
+                        {col}
+                      </button>
+                    ))}
                   </div>
                 </div>
-              )}
-            </div>
-
-            <div className="flex-1" />
-
-            {/* View Options Panel */}
-            <div className="relative" ref={viewOptionsRef}>
-              <button
-                type="button"
-                onClick={() => setShowViewOptions(!showViewOptions)}
-                className="flex items-center gap-1 px-2 py-1.5 text-xs border border-gray-300 rounded-md bg-white hover:border-gray-400 transition-colors"
-              >
-                <SlidersHorizontal className="w-3 h-3" />
-              </button>
-              
-              {showViewOptions && (
-                <div className="absolute top-full right-0 mt-1 z-50 bg-white border border-gray-200 rounded-lg shadow-lg w-64">
-                  <div className="p-3">
-                    <h3 className="text-sm font-semibold text-gray-900 mb-3">View Options</h3>
-                    
-                    {/* Show Flights */}
-                    <div className="mb-3">
-                      <div className="flex items-center gap-1.5 text-xs text-gray-600 mb-1.5">
-                        <Plane className="w-3 h-3 text-[#D71A21]" />
-                        <span>Show Flights</span>
-                      </div>
-                      <select className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded">
-                        <option>Show Upcoming Flights Only</option>
-                        <option>Show All Flights</option>
-                        <option>Show Past Flights</option>
-                      </select>
-                    </div>
-                    
-                    {/* Ordering */}
-                    <div className="mb-3">
-                      <div className="flex items-center gap-1.5 text-xs text-gray-600 mb-1.5">
-                        <ArrowUpDown className="w-3 h-3" />
-                        <span>Ordering</span>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <select className="flex-1 px-2 py-1.5 text-xs border border-gray-200 rounded">
-                          <option>Departure Time</option>
-                          <option>Flight Number</option>
-                          <option>Completion %</option>
-                        </select>
-                        <button className="p-1.5 border border-gray-200 rounded hover:bg-gray-50">
-                          <ArrowUpDown className="w-3 h-3 text-gray-500" />
-                        </button>
-                      </div>
-                    </div>
-                    
-                    {/* Display Fields */}
-                    <div>
-                      <div className="flex items-center gap-1.5 text-xs text-gray-600 mb-1.5">
-                        <Settings2 className="w-3 h-3" />
-                        <span>Display Fields</span>
-                      </div>
-                      <div className="flex flex-wrap gap-1">
-                        {["Flight Number", "Departure Date", "Destination", "Origin", "Departure", "Arrival", "Weight (kg)", "Volume (m³)", "Status", "Tail Number", "Aircraft Type"].map((field) => (
-                          <span
-                            key={field}
-                            className="px-1.5 py-0.5 text-[10px] bg-[#D71A21]/10 text-[#D71A21] border border-[#D71A21]/20 rounded cursor-pointer hover:bg-[#D71A21]/20 transition-colors"
-                          >
-                            {field}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Flight count */}
-            <div className="text-xs text-gray-500 whitespace-nowrap">
-              {filteredLoadPlans.length} of {loadPlans.length} flights
-            </div>
+              </div>
+            )}
           </div>
-          
-          {/* Flights Table */}
-          <div className="mx-2 rounded-lg border border-gray-200 overflow-x-auto mb-6">
-            <div className="bg-white">
-              <table className="w-full">
-                <thead>
-                  <tr className="bg-[#D71A21] text-white">
-                    <th className="w-1 px-0"></th>
-                    <th className="px-2 py-1 text-left font-semibold text-xs">
-                      <div className="flex items-center gap-2">
-                        <Plane className="w-4 h-4 flex-shrink-0" />
-                        <span className="whitespace-nowrap">Flight</span>
-                      </div>
-                    </th>
-                    <th className="px-2 py-1 text-left font-semibold text-xs">
-                      <div className="flex items-center gap-2">
-                        <Calendar className="w-4 h-4 flex-shrink-0" />
-                        <span className="whitespace-nowrap">Date</span>
-                      </div>
-                    </th>
-                    <th className="px-2 py-1 text-left font-semibold text-xs">
-                      <div className="flex items-center gap-2">
-                        <Package className="w-4 h-4 flex-shrink-0" />
-                        <span className="whitespace-nowrap">ACFT TYPE</span>
-                      </div>
-                    </th>
-                    <th className="px-2 py-1 text-left font-semibold text-xs">
-                      <div className="flex items-center gap-2">
-                        <Package className="w-4 h-4 flex-shrink-0" />
-                        <span className="whitespace-nowrap">ACFT REG</span>
-                      </div>
-                    </th>
-                    <th className="px-2 py-1 text-left font-semibold text-xs">
-                      <div className="flex items-center gap-2">
-                        <Users className="w-4 h-4 flex-shrink-0" />
-                        <span className="whitespace-nowrap">Route</span>
-                      </div>
-                    </th>
-                    <th className="px-2 py-1 text-left font-semibold text-xs">
-                      <div className="flex items-center gap-2">
-                        <Clock className="w-4 h-4 flex-shrink-0" />
-                        <span className="whitespace-nowrap">STD</span>
-                      </div>
-                    </th>
-                    <th className="px-2 py-1 text-left font-semibold text-xs">
-                      <div className="flex items-center gap-2">
-                        <FileText className="w-4 h-4 flex-shrink-0" />
-                        <span className="whitespace-nowrap">TTL PLN ULD</span>
-                      </div>
-                    </th>
-                    <th className="px-2 py-1 text-left font-semibold text-xs">
-                      <div className="flex items-center gap-2">
-                        <FileText className="w-4 h-4 flex-shrink-0" />
-                        <span className="whitespace-nowrap">Completion</span>
-                      </div>
-                    </th>
-                    <th className="px-2 py-1 text-left font-semibold text-xs">
-                      <div className="flex items-center gap-2">
-                        <User className="w-4 h-4 flex-shrink-0" />
-                        <span className="whitespace-nowrap">Staff</span>
-                      </div>
-                    </th>
-                    <th className="px-2 py-1 text-left font-semibold text-xs">
-                      <div className="flex items-center gap-2">
-                        <Phone className="w-4 h-4 flex-shrink-0" />
-                        <span className="whitespace-nowrap">Contact</span>
-                      </div>
-                    </th>
-                    <th className="px-2 py-1 w-10"></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {isLoading ? (
-                    <tr>
-                      <td colSpan={12} className="px-3 py-2 text-center text-gray-500 text-sm">
-                        Loading flights...
-                      </td>
-                    </tr>
-                  ) : filteredLoadPlans.length === 0 ? (
-                    <tr>
-                      <td colSpan={12} className="px-3 py-2 text-center text-gray-500 text-sm">
-                        {loadPlans.length === 0 ? "No flights available" : "No flights match the selected filters"}
-                      </td>
-                    </tr>
+
+          {/* Active filters */}
+          {activeFilters.map(filter => {
+            const activeStatuses = Array.isArray(filter.value) ? filter.value : []
+            
+            return (
+              <div key={filter.id} className="flex items-center gap-1 px-2 py-1 text-xs border border-gray-300 rounded-md bg-white">
+                <span className="font-medium text-gray-700">{filter.column}</span>
+                <select
+                  value={filter.operator}
+                  onChange={(e) => {
+                    const newOperator = e.target.value as FilterOperator
+                    const updates: Partial<ActiveFilter> = { operator: newOperator }
+                    
+                    // Set default values when switching operator types
+                    if (filter.column === "Completion") {
+                      if (newOperator === "is") {
+                        updates.value = []
+                      } else if (newOperator === "greaterThan" || newOperator === "lessThan") {
+                        updates.value = "50"
+                      }
+                    } else if (filter.column === "STD") {
+                      if (newOperator === "timeRange" && filter.operator !== "timeRange") {
+                        updates.value = "09:00-21:00"
+                      }
+                    }
+                    
+                    handleUpdateFilter(filter.id, updates)
+                  }}
+                  className="px-1 py-0.5 text-xs border-none bg-transparent focus:outline-none focus:ring-1 focus:ring-[#D71A21] rounded"
+                >
+                  {filter.column === "Completion" ? (
+                    <>
+                      <option value="is">is</option>
+                      <option value="greaterThan">&gt;</option>
+                      <option value="lessThan">&lt;</option>
+                    </>
+                  ) : filter.column === "STD" ? (
+                    <>
+                      <option value="timeRange">between</option>
+                      <option value="equals">equals</option>
+                    </>
                   ) : (
-                    filteredLoadPlans.map((loadPlan, index) => {
-                      const completion = flightCompletions.get(loadPlan.flight) || calculateFlightCompletion(loadPlan)
-                      return (
-                        <FlightRow 
-                          key={index} 
-                          loadPlan={loadPlan} 
-                          completion={completion}
-                          onClick={handleRowClick} 
-                        />
-                      )
-                    })
+                    <>
+                      <option value="contains">contains</option>
+                      <option value="equals">equals</option>
+                    </>
                   )}
-                </tbody>
-              </table>
+                </select>
+                
+                {/* Render appropriate input based on column and operator */}
+                {filter.column === "Completion" && filter.operator === "is" ? (
+                  <div className="flex items-center gap-1">
+                    {[
+                      { key: "green", label: "Green", bgColor: "bg-green-500", textColor: "text-white", hoverBg: "hover:bg-green-600", inactiveBg: "bg-green-50", inactiveText: "text-green-700", inactiveBorder: "border-green-200" },
+                      { key: "amber", label: "Amber", bgColor: "bg-amber-500", textColor: "text-white", hoverBg: "hover:bg-amber-600", inactiveBg: "bg-amber-50", inactiveText: "text-amber-700", inactiveBorder: "border-amber-200" },
+                      { key: "red", label: "Red", bgColor: "bg-red-500", textColor: "text-white", hoverBg: "hover:bg-red-600", inactiveBg: "bg-red-50", inactiveText: "text-red-700", inactiveBorder: "border-red-200" }
+                    ].map(status => {
+                      const isActive = activeStatuses.includes(status.key)
+                      return (
+                        <button
+                          key={status.key}
+                          onClick={() => toggleCompletionStatus(filter.id, status.key)}
+                          className={`px-2 py-0.5 text-xs rounded transition-colors border ${
+                            isActive 
+                              ? `${status.bgColor} ${status.textColor} border-transparent ${status.hoverBg}` 
+                              : `${status.inactiveBg} ${status.inactiveText} ${status.inactiveBorder} hover:opacity-80`
+                          }`}
+                        >
+                          {status.label}
+                        </button>
+                      )
+                    })}
+                  </div>
+                ) : filter.column === "Completion" && (filter.operator === "greaterThan" || filter.operator === "lessThan") ? (
+                  <select
+                    value={typeof filter.value === "string" ? filter.value : "50"}
+                    onChange={(e) => handleUpdateFilter(filter.id, { value: e.target.value })}
+                    className="px-1 py-0.5 text-xs border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-[#D71A21]"
+                    autoFocus={editingFilterId === filter.id}
+                  >
+                    {[0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100].map(percent => (
+                      <option key={percent} value={percent}>{percent}%</option>
+                    ))}
+                  </select>
+                ) : filter.column === "STD" && filter.operator === "timeRange" ? (
+                <div className="flex items-center gap-1">
+                  <input
+                    type="time"
+                    value={typeof filter.value === "string" ? filter.value.split("-")[0] : "09:00"}
+                    onChange={(e) => {
+                      const currentValue = typeof filter.value === "string" ? filter.value : "09:00-21:00"
+                      const [, end] = currentValue.split("-")
+                      handleUpdateFilter(filter.id, { value: `${e.target.value}-${end || "21:00"}` })
+                    }}
+                    className="w-20 px-1 py-0.5 text-xs border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-[#D71A21]"
+                  />
+                  <span className="text-gray-400">-</span>
+                  <input
+                    type="time"
+                    value={typeof filter.value === "string" ? filter.value.split("-")[1] : "21:00"}
+                    onChange={(e) => {
+                      const currentValue = typeof filter.value === "string" ? filter.value : "09:00-21:00"
+                      const [start] = currentValue.split("-")
+                      handleUpdateFilter(filter.id, { value: `${start || "09:00"}-${e.target.value}` })
+                    }}
+                    className="w-20 px-1 py-0.5 text-xs border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-[#D71A21]"
+                  />
+                </div>
+              ) : (
+                <input
+                  type="text"
+                  value={typeof filter.value === "string" ? filter.value : ""}
+                  onChange={(e) => handleUpdateFilter(filter.id, { value: e.target.value })}
+                  placeholder="value..."
+                  className="w-20 px-1 py-0.5 text-xs border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-[#D71A21]"
+                  autoFocus={editingFilterId === filter.id}
+                />
+              )}
+                
+                <button
+                  onClick={() => handleRemoveFilter(filter.id)}
+                  className="ml-1 text-gray-400 hover:text-red-600 transition-colors"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </div>
+            )
+          })}
+          
+          {/* Clear all button - only show when there are active filters */}
+          {activeFilters.length > 0 && (
+            <button
+              onClick={() => setActiveFilters([])}
+              className="text-xs text-gray-500 hover:text-gray-700 underline"
+            >
+              Clear all
+            </button>
+          )}
+        </div>
+        
+        <div className="mx-2 rounded-lg border border-gray-200 overflow-x-auto">
+          <div className="bg-white">
+            <table className="w-full">
+              <thead>
+                <tr className="bg-[#D71A21] text-white">
+                  {/* Status column - narrow */}
+                  <th className="w-1 px-0"></th>
+                  <th className="px-2 py-1 text-left font-semibold text-xs">
+                    <div className="flex items-center gap-2">
+                      <Plane className="w-4 h-4 flex-shrink-0" />
+                      <span className="whitespace-nowrap">Flight</span>
+                    </div>
+                  </th>
+                  <th className="px-2 py-1 text-left font-semibold text-xs">
+                    <div className="flex items-center gap-2">
+                      <Calendar className="w-4 h-4 flex-shrink-0" />
+                      <span className="whitespace-nowrap">Date</span>
+                    </div>
+                  </th>
+                  <th className="px-2 py-1 text-left font-semibold text-xs">
+                    <div className="flex items-center gap-2">
+                      <Package className="w-4 h-4 flex-shrink-0" />
+                      <span className="whitespace-nowrap">ACFT TYPE</span>
+                    </div>
+                  </th>
+                  <th className="px-2 py-1 text-left font-semibold text-xs">
+                    <div className="flex items-center gap-2">
+                      <Package className="w-4 h-4 flex-shrink-0" />
+                      <span className="whitespace-nowrap">ACFT REG</span>
+                    </div>
+                  </th>
+                  <th className="px-2 py-1 text-left font-semibold text-xs">
+                    <div className="flex items-center gap-2">
+                      <Users className="w-4 h-4 flex-shrink-0" />
+                      <span className="whitespace-nowrap">Route</span>
+                    </div>
+                  </th>
+                  <th 
+                    className="px-2 py-1 text-left font-semibold text-xs cursor-pointer hover:bg-[#B0151A] transition-colors"
+                    onClick={() => handleSort("STD")}
+                  >
+                    <div className="flex items-center gap-2">
+                      <Clock className="w-4 h-4 flex-shrink-0" />
+                      <span className="whitespace-nowrap">STD</span>
+                      {sortColumn === "STD" && (
+                        <span className="text-[10px]">{sortDirection === "asc" ? "↑" : "↓"}</span>
+                      )}
+                    </div>
+                  </th>
+                  <th className="px-2 py-1 text-left font-semibold text-xs">
+                    <div className="flex items-center gap-2">
+                      <FileText className="w-4 h-4 flex-shrink-0" />
+                      <span className="whitespace-nowrap">TTL PLN ULD</span>
+                    </div>
+                  </th>
+                  <th 
+                    className="px-2 py-1 text-left font-semibold text-xs cursor-pointer hover:bg-[#B0151A] transition-colors"
+                    onClick={() => handleSort("Completion")}
+                  >
+                    <div className="flex items-center gap-2">
+                      <FileText className="w-4 h-4 flex-shrink-0" />
+                      <span className="whitespace-nowrap">Completion</span>
+                      {sortColumn === "Completion" && (
+                        <span className="text-[10px]">{sortDirection === "asc" ? "↑" : "↓"}</span>
+                      )}
+                    </div>
+                  </th>
+                  <th className="px-2 py-1 text-left font-semibold text-xs">
+                    <div className="flex items-center gap-2">
+                      <User className="w-4 h-4 flex-shrink-0" />
+                      <span className="whitespace-nowrap">Staff</span>
+                    </div>
+                  </th>
+                  <th className="px-2 py-1 text-left font-semibold text-xs">
+                    <div className="flex items-center gap-2">
+                      <Phone className="w-4 h-4 flex-shrink-0" />
+                      <span className="whitespace-nowrap">Contact</span>
+                    </div>
+                  </th>
+                  <th className="px-2 py-1 w-10"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {isLoading ? (
+                  <tr>
+                    <td colSpan={12} className="px-3 py-2 text-center text-gray-500 text-sm">
+                      Loading flights...
+                    </td>
+                  </tr>
+                ) : filteredLoadPlans.length === 0 ? (
+                  <tr>
+                    <td colSpan={12} className="px-3 py-2 text-center text-gray-500 text-sm">
+                      {loadPlans.length === 0 ? "No flights available" : "No flights match the selected filters"}
+                    </td>
+                  </tr>
+                ) : (
+                  filteredLoadPlans.map((loadPlan, index) => {
+                    const completion = flightCompletions.get(loadPlan.flight) || calculateFlightCompletion(loadPlan)
+                    return (
+                      <FlightRow 
+                        key={index} 
+                        loadPlan={loadPlan} 
+                        completion={completion}
+                        onClick={handleRowClick} 
+                      />
+                    )
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* Bottom Half - Split into Left and Right */}
+        <div className="flex gap-4 mt-4 px-2">
+          {/* Left Half - Current Shift Workload */}
+          <div className="w-1/2">
+            <div className="bg-white rounded-lg border border-gray-200 p-4">
+              <h3 className="text-sm font-semibold text-gray-900 mb-3">Current Shift Workload{workloadChartTitleSuffix}</h3>
+              <div className="h-48">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={currentShiftWorkloadData} margin={{ top: 5, right: 5, left: 0, bottom: 5 }} barCategoryGap="25%" barGap={0}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
+                    <XAxis
+                      dataKey="type"
+                      tick={{ fontSize: 10, fill: "#6B7280" }}
+                      stroke="#9CA3AF"
+                      type="category"
+                      interval={0}
+                    />
+                    <YAxis
+                      tick={{ fontSize: 10, fill: "#6B7280" }}
+                      stroke="#9CA3AF"
+                    />
+                    <Tooltip content={<WorkloadTooltip />} />
+                    <Legend 
+                      wrapperStyle={{ fontSize: "10px", paddingTop: "10px", pointerEvents: "none" }} 
+                      iconSize={10}
+                      content={() => {
+                        if (isShowingPilPer) {
+                          return (
+                            <ul className="flex justify-center gap-3 text-[10px] flex-wrap">
+                              <li className="flex items-center gap-1">
+                                <span style={{ display: "inline-block", width: "10px", height: "10px", backgroundColor: "#DC2626", borderRadius: "2px" }} />
+                                <span>AKE/DPE</span>
+                              </li>
+                              <li className="flex items-center gap-1">
+                                <span style={{ display: "inline-block", width: "10px", height: "10px", backgroundColor: "#EF4444", borderRadius: "2px" }} />
+                                <span>ALF/DQF</span>
+                              </li>
+                              <li className="flex items-center gap-1">
+                                <span style={{ display: "inline-block", width: "10px", height: "10px", backgroundColor: "#F87171", borderRadius: "2px" }} />
+                                <span>LD-PMC/AMF</span>
+                              </li>
+                              <li className="flex items-center gap-1">
+                                <span style={{ display: "inline-block", width: "10px", height: "10px", backgroundColor: "#FCA5A5", borderRadius: "2px" }} />
+                                <span>MD-Q6/Q7</span>
+                              </li>
+                            </ul>
+                          )
+                        }
+                        
+                        return (
+                          <ul className="flex justify-center gap-3 text-[10px] flex-wrap">
+                            <li className="flex items-center gap-1">
+                              <span style={{ display: "inline-block", width: "10px", height: "10px", backgroundColor: "#DC2626", borderRadius: "2px" }} />
+                              <span>PMC-AMF</span>
+                            </li>
+                            <li className="flex items-center gap-1">
+                              <span style={{ display: "inline-block", width: "10px", height: "10px", backgroundColor: "#EF4444", borderRadius: "2px" }} />
+                              <span>ALF-PLA</span>
+                            </li>
+                            <li className="flex items-center gap-1">
+                              <span style={{ display: "inline-block", width: "10px", height: "10px", backgroundColor: "#F87171", borderRadius: "2px" }} />
+                              <span>AKE-RKE</span>
+                            </li>
+                          </ul>
+                        )
+                      }}
+                    />
+                    <Bar dataKey="value" barSize={40} radius={[4, 4, 0, 0]} name="ULDs">
+                      {currentShiftWorkloadData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.color} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
             </div>
           </div>
 
-          {/* Section 1: Current Workload by Category/Work Areas */}
-          <Collapsible defaultOpen={false}>
-            <CollapsibleTrigger className="w-full mb-4">
-              <div className="bg-white rounded-lg border border-gray-200 p-4 flex items-center justify-between hover:bg-gray-50 transition-colors">
-                <h3 className="text-lg font-semibold text-gray-900">Current Workload by Category/Work Areas</h3>
-                <ChevronDown className="w-5 h-5 text-gray-600" />
+          {/* Right Half - Incoming Workload (Miniaturized) */}
+          <div className="w-1/2">
+            <div className="bg-white rounded-lg border border-gray-200 p-4">
+              <h3 className="text-sm font-semibold text-gray-900 mb-3">Incoming Workload</h3>
+              <div className="h-32">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={incomingWorkloadData} margin={{ top: 5, right: 5, left: 0, bottom: 5 }} barCategoryGap="25%" barGap={0}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
+                    <XAxis
+                      dataKey="type"
+                      tick={{ fontSize: 10, fill: "#6B7280" }}
+                      stroke="#9CA3AF"
+                      type="category"
+                      interval={0}
+                    />
+                    <YAxis
+                      tick={{ fontSize: 10, fill: "#6B7280" }}
+                      stroke="#9CA3AF"
+                    />
+                    <Tooltip content={<IncomingWorkloadTooltip />} />
+                    <Bar dataKey="value" barSize={40} radius={[4, 4, 0, 0]} name="ULDs">
+                      {incomingWorkloadData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.color} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
               </div>
-            </CollapsibleTrigger>
-            <CollapsibleContent>
-              <div className="bg-white rounded-lg border border-gray-200 border-t-0 p-6 mb-4">
-                <div className="flex items-center justify-between mb-4">
-                  <h4 className="text-base font-semibold text-gray-900">Workload</h4>
-                  <div className="flex gap-2">
-                    <Select
-                      value={workAreaFilter}
-                      onValueChange={(value) => {
-                        setWorkAreaFilter(value as "overall" | "sortByWorkArea")
-                        if (value === "overall") {
-                          setSelectedWorkAreaForWorkload("E75")
-                        }
-                      }}
-                    >
-                      <SelectTrigger className="w-[180px]">
-                        <SelectValue>
-                          {workAreaFilter === "overall" ? "Overall" : "Sort by work area"}
-                        </SelectValue>
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="overall">Overall</SelectItem>
-                        <SelectItem value="sortByWorkArea">Sort by work area</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    {workAreaFilter === "sortByWorkArea" && (
-                      <Select value={selectedWorkAreaForWorkload} onValueChange={setSelectedWorkAreaForWorkload}>
-                        <SelectTrigger className="w-[120px]">
-                          <SelectValue>{selectedWorkAreaForWorkload}</SelectValue>
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="E75">E75</SelectItem>
-                          <SelectItem value="L22">L22</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    )}
-                  </div>
-                </div>
-                <div className="space-y-3">
-                  {(["GCR", "PER", "PIL"] as const).map((area) => {
-                    const data = currentWorkAreaData[area]
-                    const completed = data.total - data.remaining
-                    const totalPercentage = (data.total / maxBarValue) * 100
-                    const completedPercentage = (completed / data.total) * 100
-                    const remainingPercentage = (data.remaining / data.total) * 100
-
-                    return (
-                      <div key={area} className="flex items-center gap-4">
-                        <div className="w-16 text-sm font-medium text-gray-700">{area}</div>
-                        <div className="flex-1 relative">
-                          <div className="w-full bg-gray-200 rounded-full h-8 relative overflow-hidden">
-                            <div
-                              className="absolute left-0 top-0 h-8 flex transition-all"
-                              style={{ width: `${totalPercentage}%` }}
-                            >
-                              <div
-                                className="bg-[#DC2626] h-8 flex items-center justify-start px-3"
-                                style={{ width: `${completedPercentage}%` }}
-                              >
-                                <span className="text-white text-sm font-semibold">{completed}</span>
-                              </div>
-                              <div
-                                className="h-8 flex items-center justify-end px-3"
-                                style={{ width: `${remainingPercentage}%`, backgroundColor: "rgba(220, 38, 38, 0.4)" }}
-                              >
-                                <span className="text-white text-sm font-semibold">{data.remaining}</span>
-                              </div>
-                            </div>
-                          </div>
-                          <div className="absolute right-2 top-1/2 -translate-y-1/2 text-sm font-semibold text-gray-700">
-                            {data.total} Total
-                          </div>
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              </div>
-            </CollapsibleContent>
-          </Collapsible>
-
-          {/* Section 2: Anticipated Incoming Workload */}
-          <Collapsible defaultOpen={false}>
-            <CollapsibleTrigger className="w-full mb-4">
-              <div className="bg-white rounded-lg border border-gray-200 p-4 flex items-center justify-between hover:bg-gray-50 transition-colors">
-                <h3 className="text-lg font-semibold text-gray-900">Anticipated Incoming Workload</h3>
-                <ChevronDown className="w-5 h-5 text-gray-600" />
-              </div>
-            </CollapsibleTrigger>
-            <CollapsibleContent>
-              <div className="bg-white rounded-lg border border-gray-200 border-t-0 p-6 mb-4">
-                <p className="text-sm text-gray-500 mb-4">Based on upcoming flights, load plans released D-12</p>
-                
-                {/* Graph - ULD Type Breakdown */}
-                <div className="mb-6">
-                  <h4 className="text-base font-semibold text-gray-900 mb-4">ULD Type Breakdown</h4>
-                  <div className="h-80">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={uldTypeChartData}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
-                        <XAxis
-                          dataKey="type"
-                          tick={{ fontSize: 12, fill: "#6B7280" }}
-                          stroke="#9CA3AF"
-                        />
-                        <YAxis
-                          tick={{ fontSize: 12, fill: "#6B7280" }}
-                          stroke="#9CA3AF"
-                        />
-                        <Tooltip />
-                        <Legend />
-                        <Bar dataKey="value" fill="#DC2626" name="ULD Count" />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
-                </div>
-
-                {/* Flights Table */}
-                <div className="overflow-x-auto">
-                  <table className="w-full text-xs border border-gray-300">
+              
+              {/* Mini Flight Table */}
+              <div className="mt-3 border-t border-gray-100 pt-3">
+                <div className="text-[10px] text-gray-500 mb-2">Upcoming Flights (not yet actioned)</div>
+                <div className="overflow-hidden rounded border border-gray-200">
+                  <table className="w-full">
                     <thead>
-                      <tr className="bg-gray-50">
-                        <th className="px-3 py-2 text-left border border-gray-300">Flight</th>
-                        <th className="px-3 py-2 text-left border border-gray-300">STD</th>
-                        <th className="px-3 py-2 text-left border border-gray-300">Destination</th>
-                        <th className="px-3 py-2 text-left border border-gray-300">TTL PLN ULD</th>
+                      <tr className="bg-gray-50 text-[10px] text-gray-600">
+                        <th className="px-2 py-1 text-left font-medium">Flight</th>
+                        <th className="px-2 py-1 text-left font-medium">STD</th>
+                        <th className="px-2 py-1 text-left font-medium">Route</th>
+                        <th className="px-2 py-1 text-right font-medium">ULDs</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {displayFlights.length === 0 ? (
+                      {topIncomingFlights.length === 0 ? (
                         <tr>
-                          <td colSpan={4} className="px-3 py-2 text-center text-gray-500">
-                            No flights available
+                          <td colSpan={4} className="px-2 py-2 text-center text-gray-400 text-[10px]">
+                            No flights
                           </td>
                         </tr>
                       ) : (
-                        displayFlights.map((flight, idx) => (
-                          <tr key={idx} className="border-b border-gray-200">
-                            <td className="px-3 py-2 border border-gray-300 font-semibold">{flight.flight}</td>
-                            <td className="px-3 py-2 border border-gray-300">{flight.std}</td>
-                            <td className="px-3 py-2 border border-gray-300">{flight.destination}</td>
-                            <td className="px-3 py-2 border border-gray-300">{flight.ttlPlnUld}</td>
+                        topIncomingFlights.map((flight, idx) => (
+                          <tr key={idx} className="border-t border-gray-100 text-[10px]">
+                            <td className="px-2 py-1 font-medium text-[#D71A21]">{flight.flight}</td>
+                            <td className="px-2 py-1 text-gray-600">{flight.std}</td>
+                            <td className="px-2 py-1 text-gray-600 truncate max-w-[80px]">{flight.route.split('/').slice(0, 2).join('/')}</td>
+                            <td className="px-2 py-1 text-right font-medium text-gray-900">{flight.totalULDs}</td>
                           </tr>
                         ))
                       )}
@@ -1246,99 +1780,11 @@ function SituationalAwarenessScreenContent() {
                   </table>
                 </div>
               </div>
-            </CollapsibleContent>
-          </Collapsible>
-
-          {/* Section 3: Digital Buildup Completion Report */}
-          <Collapsible defaultOpen={false}>
-            <CollapsibleTrigger className="w-full mb-4">
-              <div className="bg-white rounded-lg border border-gray-200 p-4 flex items-center justify-between hover:bg-gray-50 transition-colors">
-                <h3 className="text-lg font-semibold text-gray-900">Digital Buildup Completion Report</h3>
-                <ChevronDown className="w-5 h-5 text-gray-600" />
-              </div>
-            </CollapsibleTrigger>
-            <CollapsibleContent>
-              <div className="bg-white rounded-lg border border-gray-200 border-t-0 p-6 mb-4">
-                <p className="text-sm text-gray-500 mb-4">At shipment level (pending)</p>
-                
-                <div className="overflow-x-auto">
-                  <table className="w-full">
-                    <thead>
-                      <tr className="bg-[#D71A21] text-white">
-                        <th className="px-2 py-1 text-left font-semibold text-xs">
-                          <div className="flex items-center gap-2">
-                            <Plane className="w-4 h-4 flex-shrink-0" />
-                            <span className="whitespace-nowrap">Flight</span>
-                          </div>
-                        </th>
-                        <th className="px-2 py-1 text-left font-semibold text-xs">
-                          <div className="flex items-center gap-2">
-                            <Calendar className="w-4 h-4 flex-shrink-0" />
-                            <span className="whitespace-nowrap">Date</span>
-                          </div>
-                        </th>
-                        <th className="px-2 py-1 text-left font-semibold text-xs">
-                          <div className="flex items-center gap-2">
-                            <Package className="w-4 h-4 flex-shrink-0" />
-                            <span className="whitespace-nowrap">ACFT TYPE</span>
-                          </div>
-                        </th>
-                        <th className="px-2 py-1 text-left font-semibold text-xs">
-                          <div className="flex items-center gap-2">
-                            <Users className="w-4 h-4 flex-shrink-0" />
-                            <span className="whitespace-nowrap">Sent By</span>
-                          </div>
-                        </th>
-                        <th className="px-2 py-1 text-left font-semibold text-xs">
-                          <div className="flex items-center gap-2">
-                            <Clock className="w-4 h-4 flex-shrink-0" />
-                            <span className="whitespace-nowrap">Sent At</span>
-                          </div>
-                        </th>
-                        <th className="px-2 py-1 w-10"></th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {sentBCRs.length === 0 ? (
-                        <tr>
-                          <td colSpan={6} className="px-3 py-2 text-center text-gray-500 text-sm">
-                            No sent BCRs available
-                          </td>
-                        </tr>
-                      ) : (
-                        sentBCRs.map((bcr, index) => (
-                          <BCRRow 
-                            key={index} 
-                            bcr={bcr} 
-                            onClick={() => {
-                              setSelectedBCR(bcr)
-                              setShowBCRModal(true)
-                            }} 
-                          />
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </CollapsibleContent>
-          </Collapsible>
+            </div>
+          </div>
         </div>
       </div>
-
-      {/* BCR Modal */}
-      {selectedBCR && (
-        <BCRModal
-          isOpen={showBCRModal}
-          onClose={() => {
-            setShowBCRModal(false)
-            setSelectedBCR(null)
-          }}
-          loadPlan={selectedBCR.loadPlan}
-          bcrData={selectedBCR.bcrData}
-        />
-      )}
-    </>
+    </div>
   )
 }
 
@@ -1361,6 +1807,7 @@ function FlightRow({ loadPlan, completion, onClick }: FlightRowProps) {
         } ${completion.completionPercentage}%, transparent ${completion.completionPercentage}%)`
       }}
     >
+      {/* Status indicator bar */}
       <td className="w-1 px-0 relative">
         <div 
           className={`absolute left-0 top-0 bottom-0 w-1 ${getStatusColor(completion.status)} opacity-80 group-hover:opacity-100 transition-opacity`}
@@ -1375,6 +1822,7 @@ function FlightRow({ loadPlan, completion, onClick }: FlightRowProps) {
       <td className="px-2 py-1 text-gray-900 text-xs whitespace-nowrap truncate">{loadPlan.pax}</td>
       <td className="px-2 py-1 text-gray-900 text-xs whitespace-nowrap truncate">{loadPlan.std}</td>
       <td className="px-2 py-1 text-gray-900 text-xs whitespace-nowrap truncate">{loadPlan.ttlPlnUld}</td>
+      {/* Completion percentage with visual bar */}
       <td className="px-2 py-1 text-xs whitespace-nowrap">
         <div className="flex items-center gap-2">
           <div className="w-16 h-2 bg-gray-200 rounded-full overflow-hidden">
@@ -1399,53 +1847,6 @@ function FlightRow({ loadPlan, completion, onClick }: FlightRowProps) {
       <td className="px-2 py-1 text-gray-600 text-xs whitespace-nowrap truncate">{completion.staffContact}</td>
       <td className="px-2 py-1 w-10">
         <ChevronRight className="h-4 w-4 text-gray-400 group-hover:text-[#D71A21] transition-colors" />
-      </td>
-    </tr>
-  )
-}
-
-interface BCRRowProps {
-  bcr: SentBCR
-  onClick: () => void
-}
-
-function BCRRow({ bcr, onClick }: BCRRowProps) {
-  const formatDate = (dateString: string) => {
-    try {
-      const date = new Date(dateString)
-      // Display in Dubai/GST timezone (UTC+4)
-      return date.toLocaleString('en-US', {
-        timeZone: 'Asia/Dubai',
-        month: 'short',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-      })
-    } catch {
-      return dateString
-    }
-  }
-
-  return (
-    <tr
-      onClick={onClick}
-      className="border-b border-gray-100 last:border-b-0 hover:bg-gray-50 cursor-pointer"
-    >
-      <td className="px-2 py-1 font-semibold text-gray-900 text-xs whitespace-nowrap truncate">
-        {bcr.flight}
-      </td>
-      <td className="px-2 py-1 text-gray-900 text-xs whitespace-nowrap truncate">{bcr.date}</td>
-      <td className="px-2 py-1 text-gray-900 text-xs whitespace-nowrap truncate">
-        {bcr.loadPlan?.acftType || '-'}
-      </td>
-      <td className="px-2 py-1 text-gray-900 text-xs whitespace-nowrap truncate">
-        {bcr.sentBy || '-'}
-      </td>
-      <td className="px-2 py-1 text-gray-900 text-xs whitespace-nowrap truncate">
-        {formatDate(bcr.sentAt)}
-      </td>
-      <td className="px-2 py-1 w-10">
-        <ChevronRight className="h-4 w-4 text-gray-600 hover:text-[#D71A21]" />
       </td>
     </tr>
   )
