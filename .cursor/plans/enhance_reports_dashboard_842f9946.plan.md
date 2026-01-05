@@ -19,7 +19,7 @@ todos:
     status: completed
   - id: staff-performance-contact
     content: "M1 REQ: Display staff contact numbers in table"
-    status: pending
+    status: completed
   - id: shift-summary-gauges
     content: "M2: Add efficiency gauge dashboard (3 radial charts)"
     status: completed
@@ -49,22 +49,34 @@ todos:
     status: completed
   - id: situational-ring
     content: "M4: Add overall completion ring"
-    status: pending
+    status: completed
   - id: situational-bars
     content: "M4: Add flight completion bar chart"
-    status: pending
+    status: completed
   - id: situational-radar
     content: "M4: Add workload category radar"
-    status: pending
+    status: completed
   - id: situational-layout
     content: "M4: Add mission control header and tabs"
-    status: pending
+    status: completed
   - id: situational-uld-pending
     content: "M4 REQ: Add prominent ULD Completed vs Pending card"
-    status: pending
+    status: completed
   - id: situational-drilldown
     content: "M4 REQ: Enhance flight status drill-down interaction"
-    status: pending
+    status: completed
+  - id: situational-advance-planned
+    content: "M4: Add Advance Planned vs Built stacked bar chart"
+    status: completed
+  - id: situational-incoming
+    content: "M4: Add Incoming Workload timeline/area chart"
+    status: completed
+  - id: situational-shift-filter
+    content: "M4: Add shift toggle filter (9am-9pm / 9pm-9am)"
+    status: completed
+  - id: situational-all-shifts
+    content: "M4: Add all-shifts workload view with flight rows"
+    status: completed
 ---
 
 # Reports Dashboard Enhancement Plan
@@ -221,20 +233,59 @@ This is a POC demo for Emirates on Monday, January 12th. The priority is visual 
 
 **File**: [`components/situational-awareness-screen.tsx`](components/situational-awareness-screen.tsx)
 
+### Notion Requirements ([source](https://www.notion.so/belli-ai/6-decide-what-graphs-tables-to-show-to-management-Reports-section-2b89e07d412b8030a0b6ca118503142d))
+
+**Layout Structure:**
+
+- Top: Filters (Category GCR/PIL/PER, Work Areas, Time, Shift 9am-9pm/9pm-9am)
+- Total workload for ALL shifts (flight level by row, ULD level by completion bar)
+- Bottom: Two columns (Advance Planned vs Built | Incoming Workload)
+
+**4 Key Visualizations Required:**
+1. Current workload by category/work areas, date-time range and shift
+2. Flights in progress and completion rates against planned ULDs
+3. Anticipated incoming workload (based on upcoming flights)
+4. Digital buildup completion report at shipment level
+
 ### Charts to Implement
 
-| Chart | Type | Data Source | Priority || --------------------------- | --------------------- | ---------------------- | -------- || 4.1 Overall Completion Ring | Large Radial Progress | Total ULD completion % | High || 4.2 Flight Completion Bars | Horizontal Bar | Per-flight completion | High || 4.3 Workload Category Radar | Radar Chart | GCR/PER/PIL balance | Medium |
+| Chart | Type | Data Source | Priority | Status |
+| ------------------------------- | --------------------- | -------------------------------- | -------- | ------- |
+| 4.1 Overall Completion Ring | Large Radial Progress | Total ULD completion % | High | Pending |
+| 4.2 Flight Completion Bars | Horizontal Bar | Per-flight with ULD completion | High | Pending |
+| 4.3 Workload Category Radar | Radar Chart | GCR/PER/PIL balance | Medium | Pending |
+| 4.4 Advance Planned vs Built | Stacked Bar | Planned vs actual by time window | High | Pending |
+| 4.5 Incoming Workload Timeline | Area/Bar Chart | Upcoming flights workload | High | Pending |
+
+### Features to Implement
+
+| Feature | Description | Status |
+| ------------------------------ | ---------------------------------------------------- | ------- |
+| Shift filter (9am-9pm/9pm-9am) | Toggle between day/night shift views | Pending |
+| All-shifts workload view | Show total workload across all shifts, not just current | Pending |
+| Flight-level rows | Each flight as a row with ULD completion bars | Pending |
+| Synced GCR/PER/PIL filters | Same separate button style as Workload Visibility | Pending |
+| Work area module filter | Filter by specific warehouse modules | Pending |
+| Time range filter | Filter by date-time range | Pending |
 
 ### Requirements Gap for This Page
 
-| Requirement | Gap | Action | Status || --------------------------------- | ------------------------ | ----------------------------------------- | ---------- || ULD Completed vs Pending view | Exists but not prominent | Add hero "Completed vs Pending" stat card | Pending || Drill-down from flight status | Basic click interaction | Add modal/panel with flight details | Pending || Green/amber/red status | Already implemented | - | Done || Staff names and contact numbers | Already in STAFF_DATA | - | Done || Anticipated incoming workload | Basic exists | Enhance with timeline chart | Medium |
+| Requirement | Gap | Action | Status |
+| --------------------------------- | ------------------------ | ----------------------------------------- | ---------- |
+| ULD Completed vs Pending view | Exists but not prominent | Add hero "Completed vs Pending" stat card | Pending |
+| Drill-down from flight status | Basic click interaction | Add modal/panel with flight details | Pending |
+| Green/amber/red status | Already implemented | - | Done |
+| Anticipated incoming workload | Not implemented | Add Incoming Workload timeline chart | Pending |
+| Advance Planned vs Built | Not in current screen | Add similar chart to Workload Visibility | Pending |
 
 ### Layout Changes
 
-- Add "Mission Control" hero section with Completion Ring
-- Add prominent "ULD Status" summary card (X Completed / Y Pending)
-- Convert collapsible sections to tabs
-- Add subtle background gradients
+- Add "Mission Control" hero section with Completion Ring + ULD Status card
+- Add shift toggle (Day 9am-9pm / Night 9pm-9am)
+- Flight table with per-flight ULD completion bars
+- Bottom two-column layout:
+  - Left: Advance Planned vs Built (stacked bars)
+  - Right: Incoming Workload (timeline/area chart)
 
 ---
 
@@ -287,7 +338,7 @@ Located in [`components/reports/charts/`](components/reports/charts/):
 
 | `components/work-area-filter-controls.tsx` | Separate GCR/PER/PIL filters | Done |
 
-| `components/situational-awareness-screen.tsx` | M4 charts + layout | Pending |
+| `components/situational-awareness-screen.tsx` | M4 charts + layout + filters + incoming workload | Pending |
 
 ---
 

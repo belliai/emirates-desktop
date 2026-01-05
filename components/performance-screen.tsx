@@ -16,6 +16,7 @@ import {
   Trophy,
   ChevronDown,
   ChevronUp,
+  Phone,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -150,6 +151,7 @@ const HARDCODED_STAFF: StaffPerformance[] = [
     bulkKg: 0,
     actualThruUnit: 0,
     actualTopUpUnit: "EKP BUILD UP",
+    contact: "+971 50 567 8901",
   },
   {
     id: 5,
@@ -167,6 +169,7 @@ const HARDCODED_STAFF: StaffPerformance[] = [
     bulkKg: 0,
     actualThruUnit: 0,
     actualTopUpUnit: "EKP BUILD UP",
+    contact: "+971 50 678 9012",
   },
   {
     id: 6,
@@ -184,6 +187,7 @@ const HARDCODED_STAFF: StaffPerformance[] = [
     bulkKg: 0,
     actualThruUnit: 0,
     actualTopUpUnit: "CTO SCREENING",
+    contact: "+971 50 789 0123",
   },
   {
     id: 7,
@@ -214,6 +218,7 @@ const HARDCODED_STAFF: StaffPerformance[] = [
     bulkKg: 0,
     actualThruUnit: 0,
     actualTopUpUnit: "EKP BUILD UP",
+    contact: "+971 50 890 1234",
   },
 ];
 
@@ -631,6 +636,9 @@ function PerformanceScreenContent() {
                       <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                         Staff
                       </th>
+                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                        Contact
+                      </th>
                       <th className="px-6 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">
                         Type
                       </th>
@@ -656,6 +664,7 @@ function PerformanceScreenContent() {
                           Team Average
                         </span>
                       </td>
+                      <td className="px-6 py-4 text-sm text-gray-500">—</td>
                       <td className="px-6 py-4 text-center text-sm text-gray-500">
                         —
                       </td>
@@ -703,6 +712,12 @@ function PerformanceScreenContent() {
                                   {staff.staffNo || "No ID"}
                                 </div>
                               </div>
+                            </div>
+                          </td>
+                          <td className="px-6 py-4">
+                            <div className="flex items-center gap-1.5 text-sm text-gray-600">
+                              <Phone className="w-3.5 h-3.5 text-gray-400" />
+                              <span>{staff.contact || "—"}</span>
                             </div>
                           </td>
                           <td className="px-6 py-4 text-center">
