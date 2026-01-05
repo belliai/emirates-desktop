@@ -1270,10 +1270,13 @@ function CombinedTable({
                       const isAdditionalData = awb.additional_data === true
                       
                       // Check if we need to show ULD row after this AWB
-                      // Each AWB has its own ULD instance - always show ULD row
-                      // (Even if multiple AWBs have the same ULD string like "XX 01PMC XX",
-                      // they represent different physical containers)
-                      const shouldShowULD = uld && uld.trim() !== ""
+                      // Only show ULD row after the LAST AWB in each ULD section
+                      // This groups all AWBs under one ULD header per section
+                      const nextItem = regular[index + 1]
+                      const isLastInSection = !nextItem || 
+                        nextItem.sectorIndex !== sectorIndex || 
+                        nextItem.uldSectionIndex !== uldSectionIndex
+                      const shouldShowULD = uld && uld.trim() !== "" && isLastInSection
                       
                       return (
                         <React.Fragment key={`${awb.ser}-${awb.awbNo}-${sectorIndex}-${uldSectionIndex}-${awbIndex}-${awb.additional_data ? 'add' : 'orig'}`}>
