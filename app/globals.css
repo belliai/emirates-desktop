@@ -124,3 +124,294 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* ============================================
+   Emirates Dashboard Chart Styles
+   ============================================ */
+
+:root {
+  /* Emirates Red gradient scale for charts */
+  --chart-emirates-1: #D71A21;
+  --chart-emirates-2: #B91C1C;
+  --chart-emirates-3: #EF4444;
+  --chart-emirates-4: #F87171;
+  --chart-emirates-5: #FCA5A5;
+  
+  /* Status colors */
+  --chart-success: #22C55E;
+  --chart-success-light: #86EFAC;
+  --chart-warning: #F59E0B;
+  --chart-warning-light: #FCD34D;
+  --chart-danger: #EF4444;
+  --chart-danger-light: #FCA5A5;
+  
+  /* Work area colors */
+  --chart-gcr: #D71A21;
+  --chart-per: #7C3AED;
+  --chart-pil: #2563EB;
+}
+
+/* Chart container animations */
+@keyframes chartFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes chartSlideIn {
+  from {
+    opacity: 0;
+    transform: translateX(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes chartScaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes chartPulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
+@keyframes numberCountUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes radialFill {
+  from {
+    stroke-dashoffset: 100;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes barGrow {
+  from {
+    transform: scaleX(0);
+    transform-origin: left;
+  }
+  to {
+    transform: scaleX(1);
+    transform-origin: left;
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+/* Animation utility classes */
+.chart-animate-in {
+  animation: chartFadeIn 0.6s ease-out forwards;
+}
+
+.chart-animate-slide {
+  animation: chartSlideIn 0.5s ease-out forwards;
+}
+
+.chart-animate-scale {
+  animation: chartScaleIn 0.4s ease-out forwards;
+}
+
+.chart-animate-pulse {
+  animation: chartPulse 2s ease-in-out infinite;
+}
+
+/* Staggered animation delays */
+.chart-delay-1 { animation-delay: 0ms; }
+.chart-delay-2 { animation-delay: 100ms; }
+.chart-delay-3 { animation-delay: 200ms; }
+.chart-delay-4 { animation-delay: 300ms; }
+.chart-delay-5 { animation-delay: 400ms; }
+
+/* Chart card styling */
+.chart-card {
+  @apply bg-white rounded-xl border border-gray-100 shadow-sm;
+  @apply hover:shadow-md transition-shadow duration-300;
+}
+
+.chart-card-header {
+  @apply px-4 py-3 border-b border-gray-100;
+}
+
+.chart-card-title {
+  @apply text-sm font-semibold text-gray-900;
+}
+
+.chart-card-subtitle {
+  @apply text-xs text-gray-500 mt-0.5;
+}
+
+.chart-card-content {
+  @apply p-4;
+}
+
+/* Stat card styling for dashboard KPIs */
+.stat-card {
+  @apply bg-white rounded-xl border border-gray-100 p-4;
+  @apply hover:border-red-200 transition-colors duration-200;
+}
+
+.stat-card-value {
+  @apply text-2xl font-bold text-gray-900;
+}
+
+.stat-card-label {
+  @apply text-xs text-gray-500 uppercase tracking-wide mt-1;
+}
+
+.stat-card-trend {
+  @apply flex items-center gap-1 text-xs mt-2;
+}
+
+.stat-card-trend.positive {
+  @apply text-green-600;
+}
+
+.stat-card-trend.negative {
+  @apply text-red-600;
+}
+
+/* Radial/Gauge chart specific */
+.gauge-container {
+  @apply relative flex items-center justify-center;
+}
+
+.gauge-center-text {
+  @apply absolute text-center;
+}
+
+.gauge-value {
+  @apply text-2xl font-bold text-gray-900;
+}
+
+.gauge-label {
+  @apply text-xs text-gray-500;
+}
+
+/* Progress bar variants */
+.progress-emirates {
+  @apply h-2 bg-gray-100 rounded-full overflow-hidden;
+}
+
+.progress-emirates-fill {
+  @apply h-full bg-gradient-to-r from-red-600 to-red-500 rounded-full;
+  @apply transition-all duration-500 ease-out;
+}
+
+.progress-success {
+  @apply h-full bg-gradient-to-r from-green-600 to-green-500 rounded-full;
+}
+
+.progress-warning {
+  @apply h-full bg-gradient-to-r from-amber-500 to-amber-400 rounded-full;
+}
+
+.progress-danger {
+  @apply h-full bg-gradient-to-r from-red-600 to-red-500 rounded-full;
+}
+
+/* Dashboard grid layouts */
+.dashboard-grid {
+  @apply grid gap-4;
+}
+
+.dashboard-grid-2 {
+  @apply grid grid-cols-1 md:grid-cols-2 gap-4;
+}
+
+.dashboard-grid-3 {
+  @apply grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4;
+}
+
+.dashboard-grid-4 {
+  @apply grid grid-cols-2 md:grid-cols-4 gap-4;
+}
+
+/* Hero stat display */
+.hero-stat {
+  @apply bg-gradient-to-br from-red-600 to-red-700 rounded-2xl p-6 text-white;
+  @apply shadow-lg shadow-red-500/20;
+}
+
+.hero-stat-value {
+  @apply text-4xl md:text-5xl font-bold;
+}
+
+.hero-stat-label {
+  @apply text-red-100 text-sm mt-2;
+}
+
+/* Tooltip enhancements */
+.recharts-tooltip-wrapper {
+  @apply z-50;
+}
+
+.chart-tooltip {
+  @apply bg-gray-900/95 backdrop-blur-sm border border-gray-700 rounded-lg px-3 py-2;
+  @apply shadow-xl;
+}
+
+.chart-tooltip-title {
+  @apply text-white font-semibold text-sm mb-1;
+}
+
+.chart-tooltip-item {
+  @apply flex items-center gap-2 text-xs text-gray-300;
+}
+
+.chart-tooltip-indicator {
+  @apply w-2.5 h-2.5 rounded-sm;
+}
+
+/* Loading shimmer for charts */
+.chart-loading {
+  @apply relative overflow-hidden bg-gray-100 rounded-lg;
+}
+
+.chart-loading::after {
+  content: "";
+  @apply absolute inset-0;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.4),
+    transparent
+  );
+  animation: shimmer 1.5s infinite;
+  background-size: 200% 100%;
+}
