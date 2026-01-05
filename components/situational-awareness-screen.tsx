@@ -869,23 +869,12 @@ export default function SituationalAwarenessScreen() {
   // Is showing PIL/PER data
   const isShowingPilPer = !isGcrActive
 
-  // Incoming Workload chart data (calculated from actual load plans)
-  const incomingWorkloadData = useMemo(() => {
-    let pmcTotal = 0
-    let akeTotal = 0
-    
-    loadPlans.forEach(plan => {
-      const breakdown = parseULDCount(plan.ttlPlnUld)
-      pmcTotal += breakdown.pmc
-      akeTotal += breakdown.ake
-    })
-    
-    return [
-      { type: "PMC", value: pmcTotal, color: "#2563EB" },
-      { type: "AKE", value: akeTotal, color: "#3B82F6" },
-      { type: "Total", value: pmcTotal + akeTotal, color: "#1D4ED8" },
-    ]
-  }, [loadPlans])
+  // Incoming Workload chart data (hardcoded PMC, ALF, AKE)
+  const incomingWorkloadData = [
+    { type: "PMC", value: 42, color: "#2563EB" },
+    { type: "ALF", value: 28, color: "#3B82F6" },
+    { type: "AKE", value: 56, color: "#1D4ED8" },
+  ]
 
   // Top 5 flights for incoming workload mini table
   const topIncomingFlights = useMemo(() => {
