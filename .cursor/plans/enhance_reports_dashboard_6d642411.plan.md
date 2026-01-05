@@ -6,293 +6,327 @@ todos:
     content: Create shared chart theme with Emirates branding and animations
     status: completed
   - id: staff-performance-bars
-    content: "Staff Performance: Add efficiency horizontal bar chart with avg line"
+    content: "M1: Add efficiency horizontal bar chart with avg line"
     status: completed
     dependencies:
       - chart-theme
   - id: staff-performance-scatter
-    content: "Staff Performance: Add productivity scatter plot (hours vs units)"
+    content: "M1: Add productivity scatter plot (hours vs units)"
     status: completed
     dependencies:
       - chart-theme
   - id: staff-performance-uld
-    content: "Staff Performance: Add ULD type breakdown stacked bars (PIL/PER)"
+    content: "M1: Add ULD type breakdown stacked bars (PIL/PER)"
     status: completed
     dependencies:
       - chart-theme
   - id: staff-performance-layout
-    content: "Staff Performance: Reorganize with dashboard header and chart cards"
+    content: "M1: Reorganize with dashboard header and chart cards"
     status: completed
+  - id: staff-performance-contact
+    content: "M1 REQ: Display staff contact numbers in table"
+    status: pending
+    dependencies:
+      - staff-performance-layout
   - id: shift-summary-gauges
-    content: "Shift Summary: Add efficiency gauge dashboard (3 radial charts)"
+    content: "M2: Add efficiency gauge dashboard (3 radial charts)"
     status: pending
     dependencies:
       - chart-theme
   - id: shift-summary-timeline
-    content: "Shift Summary: Add ULD production stacked area chart"
+    content: "M2: Add ULD production stacked area chart"
     status: pending
     dependencies:
       - chart-theme
   - id: shift-summary-resources
-    content: "Shift Summary: Add resource utilization comparison bars"
+    content: "M2: Add resource utilization comparison bars"
     status: pending
     dependencies:
       - chart-theme
   - id: shift-summary-layout
-    content: "Shift Summary: Reorganize layout with dashboard header"
+    content: "M2: Reorganize layout with dashboard header"
     status: pending
+  - id: shift-summary-pending
+    content: "M2 REQ: Add 'Pending for Next Shift' summary section"
+    status: pending
+    dependencies:
+      - shift-summary-layout
+  - id: shift-summary-halfbuild
+    content: "M2 REQ: Add half-build/incomplete ULD indicators"
+    status: pending
+    dependencies:
+      - shift-summary-layout
   - id: workload-treemap
-    content: "Workload Visibility: Add flight workload treemap"
+    content: "M3: Add flight workload treemap"
     status: pending
     dependencies:
       - chart-theme
   - id: workload-donut
-    content: "Workload Visibility: Replace bar chart with animated donut"
+    content: "M3: Replace bar chart with animated donut"
     status: pending
     dependencies:
       - chart-theme
   - id: workload-heatmap
-    content: "Workload Visibility: Add shift timeline heatmap"
+    content: "M3: Add shift timeline heatmap"
     status: pending
     dependencies:
       - chart-theme
   - id: workload-layout
-    content: "Workload Visibility: Reorganize into dashboard layout"
+    content: "M3: Reorganize into dashboard layout"
     status: pending
+  - id: workload-screening
+    content: "M3 REQ: Add screening vs non-screening segmentation"
+    status: pending
+    dependencies:
+      - workload-layout
   - id: situational-ring
-    content: "Situational Awareness: Add overall completion ring"
+    content: "M4: Add overall completion ring"
     status: pending
     dependencies:
       - chart-theme
-  - id: situational-waterfall
-    content: "Situational Awareness: Add flight completion bar chart"
+  - id: situational-bars
+    content: "M4: Add flight completion bar chart"
     status: pending
     dependencies:
       - chart-theme
   - id: situational-radar
-    content: "Situational Awareness: Add workload category radar"
+    content: "M4: Add workload category radar"
     status: pending
     dependencies:
       - chart-theme
   - id: situational-layout
-    content: "Situational Awareness: Add mission control header and tabs"
+    content: "M4: Add mission control header and tabs"
     status: pending
+  - id: situational-uld-pending
+    content: "M4 REQ: Add prominent ULD Completed vs Pending card"
+    status: pending
+    dependencies:
+      - situational-layout
+  - id: situational-drilldown
+    content: "M4 REQ: Enhance flight status drill-down interaction"
+    status: pending
+    dependencies:
+      - situational-layout
 ---
 
 # Reports Dashboard Enhancement Plan
 
 ## Context
 
-This is a POC demo for Emirates on Monday, January 12th. The priority is visual impact and flashiness over perfect functionality. We will enhance four reporting pages (milestones 1-4) with premium data visualizations.**Source**: [Notion Task - Spruce Up Interface](https://www.notion.so/belli-ai/8-spruce-up-interface-2df9e07d412b80f9a729ef7cba5f51ad)---
+This is a POC demo for Emirates on Monday, January 12th. The priority is visual impact and flashiness over perfect functionality.
 
-## Available Data Structures Summary
+**Source**: [Notion Task - Spruce Up Interface](https://www.notion.so/belli-ai/8-spruce-up-interface-2df9e07d412b80f9a729ef7cba5f51ad)
 
-| Page | Key Data Available ||------|-------------------|| **Staff Performance** | Staff name, avatar, hours worked, units processed, efficiency (units/hr), EK/Outsource, flight count, ULD breakdown (AKE, ALF, PMC, etc.) || **Shift Summary** | Staff performance, ULD breakdowns (PMC/ALF/AKE), efficiency metrics, resources (planned vs actual), flight allocations || **Workload Visibility** | Load plans, ULD counts by type, flight times/routes, shift/period/wave data || **Situational Awareness** | Flight completion %, workload by category (GCR/PER/PIL), incoming workload, BCR completion |
+---
 
-## Charting Library
+## Requirements Gap Analysis Summary
 
-Using `recharts` (already integrated) with the existing Shadcn chart primitives from [`components/ui/chart.tsx`](components/ui/chart.tsx)---
+### ✅ Requirements Already Covered
 
-## Milestone 1: Staff Performance Enhancement
+| Requirement | Location |
 
-**File**: [`components/performance-screen.tsx`](components/performance-screen.tsx)
+| ------------------------------------------ | --------------------- |
 
-### Data Analysis
+| Total Workload by category (GCR, PIL, PER) | Workload Visibility |
 
-**Available Data Structures:**
+| Total ULDs processed vs remaining | Situational Awareness |
 
-```typescript
-type StaffPerformance = {
-  id: number;
-  staffName: string;
-  avatar: string;
-  staffNo: string;
-  ekOutsource: string; // "EK" or outsource company
-  totalHrs: number; // Hours worked
-  totalUnits: number; // ULDs processed
-  efficiency: number | string; // Units per hour
-  // GCR-specific:
-  flightCount?: number;
-  deployment?: string;
-  // PIL/PER-specific:
-  akeDpe?: number; // AKE/DPE count
-  alfDqf?: number; // ALF/DQF count
-  ldPmcAmf?: number; // LD-PMC/AMF count
-  mdQ6Q7?: number; // MD/Q6/Q7 count
-  bulkKg?: number;
-};
-```
+| Staff Name and ID tracking | Performance Screen |
 
-**Key Insights to Visualize:**
+| Staff performance tracking (ULD/shift) | Performance Screen |
 
-1. **Efficiency Ranking** - Who is performing above/below average
-2. **Productivity Correlation** - Relationship between hours worked and output
-3. **ULD Specialization** - What types of ULDs each staff handles (PIL/PER)
+| Count & type of ULD loaded | All screens |
 
-### Chart 1.1: Efficiency Leaderboard
+| GCR, PIL, PER displayed separately | WorkAreaFilter |
 
-**Type**: Horizontal Bar Chart with average reference line**Data Source**: `filteredStaff` sorted by efficiency**Visual Design**:
+| Green/amber/red status for flights | Situational Awareness |
 
-- Bars colored by performance tier (green = above avg, amber = avg, red = below avg)
-- Dashed horizontal line showing team average
-- Staff avatars on Y-axis labels
-- Animated bars growing from left to right
+| Filters (time/shift range) | All screens |
 
-**Insight**: Instantly see who's the most efficient and how individuals compare to team average
+| Staff efficiency metrics (ULDs/hour) | Performance Screen |
 
-### Chart 1.2: Productivity Scatter Plot
+| Module-level filtering | All screens |
 
-**Type**: Scatter Chart with trend line**Data Source**: Each staff member as a data point**Axes**:
+### ❌ Missing Data Properties (Need Mock for POC)
 
-- X-axis: Total Hours worked
-- Y-axis: Total Units processed
+| Property | Description | Mock Strategy |
 
-**Visual Design**:
+| ------------------- | ---------------------------------- | ---------------------------------------- |
 
-- Point size by efficiency score
-- Points colored by EK (red) vs Outsource (gray)
-- Diagonal trend line showing expected output per hour
-- Quadrant labels: "High Performers", "Overworked", "Underutilized"
+| `screeningRequired` | Screening vs non-screening flights | Derive from module name ("US Screening") |
 
-**Insight**: Identify if staff are proportionally productive for their hours, spot burnout risks
+| `halfBuildStatus` | Incomplete/half-built ULDs | Derive from completion < 100% |
 
-### Chart 1.3: ULD Type Contribution (PIL/PER only)
+| `remarks` | Incomplete build-up reasons | Add text input field |
 
-**Type**: Stacked Horizontal Bar Chart**Data Source**: PIL/PER staff with `akeDpe`, `alfDqf`, `ldPmcAmf`, `mdQ6Q7` fields**Visual Design**:
+| `revisionNumber` | Load plan version | Default "v1.0" |
 
-- Each bar shows one staff member
-- Stacked segments for each ULD type (color-coded)
-- Total value at end of bar
-- Legend with ULD type colors
+| `bayNumber` | Ramp bay assignment | Hardcode in STAFF_DATA |
 
-**Insight**: Shows workload distribution and specialization across ULD types
+---
 
-### Layout Changes
+## Milestone 1: Staff Performance Enhancement ✅ COMPLETED
 
-- Add new "Performance Dashboard" section at top with KPI cards:
-- Total Staff Active
-- Average Efficiency
-- Total Units Today
-- Best Performer
-- Charts displayed in 2-column grid below KPIs
-- Existing table becomes secondary/expandable
+**File**: `components/performance-screen.tsx`
+
+### Charts Implemented
+
+| Chart | Type | Status |
+
+| ---------------------- | ------------------------- | ------- |
+
+| Efficiency Leaderboard | Horizontal Bar + Avg Line | ✅ Done |
+
+| Productivity Scatter | Scatter Plot | ✅ Done |
+
+| ULD Type Contribution | Stacked Bar (PIL/PER) | ✅ Done |
+
+### Requirements Gap for This Page
+
+| Requirement | Gap | Action | Status |
+
+| ------------------------------------- | ------------------------------------- | --------------------------------- | ------------ |
+
+| Staff contact numbers against flights | Data exists in type but not displayed | Add `contact` column to table | ⏳ Pending |
+
+| Historical staff efficiency view | No historical toggle | Add date filter or "vs Yesterday" | Low Priority |
+
+| Post-allocation workload by staff | Needs chart | Already covered by scatter plot | ✅ Done |
+
+### Layout Changes ✅
+
+- ✅ Dashboard header with KPI cards (Total Staff, Avg Efficiency, Total Units, Best Performer)
+- ✅ Charts in 2-column grid
+- ✅ Collapsible detailed table
 
 ---
 
 ## Milestone 2: Shift Summary Report Enhancement
 
-**File**: [`components/shift-summary-report-screen.tsx`](components/shift-summary-report-screen.tsx)
+**File**: `components/shift-summary-report-screen.tsx`
 
-### Data Analysis
+### Charts to Implement
 
-**Available Data Structures:**
+| Chart | Type | Data Source | Priority |
 
-- `ULDBreakdown`: PMC/AMF, AKE/AKL, ALF/PLA counts by time window (EM/LM/AF)
-- `EfficiencyData`: Efficiency percentage with targets
-- `PlasticUsage`: Wrap/tray counts and usage
-- `Resources`: Planned vs actual staff/operators/drivers
-- `FlightData`: Flights handled with ETD, destination, ULD breakdown
+| ------------------------------ | ------------------------- | ------------------------------ | -------- |
 
-**Key Insights:**
+| 2.1 Efficiency Gauge Dashboard | 3x Radial Gauges | Shift efficiency metrics | High |
 
-1. **Shift efficiency** - How well did the team perform vs targets
-2. **Production flow** - When were ULDs built throughout the shift
-3. **Resource utilization** - Was staffing aligned with workload
+| 2.2 ULD Production Timeline | Stacked Area Chart | ULD counts by EM/LM/AF windows | High |
 
-### Chart 2.1: Efficiency Gauge Dashboard
+| 2.3 Resource Utilization | Horizontal Bar + Variance | Planned vs Actual resources | Medium |
 
-**Type**: Radial Bar Chart (Gauge style)**Data**: Shift efficiency metrics (actual vs target)**Visual**: Three circular gauges showing EK, TG, DL team efficiency with animated fills**Insight**: At-a-glance team performance comparison
+### Requirements Gap for This Page
 
-### Chart 2.2: ULD Production Timeline
+| Requirement | Gap | Action | Status |
 
-**Type**: Stacked Area Chart**Data**: ULD built counts by time window (EM/LM/AF) and type (PMC/ALF/AKE)**Visual**: Flowing gradient areas showing production over shift periods**Insight**: Identifies peak production periods and bottlenecks
+| ----------------------------------- | ------------------------- | --------------------------------------------- | ------------ |
 
-### Chart 2.3: Resource Utilization Comparison
+| **Pending for next shift** | Not prominently displayed | Add "Handover Summary" card with pending ULDs | ⏳ Pending |
 
-**Type**: Horizontal Bar Chart with variance indicators**Data**: Planned vs Actual resources (staff hours, operators, drivers)**Visual**: Side-by-side bars with red/green variance badges**Insight**: Quick identification of over/under-staffing
+| **Half-build/incomplete ULD info** | No visual indicator | Add amber badge for half-built ULDs | ⏳ Pending |
+
+| **Remarks for incomplete build-up** | No input field | Add remarks column/tooltip | Low Priority |
+
+| End-of-shift handover report | Basic exists | Enhance with summary stats | Medium |
 
 ### Layout Changes
 
-- Add a new "Dashboard Overview" section at the top with the three charts in a responsive grid
-- Keep existing tabular data below in collapsible sections
+- Add "Dashboard Overview" section at top with 3 charts
+- Add "Handover Summary" card showing pending work
+- Keep existing tables in collapsible sections
 
 ---
 
 ## Milestone 3: Workload Visibility Enhancement
 
-**File**: [`components/incoming-workload-screen.tsx`](components/incoming-workload-screen.tsx)
+**File**: `components/incoming-workload-screen.tsx`
 
-### Data Analysis
+### Charts to Implement
 
-**Available Data Structures:**
+| Chart | Type | Data Source | Priority |
 
-- `LoadPlan`: Flight info with ULD counts, STD, routing
-- `parseULDCount()`: Extracts PMC, AKE, ALF totals
-- Shift/Period/Wave classification from flight times
-- Work area filtering (GCR, PIL, PER)
+| --------------------------- | -------------- | ------------------------ | -------- |
 
-**Key Insights:**
+| 3.1 Flight Workload Treemap | Treemap | Flights by ULD count | High |
 
-1. **Workload distribution** - Which flights have heaviest loads
-2. **ULD composition** - Mix of container types
-3. **Time-based patterns** - When workload peaks occur
+| 3.2 ULD Type Donut | Animated Donut | PMC/AKE/ALF distribution | High |
 
-### Chart 3.1: Flight Workload Treemap
+| 3.3 Shift Timeline Heatmap | Time Grid | ULD counts by hour | Medium |
 
-**Type**: Treemap**Data**: Flights sized by ULD count, colored by shift period**Visual**: Nested rectangles with flight numbers and ULD counts**Insight**: Visual representation of workload distribution across flights
+### Requirements Gap for This Page
 
-### Chart 3.2: ULD Type Donut with Center Stats
+| Requirement | Gap | Action | Status |
 
-**Type**: Pie/Donut Chart with animated segments**Data**: PMC, AKE, ALF distribution with center showing total**Visual**: Animated segments on hover, glowing Emirates red accent**Insight**: Quick ULD type proportion overview
+| ------------------------------------------- | -------------------------------- | ----------------------------------------- | ---------- |
 
-### Chart 3.3: Shift Timeline Heatmap
+| **Screening vs non-screening segmentation** | Missing `screeningRequired` flag | Mock from module ("US Screening Flights") | ⏳ Pending |
 
-**Type**: Calendar Heatmap / Time Grid**Data**: ULD counts by hour across the day**Visual**: Color intensity grid (white to Emirates red) showing workload hotspots**Insight**: Identifies peak workload hours for staffing decisions
+| Workload at AWB level | Currently ULD-level only | Out of scope per requirements | N/A |
+
+| Module-level breakdown | Exists but not charted | Add module filter to charts | Medium |
+
+### Mock Data Strategy
+
+```typescript
+// Derive screeningRequired from module name
+const isScreeningFlight = (module: string) =>
+  module.toLowerCase().includes("screening");
+
+// Add to LoadPlan type for display
+type EnhancedLoadPlan = LoadPlan & {
+  screeningRequired: boolean;
+};
+```
 
 ### Layout Changes
 
-- Reorganize into a dashboard-style layout with charts prominently at top
-- Replace the existing basic bar chart with the new Donut chart
-- Flight table moves to bottom as supporting detail
+- Reorganize into dashboard-style with charts at top
+- Replace basic bar chart with animated Donut
+- Add screening/non-screening toggle filter
+- Flight table as supporting detail below
 
 ---
 
 ## Milestone 4: Situational Awareness Enhancement
 
-**File**: [`components/situational-awareness-screen.tsx`](components/situational-awareness-screen.tsx)
+**File**: `components/situational-awareness-screen.tsx`
 
-### Data Analysis
+### Charts to Implement
 
-**Available Data Structures:**
+| Chart | Type | Data Source | Priority |
 
-- `FlightCompletion`: Planned vs marked ULDs per flight
-- `workAreaData`: GCR, PER, PIL capacity and workload
-- Incoming workload forecast
-- BCR completion tracking
+| --------------------------- | --------------------- | ---------------------- | -------- |
 
-**Key Insights:**
+| 4.1 Overall Completion Ring | Large Radial Progress | Total ULD completion % | High |
 
-1. **Overall progress** - Are we on track for the shift
-2. **Flight-level status** - Which flights need attention
-3. **Work area balance** - Is load distributed evenly
+| 4.2 Flight Completion Bars | Horizontal Bar | Per-flight completion | High |
 
-### Chart 4.1: Overall Completion Ring
+| 4.3 Workload Category Radar | Radar Chart | GCR/PER/PIL balance | Medium |
 
-**Type**: Radial Progress with animation**Data**: Overall ULD completion percentage across all flights**Visual**: Large animated ring with percentage in center, color transitions from red to green**Insight**: Instant shift health indicator
+### Requirements Gap for This Page
 
-### Chart 4.2: Flight Completion Waterfall
+| Requirement | Gap | Action | Status |
 
-**Type**: Horizontal Bar Chart with target lines**Data**: Each flight's completion % with planned vs actual ULDs**Visual**: Bars colored by status (green/amber/red), target line overlay**Insight**: Flight-level progress tracking at a glance
+| --------------------------------- | ------------------------ | ----------------------------------------- | ---------- |
 
-### Chart 4.3: Workload Category Radar
+| **ULD Completed vs Pending view** | Exists but not prominent | Add hero "Completed vs Pending" stat card | ⏳ Pending |
 
-**Type**: Radar/Spider Chart**Data**: GCR, PER, PIL completion rates and capacity utilization**Visual**: Multi-axis chart comparing categories on common scale**Insight**: Balance check across work areas
+| **Drill-down from flight status** | Basic click interaction | Add modal/panel with flight details | ⏳ Pending |
+
+| Green/amber/red status | ✅ Already implemented | - | ✅ Done |
+
+| Staff names and contact numbers | ✅ Already in STAFF_DATA | - | ✅ Done |
+
+| Anticipated incoming workload | Basic exists | Enhance with timeline chart | Medium |
 
 ### Layout Changes
 
-- Add prominent "Mission Control" header section with Chart 4.1 as hero visual
-- Convert collapsible sections to a tabbed interface for smoother navigation
-- Add subtle background gradients for modern aesthetic
+- Add "Mission Control" hero section with Completion Ring
+- Add prominent "ULD Status" summary card (X Completed / Y Pending)
+- Convert collapsible sections to tabs
+- Add subtle background gradients
 
 ---
 
@@ -300,121 +334,78 @@ type StaffPerformance = {
 
 ### Shared Chart Styling
 
-Created in [`lib/chart-theme.ts`](lib/chart-theme.ts):
+Located in `lib/chart-theme.ts`:
 
-- Emirates brand colors: `#D71A21` (primary red), with gradients
-- Dark tooltip styling with glassmorphism effect
+- Emirates brand colors (`#D71A21` primary red)
 - Consistent animation timing (300ms ease-out)
-- Responsive breakpoints
+- Tailwind-based tooltip styling
 
-### Reusable Chart Components
+### Reusable Components
 
-Created in [`components/ui/dashboard-charts.tsx`](components/ui/dashboard-charts.tsx):
+Located in `components/reports/charts/`:
 
 - `StatCard` - KPI display cards
+- `ChartCard` - Chart wrapper with title
 - `GaugeChart` - Radial efficiency gauges
 - `DonutChart` - Pie/donut with center stats
-- `StackedAreaChart` - Time-series area charts
+- `StackedAreaChart` - Time-series areas
 - `HorizontalBarChart` - Comparison bars
 - `RadarChartComponent` - Multi-axis radar
 - `CompletionRing` - Animated completion ring
-- `HeatmapGrid` - Hour-by-hour intensity grid
-- `ChartCard` - Wrapper with title/subtitle
-
-### Animation Strategy
-
-- Charts animate on mount with staggered delays
-- Hover states reveal detailed tooltips
-- Number counters animate on scroll into view
+- `HeatmapGrid` - Hour-by-hour intensity
+- `TreemapChart` - Hierarchical treemap
 
 ---
 
 ## File Changes Summary
 
-| File | Changes ||------|---------|| `components/performance-screen.tsx` | Add 3 charts, new dashboard header, KPI cards || `components/shift-summary-report-screen.tsx` | Add 3 charts, new dashboard header || `components/incoming-workload-screen.tsx` | Add 3 charts, reorganize layout || `components/situational-awareness-screen.tsx` | Add 3 charts, new hero section || `lib/chart-theme.ts` | ✅ Created - Shared chart styling || `components/ui/dashboard-charts.tsx` | ✅ Created - Reusable chart components || `app/globals.css` | ✅ Updated - Chart animation keyframes |---
+| File | Changes | Status |
+
+| --------------------------------------------- | ------------------------- | ---------- |
+
+| `lib/chart-theme.ts` | Shared chart styling | ✅ Done |
+
+| `components/reports/charts/*` | Reusable chart components | ✅ Done |
+
+| `app/globals.css` | Chart animation keyframes | ✅ Done |
+
+| `components/performance-screen.tsx` | M1 charts + layout | ✅ Done |
+
+| `components/shift-summary-report-screen.tsx` | M2 charts + layout | ⏳ Pending |
+
+| `components/incoming-workload-screen.tsx` | M3 charts + layout | ⏳ Pending |
+
+| `components/situational-awareness-screen.tsx` | M4 charts + layout | ⏳ Pending |
+
+---
 
 ## Chart Style Reference (Shadcn UI)
 
-Use the official [Shadcn Charts documentation](https://ui.shadcn.com/docs/components/chart) as the primary style reference. Key patterns to follow:
+Use [Shadcn Charts](https://ui.shadcn.com/docs/components/chart) as the primary style reference.
 
-### Recommended Chart Types from Shadcn
+### Recommended Chart Types
 
-| Chart Type | Shadcn Reference | Use Case in This Project ||------------|------------------|-------------------------|| **Bar Chart - Horizontal** | [Bar Charts](https://ui.shadcn.com/charts/bar) | Efficiency leaderboard (M1), Resource comparison (M2), Flight completion (M4) || **Scatter Chart** | Custom with recharts | Productivity scatter (M1) || **Stacked Bar** | [Bar Charts](https://ui.shadcn.com/charts/bar) | ULD type contribution (M1) || **Area Chart - Gradient** | [Area Charts](https://ui.shadcn.com/charts/area) | ULD Production Timeline (M2) || **Pie Chart - Donut** | [Pie Charts](https://ui.shadcn.com/charts/pie) | ULD Type distribution (M3) || **Radial Chart** | [Radial Charts](https://ui.shadcn.com/charts/radial) | Efficiency gauges (M2), Completion rings (M4) || **Radar Chart** | [Radar Charts](https://ui.shadcn.com/charts/radar) | Work area balance (M4) |
+| Chart Type | Use Case |
 
-### Shadcn Chart Styling Patterns
+| ---------------------- | -------------------------------------------------------------- |
 
-1. **Card Wrapper**: All charts should be wrapped in a card with subtle border
-```tsx
-<Card>
-  <CardHeader>
-    <CardTitle>Chart Title</CardTitle>
-    <CardDescription>Supporting text</CardDescription>
-  </CardHeader>
-  <CardContent>
-    <ChartContainer config={chartConfig} className="min-h-[200px] w-full">
-      {/* Chart here */}
-    </ChartContainer>
-  </CardContent>
-  <CardFooter className="flex-col items-start gap-2 text-sm">
-    <div className="flex gap-2 font-medium leading-none">
-      Trending up by 5.2% <TrendingUp className="h-4 w-4" />
-    </div>
-  </CardFooter>
-</Card>
-```
+| Bar Chart - Horizontal | Efficiency leaderboard, Resource comparison, Flight completion |
 
+| Area Chart - Gradient | ULD Production Timeline |
 
+| Pie Chart - Donut | ULD Type distribution |
 
+| Radial Chart | Efficiency gauges, Completion rings |
 
-2. **Chart Config Pattern**: Define colors using CSS variables for theme support
-```tsx
-const chartConfig = {
-  pmc: { label: "PMC", color: "var(--chart-1)" },
-  ake: { label: "AKE", color: "var(--chart-2)" },
-  alf: { label: "ALF", color: "var(--chart-3)" },
-} satisfies ChartConfig;
-```
+| Radar Chart | Work area balance |
 
-
-
-
-3. **Gradient Fills**: Use SVG linearGradient for premium look
-```tsx
-<defs>
-  <linearGradient id="fillPmc" x1="0" y1="0" x2="0" y2="1">
-    <stop offset="5%" stopColor="var(--color-pmc)" stopOpacity={0.8} />
-    <stop offset="95%" stopColor="var(--color-pmc)" stopOpacity={0.1} />
-  </linearGradient>
-</defs>
-```
-
-
-
-
-4. **Custom Tooltips**: Use `ChartTooltipContent` from Shadcn for consistent styling
-```tsx
-<ChartTooltip content={<ChartTooltipContent />} />
-```
-
-
-
-
-### Emirates Brand Color Palette for Charts
+### Emirates Color Palette
 
 ```css
-/* Primary Emirates Red gradient scale */
 --chart-emirates-1: #d71a21; /* Primary red */
 --chart-emirates-2: #b91c1c; /* Darker red */
 --chart-emirates-3: #ef4444; /* Lighter red */
---chart-emirates-4: #f87171; /* Light red */
---chart-emirates-5: #fca5a5; /* Pale red */
-
-/* Status colors */
 --chart-success: #22c55e; /* Green - complete */
 --chart-warning: #f59e0b; /* Amber - in progress */
 --chart-danger: #ef4444; /* Red - behind */
 ```
-
-
-
-### Animation Best Practices
