@@ -257,6 +257,24 @@ export async function saveULDEntriesToSupabase(
       return true
     }
     
+    // First, delete any entries with entry_index >= entries.length
+    // This handles the case where user reduces the number of ULDs (e.g., deletes one)
+    if (entries.length >= 0) {
+      const { error: deleteError } = await supabase
+        .from("uld_entries")
+        .delete()
+        .eq("load_plan_id", loadPlanId)
+        .eq("sector_index", sectorIndex)
+        .eq("uld_section_index", uldSectionIndex)
+        .gte("entry_index", entries.length)
+      
+      if (deleteError) {
+        console.warn(`[ULDStorage] Error deleting old entries:`, deleteError.message)
+      } else {
+        console.log(`[ULDStorage] Deleted entries with index >= ${entries.length}`)
+      }
+    }
+    
     // Use upsert to insert or update entries
     if (entries.length > 0) {
       const now = new Date().toISOString()
