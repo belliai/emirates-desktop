@@ -251,13 +251,16 @@ export async function getLoadPlanDetailFromSupabase(flightNumber: string): Promi
       return null
     }
 
-    // Fetch load plan items from ALL revisions
+    // Fetch load plan items for the CURRENT revision only
+    // In REVISED mode, old items that were deleted keep their original revision,
+    // so we filter by revision to exclude them from the main display
     // Order by additional_data DESC (additional_data = true first/red on top), then by serial_number
-    // Each item's additional_data field will be checked individually for styling (red if additional_data = true, black if false)
+    const currentRevision = loadPlan.revision || 1
     const { data: items, error: itemsError } = await supabase
       .from("load_plan_items")
       .select("*")
       .eq("load_plan_id", loadPlan.id)
+      .eq("revision", currentRevision) // Only show items from current revision
       .order("additional_data", { ascending: false }) // DESC: additional_data = true first (red on top)
       .order("serial_number", { ascending: true })
 
