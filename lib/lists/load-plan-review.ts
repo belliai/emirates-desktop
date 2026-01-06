@@ -261,11 +261,14 @@ export async function compareLoadPlanChanges({
     return diff
   }
   
-  // Fetch existing items
+  // Fetch existing items from the CURRENT revision only
+  // This ensures we compare against the latest state, not mixed revisions
+  const currentRevision = existingLoadPlan.revision || 1
   const { data: existingItems, error: itemsError } = await supabase
     .from("load_plan_items")
     .select("*")
     .eq("load_plan_id", existingLoadPlan.id)
+    .eq("revision", currentRevision)
     .order("serial_number", { ascending: true })
   
   if (itemsError) {
