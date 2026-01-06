@@ -567,12 +567,15 @@ function LoadPlansScreenContent({ onLoadPlanSelect }: { onLoadPlanSelect?: (load
 
           // Compare with existing data to show review modal if there are changes
           try {
+            console.log(`[LoadPlansScreen] 🔄 Starting comparison for ${header.flightNumber}...`)
+            console.log(`[LoadPlansScreen] isCorrectVersion (REVISED mode):`, header.isCorrectVersion)
+            
             const diff = await compareLoadPlanChanges({
               results,
               shipments: shipments || [],
             })
             
-            console.log(`[LoadPlansScreen] Diff for ${header.flightNumber}:`, {
+            console.log(`[LoadPlansScreen] ✅ Diff result for ${header.flightNumber}:`, {
               isNew: diff.isNewLoadPlan,
               hasChanges: diff.hasChanges,
               added: diff.addedCount,
@@ -582,6 +585,7 @@ function LoadPlansScreenContent({ onLoadPlanSelect }: { onLoadPlanSelect?: (load
             
             // If this is a new load plan OR there are no changes, save directly
             if (diff.isNewLoadPlan || !diff.hasChanges) {
+              console.log(`[LoadPlansScreen] 📝 Saving directly: isNew=${diff.isNewLoadPlan}, hasChanges=${diff.hasChanges}`)
               const saveResult = await saveListsDataToSupabase({
                 results,
                 shipments: shipments || [],
@@ -603,6 +607,7 @@ function LoadPlansScreenContent({ onLoadPlanSelect }: { onLoadPlanSelect?: (load
               }
             } else {
               // Has changes - queue for review
+              console.log(`[LoadPlansScreen] 🔔 QUEUING FOR REVIEW: ${header.flightNumber}`)
               pendingFilesToReview.push({
                 file: f,
                 results,
@@ -612,7 +617,8 @@ function LoadPlansScreenContent({ onLoadPlanSelect }: { onLoadPlanSelect?: (load
               })
             }
           } catch (compareError) {
-            console.error(`[LoadPlansScreen] Error comparing ${f.name}:`, compareError)
+            console.error(`[LoadPlansScreen] ⚠️ COMPARISON ERROR for ${f.name}:`, compareError)
+            console.error(`[LoadPlansScreen] ⚠️ Falling back to direct save without review!`)
             // Fallback to direct save on comparison error
             const saveResult = await saveListsDataToSupabase({
               results,

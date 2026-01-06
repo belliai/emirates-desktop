@@ -195,7 +195,8 @@ export async function compareLoadPlanChanges({
   // Parse flight info
   const flightNumber = results.header.flightNumber?.trim() || "UNKNOWN"
   const flightDate = parseDateString(results.header.date)
-  const flightDateStr = flightDate.toISOString().split('T')[0]
+  // Use local date components to avoid timezone shifting (same fix as supabase-save.ts)
+  const flightDateStr = `${flightDate.getFullYear()}-${String(flightDate.getMonth() + 1).padStart(2, '0')}-${String(flightDate.getDate()).padStart(2, '0')}`
   
   // Determine mode: REVISED (cor/corr) vs ADDITIONAL
   const isCorrectVersion = results.header.isCorrectVersion === true
@@ -264,12 +265,23 @@ export async function compareLoadPlanChanges({
   // Fetch existing items from the CURRENT revision only
   // This ensures we compare against the latest state, not mixed revisions
   const currentRevision = existingLoadPlan.revision || 1
+  console.log("[Review] 🔍 Fetching existing items:", {
+    loadPlanId: existingLoadPlan.id,
+    currentRevision,
+    flightNumber,
+  })
+  
   const { data: existingItems, error: itemsError } = await supabase
     .from("load_plan_items")
     .select("*")
     .eq("load_plan_id", existingLoadPlan.id)
     .eq("revision", currentRevision)
     .order("serial_number", { ascending: true })
+  
+  console.log("[Review] 📋 Existing items fetched:", {
+    count: existingItems?.length || 0,
+    items: existingItems?.slice(0, 3).map(i => ({ ser: i.serial_number, awb: i.awb_number, rev: i.revision })),
+  })
   
   if (itemsError) {
     console.error("[Review] Error fetching existing items:", itemsError)
