@@ -213,6 +213,23 @@ function saveULDEntriesToLocalStorage(
 }
 
 /**
+ * Clear ULD entries from localStorage for a flight
+ * Should be called when a load plan is deleted or before re-uploading
+ */
+export function clearULDEntriesFromLocalStorage(flightNumber: string): void {
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  try {
+    localStorage.removeItem(`uld-numbers-${flightNumber}`)
+    console.log(`[ULDStorage] Cleared localStorage for ${flightNumber}`)
+  } catch (e) {
+    console.error(`[ULDStorage] Error clearing localStorage for ${flightNumber}:`, e)
+  }
+}
+
+/**
  * Save ULD entries to Supabase and localStorage
  * Primary storage: Supabase, Fallback: localStorage
  */

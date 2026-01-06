@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/client"
 import type { LoadPlan } from "@/lib/load-plan-context"
 import type { LoadPlanDetail } from "@/components/load-plan-types"
+import { clearULDEntriesFromLocalStorage } from "@/lib/uld-storage"
 
 /**
  * Dubai/GST timezone constant (UTC+4)
@@ -719,6 +720,9 @@ export async function deleteLoadPlanFromSupabase(flightNumber: string): Promise<
       return { success: false, error: `Failed to delete load plan: ${loadPlanDeleteError.message}` }
     }
 
+    // Also clear localStorage to prevent stale data
+    clearULDEntriesFromLocalStorage(flightNumber)
+    
     console.log(`[LoadPlans] ✅ Successfully deleted load plan ${flightNumber} (ID: ${loadPlanId})`)
     return { success: true }
   } catch (error) {

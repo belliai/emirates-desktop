@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/client"
 import type { ListsResults, LoadPlanHeader, Shipment } from "./types"
 import { PIL_PER_SHC_CODES } from "@/lib/work-area-filter-utils"
 import { parseUldExclusions, calculateAdjustedTtlPlnUld } from "./parser"
+import { clearULDEntriesFromLocalStorage } from "@/lib/uld-storage"
 
 /**
  * Compute work area for a single item based on its SHC code
@@ -1368,6 +1369,11 @@ export async function saveListsDataToSupabase({
     }
 
     // Note: Changes are already saved before delete/update in step 3 above
+
+    // Clear localStorage to prevent stale ULD data on re-upload
+    // This ensures fresh data is loaded from Supabase
+    clearULDEntriesFromLocalStorage(flightNumber)
+    console.log(`[v0] 🧹 Cleared localStorage ULD entries for ${flightNumber}`)
 
     if (hasChanges || itemsHaveChanges || !existingLoadPlanId) {
       console.log("[v0] Successfully saved lists data to Supabase, load_plan_id:", loadPlanId)
