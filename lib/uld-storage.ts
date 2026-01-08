@@ -119,6 +119,12 @@ export async function getULDEntriesFromSupabase(
           saveULDEntriesToLocalStorage(flightNumber, entriesMap)
           
           return entriesMap
+        } else if (!error && loadPlanId) {
+          // Supabase has no entries for this load plan - clear localStorage to prevent stale data
+          // This handles the case where flight was deleted and re-uploaded
+          console.log(`[ULDStorage] No ULD entries in Supabase for ${flightNumber}, clearing localStorage`)
+          clearULDEntriesFromLocalStorage(flightNumber)
+          return new Map()
         }
       }
     } catch (e) {
@@ -126,7 +132,7 @@ export async function getULDEntriesFromSupabase(
     }
   }
   
-  // Fall back to localStorage
+  // Fall back to localStorage (only when Supabase is not available)
   return getULDEntriesFromLocalStorage(flightNumber, loadPlanSectors)
 }
 
