@@ -87,14 +87,41 @@ export function uldSectionHasPerShc(uldSection: ULDSection): boolean {
 }
 
 /**
+ * Check if a ULD section is a BULK-only section (excluded from completion calculations)
+ * BULK sections are view-only and not part of ULD completion tracking
+ */
+export function isBulkULDSection(uldSection: ULDSection): boolean {
+  if (!uldSection.uld) return false
+  const uldUpper = uldSection.uld.toUpperCase()
+  // Check if this is a BULK-only section (e.g., "XX BULK XX")
+  // A section is BULK-only if it contains BULK but no other ULD types with counts
+  return uldUpper.includes("BULK") && !uldUpper.match(/\d+\s*[A-Z]{2,4}(?!\s*BULK)/i)
+}
+
+/**
  * Determine if a ULD section should be included based on work area filter
  * Centralizes the filtering logic used across multiple screens
+ * 
+ * IMPORTANT: This function excludes Ramp Transfer and BULK-only sections from
+ * completion calculations, as they are not part of the TTL PLN ULD count.
  */
 export function shouldIncludeULDSection(
   uldSection: ULDSection,
   workArea: WorkArea,
   pilPerSubFilter?: PilPerSubFilter
 ): boolean {
+  // Always exclude ramp transfer sections from completion calculations
+  // Ramp transfer items are excluded from TTL PLN ULD count
+  if (uldSection.isRampTransfer) {
+    return false
+  }
+  
+  // Always exclude BULK-only sections from completion calculations
+  // BULK is view-only and not part of ULD completion tracking
+  if (isBulkULDSection(uldSection)) {
+    return false
+  }
+  
   // If no filter or filter is "All", show all sections
   if (!workArea || workArea === "All") {
     return true
