@@ -404,57 +404,32 @@ export async function getLoadPlanDetailFromSupabase(flightNumber: string): Promi
       const sectorRegularUldSections: any[] = []
       const sectorRampTransferUldSections: any[] = []
       
-      // Helper function to get total ULD count from ULD string
-      // E.g., "XX 01PMC XX" → 1, "XX 02PMC XX" → 2, "XX 01PMC/02AKE XX" → 3, "XX 6RAP XX" → 6
-      // Flexible pattern auto-captures new ULD types without code changes
-      const getUldTotalCount = (uld: string): number => {
-        if (!uld) return 0
-        // Pattern: digits + any 2-4 letter type, or BULK
-        const uldPattern = /(\d{1,2})([A-Z]{2,4})|\b(BULK)\b/gi
-        let total = 0
-        let match
-        while ((match = uldPattern.exec(uld)) !== null) {
-          // match[1] = digits for regular ULDs, match[3] = "BULK"
-          const count = match[3] ? 1 : (parseInt(match[1], 10) || 1)
-          total += count
-        }
-        return total || 1
-      }
-      
       // Process regular items for this sector - group by CONSECUTIVE items with same ULD
-      // IMPORTANT: We must NOT merge items with same ULD string if they appear in separate sections
-      // E.g., AWB 001 with "XX 01PMC XX" and AWB 002 with "XX 01PMC XX" should be SEPARATE sections
-      // 
-      // Key heuristic: For ULDs with exactly 1 unit (e.g., "01PMC"), each AWB gets its own section
-      // because in the original load plan, each "XX 01PMC XX" line after an AWB means that AWB
-      // is in its own 1-PMC section. For ULDs with multiple units (e.g., "02PMC"), multiple AWBs
-      // share that section.
+      // AWBs with the same ULD string should be grouped together under one ULD section.
+      // The ULD count (e.g., "01" in "XX 01PMC XX") indicates the total number of containers,
+      // NOT that each AWB gets its own section. Multiple AWBs can share one "01PMC" section.
       const sectorRegularUldGroups: Array<{ uld: string; awbs: any[] }> = []
-      let currentUldGroup: { uld: string; awbs: any[]; isSingleUnit: boolean } | null = null
+      let currentUldGroup: { uld: string; awbs: any[] } | null = null
       
       sectorRegularItems.forEach((item: any) => {
         const uld = item.uld_allocation || ""
-        const uldCount = getUldTotalCount(uld)
-        const isSingleUnit = uldCount === 1
         
         // Check if this item should start a new ULD group
         // A new group starts when:
         // 1. No current group exists, OR
         // 2. The ULD string is different from current group, OR
-        // 3. Current ULD is single-unit (count=1), meaning each AWB has its own section, OR
-        // 4. This is an additional_data item (red item) that should be grouped separately
+        // 3. This is an additional_data item (red item) that should be grouped separately
         const isAdditional = item.additional_data === true
         const currentIsAdditional = currentUldGroup && currentUldGroup.awbs.length > 0 && 
           currentUldGroup.awbs[0].additional_data === true
         
         const shouldStartNewGroup = !currentUldGroup || 
           currentUldGroup.uld !== uld ||
-          currentUldGroup.isSingleUnit || // Single-unit ULDs always start new section per AWB
           (isAdditional !== currentIsAdditional) // Separate red items from black items
         
         if (shouldStartNewGroup) {
           // Start a new group
-          currentUldGroup = { uld, awbs: [item], isSingleUnit }
+          currentUldGroup = { uld, awbs: [item] }
           sectorRegularUldGroups.push(currentUldGroup)
         } else {
           // Add to current group
