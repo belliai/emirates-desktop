@@ -99,13 +99,14 @@ export default function BuildupStaffScreen({ initialStaff, onNavigate }: Buildup
     })
   }, [operators])
 
-  // Filter operators based on search
+  // Filter operators based on search (name or staff ID)
   const filteredOperators = useMemo(() => {
     if (!staffSearch) return operatorOptions
     const search = staffSearch.toLowerCase()
     return operatorOptions.filter(op => 
       op.searchName.includes(search) || 
-      op.displayName.toLowerCase().includes(search)
+      op.displayName.toLowerCase().includes(search) ||
+      op.staff_no.toString().includes(search)
     )
   }, [operatorOptions, staffSearch])
 
