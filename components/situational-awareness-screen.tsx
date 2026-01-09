@@ -238,12 +238,17 @@ function getStatusColor(status: CompletionStatus): string {
 }
 
 function parseTTLPlnUld(ttlPlnUld: string): number {
+  // Parse strings like "06PMC/07AKE", "06PMC/02PLA/03AKE", "04PMC 01PLA 09AKE"
+  // Matches any number followed by 2-4 letter ULD type code
+  if (!ttlPlnUld) return 1;
+  
   let total = 0;
-  const pmcMatch = ttlPlnUld.match(/(\d+)PMC/i);
-  const akeMatch = ttlPlnUld.match(/(\d+)AKE/i);
-
-  if (pmcMatch) total += parseInt(pmcMatch[1], 10);
-  if (akeMatch) total += parseInt(akeMatch[1], 10);
+  // Match all patterns like "06PMC", "02PLA", "03AKE", "6RAP", etc.
+  const matches = ttlPlnUld.matchAll(/(\d+)\s*([A-Z]{2,4})/gi);
+  
+  for (const match of matches) {
+    total += parseInt(match[1], 10);
+  }
 
   if (total === 0) {
     const anyNumber = ttlPlnUld.match(/(\d+)/);
