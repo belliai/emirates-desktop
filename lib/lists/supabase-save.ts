@@ -27,12 +27,15 @@ function computeWorkAreaFromShc(shc: string | null | undefined): string {
   return "GCR"
 }
 
+export type LoadPlanImportType = "new" | "additional" | "revised"
+
 export interface SaveListsDataParams {
   results: ListsResults
   shipments?: Shipment[]
-  fileName: string
-  fileSize: number
+  fileName?: string
+  fileSize?: number
   rawContent?: string // Raw file content for parsing COUR/MAIL allocations
+  importType?: LoadPlanImportType // Import type: new (replace), additional (add items), revised (update with deletes)
 }
 
 export interface SaveListsDataResult {
@@ -250,6 +253,7 @@ export async function saveListsDataToSupabase({
   fileName,
   fileSize,
   rawContent = "",
+  importType,
 }: SaveListsDataParams): Promise<SaveListsDataResult> {
   try {
     const supabase = createClient()
@@ -267,16 +271,20 @@ export async function saveListsDataToSupabase({
     // Ensure required fields are not null
     const flightNumber = results.header.flightNumber?.trim() || "UNKNOWN"
     
-    // Detect if this is a REVISED (contains "cor"/"corr" in header or filename) or ADDITIONAL load plan
-    const isCorrectVersion = results.header.isCorrectVersion === true
-    console.log(`[v0] Load plan mode: ${isCorrectVersion ? 'REVISED (contains cor/corr)' : 'ADDITIONAL'}`)
+    // Determine import mode from importType parameter or fall back to isCorrectVersion detection
+    // importType: "new" = replace completely, "additional" = add items, "revised" = update with deletes
+    // For backwards compatibility, if importType is not provided, use isCorrectVersion from header
+    const resolvedImportType: LoadPlanImportType = importType || (results.header.isCorrectVersion === true ? "revised" : "additional")
+    const isRevisedMode = resolvedImportType === "revised"
+    
+    console.log(`[v0] Load plan mode: ${resolvedImportType.toUpperCase()} (isRevisedMode=${isRevisedMode})`)
     
     console.log("[v0] 📅 Parsed data for load_plan:", {
       flight_number: flightNumber,
       flight_date: flightDateStr,
       date_original: results.header.date,
       flightDateObject: flightDate,
-      isCorrectVersion,
+      importType: resolvedImportType,
     })
 
     // Check if load plan with this flight_number + flight_date already exists
@@ -722,7 +730,7 @@ export async function saveListsDataToSupabase({
           }
           
           // Choose key function based on mode
-          const keyMode = isCorrectVersion ? "AWB-only (REVISED)" : "serial+AWB (ADDITIONAL)"
+          const keyMode = isRevisedMode ? "AWB-only (REVISED)" : "serial+AWB (ADDITIONAL)"
           console.log(`[v0] 🔑 Using ${keyMode} matching for item comparison`)
           
           // Create maps for comparison
@@ -731,7 +739,7 @@ export async function saveListsDataToSupabase({
           
           // Build existing items map
           ;(existingItems || []).forEach(item => {
-            const key = isCorrectVersion 
+            const key = isRevisedMode 
               ? createItemKeyByAwbOnly(item.awb_number)
               : createItemKeyBySerialAwb(item.serial_number, item.awb_number)
             
@@ -759,7 +767,7 @@ export async function saveListsDataToSupabase({
               }
             }
             
-            const key = isCorrectVersion
+            const key = isRevisedMode
               ? createItemKeyByAwbOnly(shipment.awbNo)
               : createItemKeyBySerialAwb(serialNo, shipment.awbNo)
             
@@ -843,9 +851,9 @@ export async function saveListsDataToSupabase({
           }
           
           // Items that exist but not in new shipments - RECORD AS DELETED
-          // Only record deleted items if this is a REVISED load plan (CORRECT VERSION)
+          // Only record deleted items if this is a REVISED load plan
           // For ADDITIONAL load plans, we just add new items without marking existing as deleted
-          if (isCorrectVersion) {
+          if (isRevisedMode) {
             // These items will remain in the database with their original revision
             // But we record them as 'deleted' in load_plan_changes so they can be displayed with strikethrough
             existingItemsMap.forEach((existingItem, itemKey) => {
@@ -992,7 +1000,7 @@ export async function saveListsDataToSupabase({
     // Updates are now applied in BOTH REVISED and ADDITIONAL modes
     // The only difference: REVISED mode marks missing items as deleted, ADDITIONAL mode keeps them
     if (itemsToUpdate.length > 0) {
-      console.log(`[v0] 🔍 Step 5: Updating ${itemsToUpdate.length} existing items with changes (mode: ${isCorrectVersion ? 'REVISED' : 'ADDITIONAL'})`)
+      console.log(`[v0] 🔍 Step 5: Updating ${itemsToUpdate.length} existing items with changes (mode: ${isRevisedMode ? 'REVISED' : 'ADDITIONAL'})`)
       
       // Fetch existing items to preserve additional_data values
       const existingItemIds = itemsToUpdate.map(item => item.existingItemId)
@@ -1281,7 +1289,7 @@ export async function saveListsDataToSupabase({
           origin_destination: item001.origin_destination,
           weight: item001.weight,
         })
-      } else if (!isCorrectVersion && existingLoadPlanId) {
+      } else if (!isRevisedMode && existingLoadPlanId) {
         // In ADDITIONAL mode, item 001 typically already exists - this is expected
         console.log(`[v0] ℹ️ ADDITIONAL mode: Item 001 not in insert batch (likely already exists in database)`)
         console.log(`[v0] Items being inserted (new items only):`, loadPlanItems.map(item => item.serial_number).slice(0, 10))
@@ -1361,10 +1369,31 @@ export async function saveListsDataToSupabase({
             weight: insertedItem001.weight,
             revision: insertedItem001.revision,
           })
-        } else if (!isCorrectVersion && existingLoadPlanId) {
+        } else if (!isRevisedMode && existingLoadPlanId) {
           // In ADDITIONAL mode, item 001 typically already exists - this is expected
           console.log(`[v0] ℹ️ ADDITIONAL mode: Item 001 already exists, only new items were inserted`)
         }
+      }
+    }
+
+    // In ADDITIONAL mode, update ALL existing items to the new revision
+    // This ensures original items appear alongside new items in the display
+    // Without this, the display query filters by revision and excludes original items
+    if (!isRevisedMode && existingLoadPlanId) {
+      console.log(`[v0] 🔄 ADDITIONAL mode: Updating all existing items to revision ${newRevision}`)
+      
+      const { data: updatedItems, error: revisionUpdateError } = await supabase
+        .from("load_plan_items")
+        .update({ revision: newRevision })
+        .eq("load_plan_id", loadPlanId)
+        .neq("revision", newRevision) // Only update items not already at new revision
+        .select("id")
+      
+      if (revisionUpdateError) {
+        console.error("[v0] ❌ Error updating existing items revision:", revisionUpdateError)
+      } else {
+        const updatedCount = updatedItems?.length || 0
+        console.log(`[v0] ✅ ADDITIONAL mode: Updated ${updatedCount} existing items to revision ${newRevision}`)
       }
     }
 

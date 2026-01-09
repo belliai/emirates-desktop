@@ -17,6 +17,7 @@ import type { ListsResults } from "@/lib/lists/types"
 import { generateSpecialCargoReport, generateVUNList, generateQRTList } from "@/lib/lists/report-generators"
 import { compareLoadPlanChanges, applyLoadPlanChanges, type LoadPlanDiff } from "@/lib/lists/load-plan-review"
 import { LoadPlanReviewModal } from "./load-plan-review-modal"
+import { LoadPlanImportModal, type LoadPlanImportType } from "./load-plan-import-modal"
 
 // Parse STD time (e.g., "02:50", "09:35") to hours
 function parseStdToHours(std: string): number {
@@ -227,6 +228,19 @@ function LoadPlansScreenContent({ onLoadPlanSelect }: { onLoadPlanSelect?: (load
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc")
   const addFilterRef = useRef<HTMLDivElement>(null)
   const viewOptionsRef = useRef<HTMLDivElement>(null)
+  
+  // Import type modal state (shown when uploading to existing flight)
+  const [importModal, setImportModal] = useState<{
+    isOpen: boolean
+    file: File | null
+    results: ListsResults | null
+    shipments: any[] | null
+    rawContent: string
+    flightNumber: string
+    flightDate: string
+    existingLoadPlanId: string | null
+  } | null>(null)
+  const [isImporting, setIsImporting] = useState(false)
 
   // Fetch load plans from Supabase on mount
   useEffect(() => {
@@ -565,10 +579,9 @@ function LoadPlansScreenContent({ onLoadPlanSelect }: { onLoadPlanSelect?: (load
             shipments 
           }
 
-          // Compare with existing data to show review modal if there are changes
+          // Compare with existing data to check if load plan already exists
           try {
             console.log(`[LoadPlansScreen] 🔄 Starting comparison for ${header.flightNumber}...`)
-            console.log(`[LoadPlansScreen] isCorrectVersion (REVISED mode):`, header.isCorrectVersion)
             
             const diff = await compareLoadPlanChanges({
               results,
@@ -583,9 +596,9 @@ function LoadPlansScreenContent({ onLoadPlanSelect }: { onLoadPlanSelect?: (load
               deleted: diff.deletedCount,
             })
             
-            // If this is a new load plan OR there are no changes, save directly
-            if (diff.isNewLoadPlan || !diff.hasChanges) {
-              console.log(`[LoadPlansScreen] 📝 Saving directly: isNew=${diff.isNewLoadPlan}, hasChanges=${diff.hasChanges}`)
+            // If this is a new load plan, save directly
+            if (diff.isNewLoadPlan) {
+              console.log(`[LoadPlansScreen] 📝 Saving new load plan directly`)
               const saveResult = await saveListsDataToSupabase({
                 results,
                 shipments: shipments || [],
@@ -595,26 +608,26 @@ function LoadPlansScreenContent({ onLoadPlanSelect }: { onLoadPlanSelect?: (load
               })
               
               if (saveResult.success) {
-                if (diff.isNewLoadPlan) {
-                  totalAddedCount++
-                } else {
-                  // No changes detected
-                  totalSkippedCount++
-                  skippedFlights.push(header.flightNumber)
-                }
+                totalAddedCount++
               } else {
                 failedFiles.push(f.name)
               }
             } else {
-              // Has changes - queue for review
-              console.log(`[LoadPlansScreen] 🔔 QUEUING FOR REVIEW: ${header.flightNumber}`)
-              pendingFilesToReview.push({
+              // Load plan exists - show import type modal
+              console.log(`[LoadPlansScreen] 📋 Load plan exists for ${header.flightNumber} - showing import modal`)
+              setImportModal({
+                isOpen: true,
                 file: f,
                 results,
                 shipments: shipments || [],
-                diff,
                 rawContent: content,
+                flightNumber: header.flightNumber,
+                flightDate: diff.flightDate,
+                existingLoadPlanId: diff.existingLoadPlanId,
               })
+              setShowUploadModal(false)
+              setIsProcessing(false)
+              return // Exit early - will continue after user selects import type
             }
           } catch (compareError) {
             console.error(`[LoadPlansScreen] ⚠️ COMPARISON ERROR for ${f.name}:`, compareError)
@@ -1015,6 +1028,143 @@ function LoadPlansScreenContent({ onLoadPlanSelect }: { onLoadPlanSelect?: (load
         showConfirmButton: false,
       })
     }
+  }
+
+  // Handle import type selection from the import modal
+  const handleImportTypeSelect = async (importType: LoadPlanImportType) => {
+    if (!importModal) return
+    
+    setIsImporting(true)
+    
+    try {
+      const { file, results, shipments, rawContent, flightNumber, existingLoadPlanId } = importModal
+      
+      console.log(`[LoadPlansScreen] 📦 Import type selected: ${importType} for ${flightNumber}`)
+      
+      // Handle "new" import type - delete existing first, then save as new (no review needed)
+      if (importType === "new") {
+        if (existingLoadPlanId) {
+          console.log(`[LoadPlansScreen] 🗑️ Deleting existing load plan before importing new one`)
+          const deleteResult = await deleteLoadPlanFromSupabase(flightNumber)
+          if (!deleteResult.success) {
+            throw new Error(deleteResult.error || "Failed to delete existing load plan")
+          }
+        }
+        
+        // Save directly as new load plan
+        const saveResult = await saveListsDataToSupabase({
+          results: results!,
+          shipments: shipments || [],
+          fileName: file?.name || "unknown",
+          fileSize: file?.size || 0,
+          rawContent,
+          importType: "new",
+        })
+        
+        if (saveResult.success) {
+          // Refresh load plans list
+          const supabaseLoadPlans = await getLoadPlansFromSupabase()
+          if (supabaseLoadPlans.length > 0) {
+            setLoadPlans(supabaseLoadPlans)
+          }
+          
+          Swal.fire({
+            title: "Import Successful",
+            text: `New load plan for ${flightNumber} has been saved`,
+            icon: "success",
+            timer: 2000,
+            showConfirmButton: false,
+          })
+        } else {
+          throw new Error(saveResult.error || "Failed to save load plan")
+        }
+        
+        setImportModal(null)
+        return
+      }
+      
+      // For "additional" and "revised" types, update header flag and check for changes
+      // Set isCorrectVersion based on import type so the comparison uses the right matching
+      const updatedResults = {
+        ...results!,
+        header: {
+          ...results!.header,
+          isCorrectVersion: importType === "revised",
+        },
+      }
+      
+      // Compare to check if there are changes that need review
+      const diff = await compareLoadPlanChanges({
+        results: updatedResults,
+        shipments: shipments || [],
+      })
+      
+      console.log(`[LoadPlansScreen] ✅ Diff result for ${flightNumber}:`, {
+        hasChanges: diff.hasChanges,
+        added: diff.addedCount,
+        modified: diff.modifiedCount,
+        deleted: diff.deletedCount,
+      })
+      
+      // Close import modal
+      setImportModal(null)
+      
+      // If there are changes, show the review modal
+      if (diff.hasChanges) {
+        console.log(`[LoadPlansScreen] 🔔 Showing review modal for ${flightNumber}`)
+        setPendingFiles([{
+          file: file!,
+          results: updatedResults,
+          shipments: shipments || [],
+          rawContent,
+        }])
+        setPendingDiff(diff)
+        setCurrentReviewIndex(0)
+        setShowReviewModal(true)
+      } else {
+        // No changes, save directly
+        console.log(`[LoadPlansScreen] 📝 No changes detected, saving directly`)
+        const saveResult = await saveListsDataToSupabase({
+          results: updatedResults,
+          shipments: shipments || [],
+          fileName: file?.name || "unknown",
+          fileSize: file?.size || 0,
+          rawContent,
+          importType,
+        })
+        
+        if (saveResult.success) {
+          const supabaseLoadPlans = await getLoadPlansFromSupabase()
+          if (supabaseLoadPlans.length > 0) {
+            setLoadPlans(supabaseLoadPlans)
+          }
+          
+          Swal.fire({
+            title: "No Changes Detected",
+            text: `Load plan for ${flightNumber} is already up to date`,
+            icon: "info",
+            timer: 2000,
+            showConfirmButton: false,
+          })
+        } else {
+          throw new Error(saveResult.error || "Failed to save load plan")
+        }
+      }
+    } catch (err) {
+      console.error("[LoadPlansScreen] Error importing load plan:", err)
+      Swal.fire({
+        title: "Import Error",
+        text: err instanceof Error ? err.message : "An error occurred while importing",
+        icon: "error",
+      })
+    } finally {
+      setIsImporting(false)
+    }
+  }
+
+  // Handle cancel from import modal
+  const handleImportCancel = () => {
+    setImportModal(null)
   }
 
   const handleDragOver = (e: React.DragEvent) => {
@@ -1429,6 +1579,19 @@ function LoadPlansScreenContent({ onLoadPlanSelect }: { onLoadPlanSelect?: (load
           onAccept={handleAcceptReviewChanges}
           onDiscard={handleDiscardReviewChanges}
           isApplying={isApplyingChanges}
+        />
+      )}
+
+      {/* Import Type Modal - shown when uploading to existing flight */}
+      {importModal?.isOpen && (
+        <LoadPlanImportModal
+          isOpen={importModal.isOpen}
+          fileName={importModal.file?.name || ""}
+          flightNumber={importModal.flightNumber}
+          flightDate={importModal.flightDate}
+          onImport={handleImportTypeSelect}
+          onCancel={handleImportCancel}
+          isProcessing={isImporting}
         />
       )}
 
