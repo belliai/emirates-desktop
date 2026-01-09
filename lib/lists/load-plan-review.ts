@@ -334,7 +334,8 @@ export async function compareLoadPlanChanges({
     const awbNo = shipment.awbNo || ""
     
     if (existingItem) {
-      // Item exists in both - check for changes
+      // Item exists in both - check for changes (applies to both REVISED and ADDITIONAL modes)
+      // In ADDITIONAL mode, if an item with same serial+AWB exists, it can still be modified
       const fieldChanges = compareItemFields(existingItem, shipment)
       
       if (fieldChanges.length > 0) {
@@ -369,7 +370,7 @@ export async function compareLoadPlanChanges({
         diff.unchangedCount++
       }
     } else {
-      // Item only in new shipments - added
+      // Item only in new shipments - added (same for both modes)
       diff.addedCount++
       diff.addedItems.push({
         serialNumber: serialNo,
@@ -388,24 +389,27 @@ export async function compareLoadPlanChanges({
     }
   }
   
-  // Find deleted items (exist in DB but not in new upload)
-  for (const [itemKey, existingItem] of existingItemsMap.entries()) {
-    if (!newShipmentsMap.has(itemKey)) {
-      diff.deletedCount++
-      diff.deletedItems.push({
-        serialNumber: existingItem.serial_number,
-        awbNumber: existingItem.awb_number,
-        changeType: 'deleted',
-        oldData: {
-          pieces: existingItem.pieces,
-          weight: existingItem.weight,
-          volume: existingItem.volume,
-          shc: existingItem.special_handling_code,
-          manDesc: existingItem.manual_description,
-          uld: existingItem.uld_allocation,
-          sector: existingItem.sector,
-        },
-      })
+  // Find deleted items - ONLY for REVISED mode
+  // For ADDITIONAL mode: skip deleted detection - all existing items are retained
+  if (isCorrectVersion) {
+    for (const [itemKey, existingItem] of existingItemsMap.entries()) {
+      if (!newShipmentsMap.has(itemKey)) {
+        diff.deletedCount++
+        diff.deletedItems.push({
+          serialNumber: existingItem.serial_number,
+          awbNumber: existingItem.awb_number,
+          changeType: 'deleted',
+          oldData: {
+            pieces: existingItem.pieces,
+            weight: existingItem.weight,
+            volume: existingItem.volume,
+            shc: existingItem.special_handling_code,
+            manDesc: existingItem.manual_description,
+            uld: existingItem.uld_allocation,
+            sector: existingItem.sector,
+          },
+        })
+      }
     }
   }
   
