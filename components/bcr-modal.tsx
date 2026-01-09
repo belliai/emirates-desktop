@@ -940,19 +940,21 @@ export default function BCRModal({ isOpen, onClose, loadPlan, bcrData: initialBc
             </div>
           )}
           
-          <div className="flex items-center justify-end gap-3">
-            <Button variant="outline" onClick={handleViewPDF} className="flex items-center gap-2">
-              <FileText className="w-4 h-4" />
-              View Preview
-            </Button>
-            <Button variant="outline" onClick={handlePrint} className="flex items-center gap-2">
-              <Printer className="w-4 h-4" />
-              Print
-            </Button>
-            <Button variant="outline" onClick={handleDownloadPDF} className="flex items-center gap-2">
-              <Download className="w-4 h-4" />
-              Download
-            </Button>
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" onClick={handleViewPDF} className="flex items-center gap-1">
+                <FileText className="w-3 h-3" />
+                Preview
+              </Button>
+              <Button variant="outline" size="sm" onClick={handlePrint} className="flex items-center gap-1">
+                <Printer className="w-3 h-3" />
+                Print
+              </Button>
+              <Button variant="outline" size="sm" onClick={handleDownloadPDF} className="flex items-center gap-1">
+                <Download className="w-3 h-3" />
+                Download
+              </Button>
+            </div>
             {!isSubmitted ? (
               <Button 
                 onClick={handleSubmit} 
