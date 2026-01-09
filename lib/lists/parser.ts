@@ -67,10 +67,10 @@ export function parseHeader(content: string, fileName?: string): LoadPlanHeader 
   const prepOnMatch = content.match(/PREPARED\s+ON:\s*([\d-]+\s+[\d:]+)/i)
   const preparedOn = prepOnMatch ? prepOnMatch[1] : ""
 
-  // Parse TTL PLN ULD: TTL PLN ULD: 06PMC/07AKE
-  // Pattern: TTL PLN ULD: followed by value (can contain /, letters, numbers)
-  // Stop at multiple spaces or next field (ULD VERSION or PREPARED ON)
-  const ttlPlnUldMatch = content.match(/TTL\s+PLN\s+ULD:\s*([A-Z0-9\/]+)/i)
+  // Parse TTL PLN ULD: TTL PLN ULD: 06PMC/07AKE or TTL PLN ULD: 04PMC 01PLA 09AKE
+  // Pattern: TTL PLN ULD: followed by value (can contain /, letters, numbers, single spaces)
+  // Stop at double-space, ULD VERSION, PREPARED, or end of string
+  const ttlPlnUldMatch = content.match(/TTL\s+PLN\s+ULD:\s*([A-Z0-9\/\s]+?)(?:\s{2,}|ULD\s+VERSION|PREPARED|$)/i)
   const ttlPlnUld = ttlPlnUldMatch ? ttlPlnUldMatch[1].trim() : ""
 
   // Parse ULD VERSION: ULD VERSION: 06/26 or ULD VERSION: 05PMC/26
