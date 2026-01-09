@@ -35,11 +35,11 @@ export function StatCard({
 
   if (variant === "hero") {
     return (
-      <div className={cn("hero-stat chart-animate-in", className)}>
+      <div className={cn("bg-gradient-to-br from-red-600 to-red-700 rounded-xl p-4 text-white", className)}>
         <div className="flex items-center justify-between">
           <div>
-            <div className="hero-stat-value">{value}</div>
-            <div className="hero-stat-label">{title}</div>
+            <div className="text-3xl font-bold">{value}</div>
+            <div className="text-sm text-white/80 mt-1">{title}</div>
           </div>
           {icon && <div className="text-white/80">{icon}</div>}
         </div>
@@ -51,11 +51,11 @@ export function StatCard({
   }
 
   return (
-    <div className={cn("stat-card chart-animate-in", className)}>
+    <div className={cn("bg-white rounded-xl border border-gray-200 p-4", className)}>
       <div className="flex items-start justify-between">
         <div>
-          <div className="stat-card-label">{title}</div>
-          <div className="stat-card-value">{value}</div>
+          <div className="text-xs font-medium text-gray-500 uppercase tracking-wide">{title}</div>
+          <div className="text-2xl font-bold text-gray-900 mt-1">{value}</div>
         </div>
         {icon && <div className="text-gray-400">{icon}</div>}
       </div>
@@ -64,9 +64,9 @@ export function StatCard({
           {trend && (
             <div
               className={cn(
-                "stat-card-trend",
-                isPositive && "positive",
-                isNegative && "negative",
+                "flex items-center gap-1 text-xs font-medium",
+                isPositive && "text-green-600",
+                isNegative && "text-red-600",
                 !isPositive && !isNegative && "text-gray-500"
               )}
             >
