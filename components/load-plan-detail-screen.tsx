@@ -20,6 +20,8 @@ import type { WorkArea, PilPerSubFilter } from "@/lib/work-area-filter-utils"
 import { shouldIncludeULDSection } from "@/lib/work-area-filter-utils"
 import { getLoadPlanChanges, type LoadPlanChange } from "@/lib/load-plan-diff"
 import { createClient } from "@/lib/supabase/client"
+import { getAWBStatusesFromSupabase, markAWBLoaded, markAWBOffloaded, bulkMarkAWBsLoaded, type AWBStatus } from "@/lib/awb-status-storage"
+import { useUser } from "@/lib/user-context"
 
 // Re-export types for backward compatibility
 export type { AWBRow, ULDSection, LoadPlanItem, LoadPlanDetail } from "./load-plan-types"
@@ -172,6 +174,11 @@ export default function LoadPlanDetailScreen({ loadPlan, onBack, onNavigateToBui
   // This prevents showing "extra" ULDs from old/auto-initialized localStorage data
   const [supabaseEntries, setSupabaseEntries] = useState<Map<string, ULDEntry[]>>(new Map())
   
+  // AWB status tracking for shift handover (loaded/offloaded status)
+  const [awbStatusMap, setAwbStatusMap] = useState<Map<string, AWBStatus>>(new Map())
+  const { currentUser } = useUser()
+  const staffName = currentUser?.name || "Unknown"
+  
   // Fetch ULD entries from Supabase on mount (for cross-device sync)
   useEffect(() => {
     const fetchULDEntriesFromDB = async () => {
@@ -189,6 +196,23 @@ export default function LoadPlanDetailScreen({ loadPlan, onBack, onNavigateToBui
     }
     
     fetchULDEntriesFromDB()
+  }, [loadPlan.flight])
+  
+  // Fetch AWB statuses from Supabase on mount (for shift handover tracking)
+  useEffect(() => {
+    const fetchAWBStatuses = async () => {
+      try {
+        const statuses = await getAWBStatusesFromSupabase(loadPlan.flight)
+        if (statuses.size > 0) {
+          setAwbStatusMap(statuses)
+          console.log(`[LoadPlanDetail] Loaded ${statuses.size} AWB statuses from Supabase for ${loadPlan.flight}`)
+        }
+      } catch (error) {
+        console.error(`[LoadPlanDetail] Error fetching AWB statuses:`, error)
+      }
+    }
+    
+    fetchAWBStatuses()
   }, [loadPlan.flight])
   
   // Fetch load plan changes on mount
@@ -476,38 +500,69 @@ export default function LoadPlanDetailScreen({ loadPlan, onBack, onNavigateToBui
     setShowHandoverModal(false)
   }
 
-  const handleMarkAWBLoaded = () => {
+  const handleMarkAWBLoaded = async () => {
     if (!selectedAWBForQuickAction) return
     
-    const { awb, sectorIndex, uldSectionIndex, awbIndex } = selectedAWBForQuickAction
-    const assignmentKey = `${awb.awbNo}-${sectorIndex}-${uldSectionIndex}-${awbIndex}`
+    const { awb, sectorIndex, uldSectionIndex } = selectedAWBForQuickAction
+    const serialNumber = parseInt(awb.ser) || 0
+    const statusKey = `${serialNumber}-${sectorIndex}-${uldSectionIndex}`
     
-    setAwbAssignments((prev) => {
+    // Update local state immediately for responsive UI
+    setAwbStatusMap((prev) => {
       const updated = new Map(prev)
-      const existing = updated.get(assignmentKey)
-      if (existing) {
-        updated.set(assignmentKey, {
-          ...existing,
-          isLoaded: true,
-        })
-      } else {
-        updated.set(assignmentKey, {
-          awbNo: awb.awbNo,
-          sectorIndex,
-          uldSectionIndex,
-          awbIndex,
-          assignmentData: { type: "single", isLoaded: true },
-          isLoaded: true,
-        })
-      }
+      updated.set(statusKey, {
+        serialNumber,
+        awbNumber: awb.awbNo,
+        sectorIndex,
+        uldSectionIndex,
+        isLoaded: true,
+        loadedBy: staffName,
+        loadedAt: new Date().toISOString(),
+        isOffloaded: false,
+      })
       return updated
+    })
+    
+    // Persist to Supabase in background
+    markAWBLoaded(
+      loadPlan.flight,
+      serialNumber,
+      awb.awbNo,
+      sectorIndex,
+      uldSectionIndex,
+      staffName
+    ).catch(error => {
+      console.error(`[LoadPlanDetail] Error saving AWB loaded status:`, error)
     })
   }
 
-  const handleMarkAWBOffload = (remainingPieces: string, remarks: string) => {
+  const handleMarkAWBOffload = async (remainingPieces: string, remarks: string) => {
     if (!selectedAWBForQuickAction) return
     
-    const { awb } = selectedAWBForQuickAction
+    const { awb, sectorIndex, uldSectionIndex } = selectedAWBForQuickAction
+    const serialNumber = parseInt(awb.ser) || 0
+    const pieces = parseInt(remainingPieces) || 0
+    const statusKey = `${serialNumber}-${sectorIndex}-${uldSectionIndex}`
+    
+    // Update local state immediately for responsive UI
+    setAwbStatusMap((prev) => {
+      const updated = new Map(prev)
+      updated.set(statusKey, {
+        serialNumber,
+        awbNumber: awb.awbNo,
+        sectorIndex,
+        uldSectionIndex,
+        isLoaded: false,
+        isOffloaded: true,
+        offloadPieces: pieces,
+        offloadReason: remarks,
+        offloadedBy: staffName,
+        offloadedAt: new Date().toISOString(),
+      })
+      return updated
+    })
+    
+    // Also update awbComments for BCR generation (backward compatibility)
     const comment: AWBComment = {
       awbNo: awb.awbNo,
       status: "offloaded",
@@ -522,6 +577,20 @@ export default function LoadPlanDetailScreen({ loadPlan, onBack, onNavigateToBui
         return updated
       }
       return [...prev, comment]
+    })
+    
+    // Persist to Supabase in background
+    markAWBOffloaded(
+      loadPlan.flight,
+      serialNumber,
+      awb.awbNo,
+      sectorIndex,
+      uldSectionIndex,
+      pieces,
+      remarks,
+      staffName
+    ).catch(error => {
+      console.error(`[LoadPlanDetail] Error saving AWB offload status:`, error)
     })
   }
 
@@ -562,33 +631,47 @@ export default function LoadPlanDetailScreen({ loadPlan, onBack, onNavigateToBui
     return selectedCount > 0 && selectedCount < keys.size
   }
 
-  const handleBulkMarkLoaded = () => {
+  const handleBulkMarkLoaded = async () => {
     if (selectedAWBKeys.size === 0) return
 
-    setAwbAssignments((prev) => {
+    // Collect all AWBs to mark as loaded
+    const awbsToMark: Array<{
+      serialNumber: number
+      awbNumber: string
+      sectorIndex: number
+      uldSectionIndex: number
+    }> = []
+    
+    // Update local state immediately for responsive UI
+    setAwbStatusMap((prev) => {
       const updated = new Map(prev)
-      // Iterate through all AWBs to find matching keys
       editedPlan.sectors.forEach((sector, sectorIndex) => {
         sector.uldSections.forEach((uldSection, uldSectionIndex) => {
           uldSection.awbs.forEach((awb, awbIndex) => {
             const assignmentKey = `${awb.awbNo}-${sectorIndex}-${uldSectionIndex}-${awbIndex}`
             if (selectedAWBKeys.has(assignmentKey)) {
-              const existing = updated.get(assignmentKey)
-              if (existing) {
-                updated.set(assignmentKey, {
-                  ...existing,
-                  isLoaded: true,
-                })
-              } else {
-                updated.set(assignmentKey, {
-                  awbNo: awb.awbNo,
-                  sectorIndex,
-                  uldSectionIndex,
-                  awbIndex,
-                  assignmentData: { type: "single", isLoaded: true },
-                  isLoaded: true,
-                })
-              }
+              const serialNumber = parseInt(awb.ser) || 0
+              const statusKey = `${serialNumber}-${sectorIndex}-${uldSectionIndex}`
+              
+              // Add to local state
+              updated.set(statusKey, {
+                serialNumber,
+                awbNumber: awb.awbNo,
+                sectorIndex,
+                uldSectionIndex,
+                isLoaded: true,
+                loadedBy: staffName,
+                loadedAt: new Date().toISOString(),
+                isOffloaded: false,
+              })
+              
+              // Collect for bulk save
+              awbsToMark.push({
+                serialNumber,
+                awbNumber: awb.awbNo,
+                sectorIndex,
+                uldSectionIndex,
+              })
             }
           })
         })
@@ -598,6 +681,13 @@ export default function LoadPlanDetailScreen({ loadPlan, onBack, onNavigateToBui
     
     // Clear selection
     setSelectedAWBKeys(new Set())
+    
+    // Persist to Supabase in background
+    if (awbsToMark.length > 0) {
+      bulkMarkAWBsLoaded(loadPlan.flight, awbsToMark, staffName).catch(error => {
+        console.error(`[LoadPlanDetail] Error bulk saving AWB loaded status:`, error)
+      })
+    }
   }
 
   const handleToggleSelectAll = () => {
@@ -841,6 +931,7 @@ export default function LoadPlanDetailScreen({ loadPlan, onBack, onNavigateToBui
             pilPerSubFilter={pilPerSubFilter}
             loadPlanChanges={loadPlanChanges}
             deletedItems={deletedItems}
+            awbStatusMap={awbStatusMap}
           />
 
           {/* Bottom Footer */}
@@ -1027,6 +1118,7 @@ interface CombinedTableProps {
   calculatedConnectionTime?: string // Calculated connection time for QRT List (ETD - ETA with fallbacks)
   loadPlanChanges?: Map<number, LoadPlanChange> // Map of serial number to change information
   deletedItems?: AWBRow[] // Deleted items from original load plan to display with strikethrough
+  awbStatusMap?: Map<string, AWBStatus> // AWB status map for loaded/offloaded tracking
 }
 
 function CombinedTable({
@@ -1062,6 +1154,7 @@ function CombinedTable({
   calculatedConnectionTime = "0",
   loadPlanChanges = new Map(),
   deletedItems = [],
+  awbStatusMap = new Map(),
 }: CombinedTableProps) {
   // CRITICAL: Flatten ALL items first, then sort GLOBALLY by additional_data DESC (red on top), then by serial_number
   // This ensures ALL items with additional_data = true appear at the top of the ENTIRE table,
@@ -1215,13 +1308,14 @@ function CombinedTable({
                 <th className="px-2 py-2 text-left font-semibold">WHS</th>
                 <th className="px-2 py-2 text-left font-semibold">SI</th>
                 <th className="px-2 py-2 text-left font-semibold w-20">Remaining</th>
+                <th className="px-2 py-2 text-center font-semibold w-20">Status</th>
               </tr>
             </thead>
             <tbody>
               {/* Special Instructions - Show inline only when NOT QRT List (for QRT List, show at bottom) */}
               {!isQRTList && editedPlan.remarks && editedPlan.remarks.length > 0 && (
                 <tr>
-                  <td colSpan={enableBulkCheckboxes ? (isQRTList ? 22 : 21) : (isQRTList ? 21 : 20)} className="px-2 py-2 bg-gray-100 border-b border-gray-200">
+                  <td colSpan={enableBulkCheckboxes ? (isQRTList ? 23 : 22) : (isQRTList ? 22 : 21)} className="px-2 py-2 bg-gray-100 border-b border-gray-200">
                     <div className="space-y-1">
                       {editedPlan.remarks.map((remark, index) => (
                         <EditableField
@@ -1254,7 +1348,7 @@ function CombinedTable({
                     {/* Sector Header - show if sector name exists (even if only one sector) */}
                     {hasSectorName && (
                       <tr className="bg-blue-50 border-t-2 border-blue-200">
-                        <td colSpan={enableBulkCheckboxes ? (isQRTList ? 22 : 21) : (isQRTList ? 21 : 20)} className="px-2 py-2 font-bold text-blue-900 text-center">
+                        <td colSpan={enableBulkCheckboxes ? (isQRTList ? 23 : 22) : (isQRTList ? 22 : 21)} className="px-2 py-2 font-bold text-blue-900 text-center">
                           SECTOR: {sectorName}
                         </td>
                       </tr>
@@ -1301,6 +1395,7 @@ function CombinedTable({
                             additional_data={isAdditionalData}
                             changeInfo={loadPlanChanges.get(parseInt(awb.ser) || 0)}
                             uldType={uld}
+                            awbStatus={awbStatusMap.get(`${parseInt(awb.ser) || 0}-${sectorIndex}-${uldSectionIndex}`)}
                           />
                           {shouldShowULD && (() => {
                             // Calculate extra ULDs for this specific section
@@ -1349,7 +1444,7 @@ function CombinedTable({
                     {/* COUR/MAIL Footer Row - greyed out to indicate exclusion from TTL PLN ULD */}
                     {(editedPlan.courAllocation || editedPlan.mailAllocation) && (
                       <tr className="bg-gray-100/70 opacity-60">
-                        <td colSpan={enableBulkCheckboxes ? (isQRTList ? 22 : 21) : (isQRTList ? 21 : 20)} className="px-2 py-1 text-gray-500 italic">
+                        <td colSpan={enableBulkCheckboxes ? (isQRTList ? 23 : 22) : (isQRTList ? 22 : 21)} className="px-2 py-1 text-gray-500 italic">
                           <div className="flex items-center gap-6 justify-center">
                             {editedPlan.courAllocation && (
                               <span>
@@ -1372,7 +1467,7 @@ function CombinedTable({
                     {rampTransfer.length > 0 && (
                       <>
                         <tr className="bg-gray-200/70">
-                          <td colSpan={enableBulkCheckboxes ? (isQRTList ? 22 : 21) : (isQRTList ? 21 : 20)} className="px-2 py-1 font-semibold text-gray-500 text-center italic">
+                          <td colSpan={enableBulkCheckboxes ? (isQRTList ? 23 : 22) : (isQRTList ? 22 : 21)} className="px-2 py-1 font-semibold text-gray-500 text-center italic">
                             ***** RAMP TRANSFER ***** <span className="text-xs font-normal">(excluded from TTL PLN ULD)</span>
                           </td>
                         </tr>
@@ -1411,6 +1506,7 @@ function CombinedTable({
                                 additional_data={isRampAdditionalData}
                                 changeInfo={loadPlanChanges.get(parseInt(awb.ser) || 0)}
                                 uldType={uld}
+                                awbStatus={awbStatusMap.get(`${parseInt(awb.ser) || 0}-${sectorIndex}-${uldSectionIndex}`)}
                               />
                               {shouldShowULD && (() => {
                                 // Calculate extra ULDs for this specific section (ramp transfer)
@@ -1466,7 +1562,7 @@ function CombinedTable({
               {deletedItems.length > 0 && (
                 <>
                   <tr className="bg-red-50 border-t-2 border-red-300">
-                    <td colSpan={enableBulkCheckboxes ? (isQRTList ? 22 : 21) : (isQRTList ? 21 : 20)} className="px-2 py-2 font-bold text-red-900 text-center">
+                    <td colSpan={enableBulkCheckboxes ? (isQRTList ? 23 : 22) : (isQRTList ? 22 : 21)} className="px-2 py-2 font-bold text-red-900 text-center">
                       ***** DELETED ITEMS (FROM ORIGINAL LOAD PLAN) *****
                     </td>
                   </tr>
@@ -1607,6 +1703,7 @@ interface AWBRowProps {
   additional_data?: boolean // Flag indicating if this item is additional data (new item added in subsequent upload)
   changeInfo?: LoadPlanChange // Change information for this AWB (added, modified, deleted)
   uldType?: string // ULD type string to determine if AWB Actions modal should open
+  awbStatus?: AWBStatus // AWB loaded/offloaded status for shift handover tracking
 }
 
 function AWBRow({
@@ -1628,6 +1725,7 @@ function AWBRow({
   additional_data = false,
   changeInfo,
   uldType,
+  awbStatus,
 }: AWBRowProps) {
   // Note: BULK AWBs can still open AWB Actions modal - only ULD Number modal is blocked for BULK
   const isBulkULD = false // AWB Actions modal is always allowed
@@ -1773,10 +1871,15 @@ function AWBRow({
             ? String(rawValue || "").replace(/\s+/g, "")
             : String(rawValue || "")
           
+          // Check if vol ≠ lvol for highlighting
+          const hasVolumeMismatch = key === "vol" || key === "lvol"
+            ? (awb.vol && awb.lvol && parseFloat(awb.vol) > 0 && parseFloat(awb.lvol) > 0 && awb.vol !== awb.lvol)
+            : false
+          
           return (
             <td
               key={key}
-              className="px-2 py-1"
+              className={`px-2 py-1 ${hasVolumeMismatch ? "bg-amber-50" : ""}`}
             >
               <EditableField
                 value={displayValue}
@@ -1786,7 +1889,9 @@ function AWBRow({
                   onUpdateField(key, cleanedValue)
                 }}
                 className={`text-xs ${
-                  isModified && isFieldModified(key) 
+                  hasVolumeMismatch
+                    ? "text-amber-600 font-semibold"
+                    : isModified && isFieldModified(key) 
                     ? "text-red-600 font-semibold" 
                     : baseTextColorClass
                 } ${className || ""}`}
@@ -1875,10 +1980,25 @@ function AWBRow({
             )
           )}
         </td>
+        {/* AWB Status Column */}
+        <td className="px-2 py-1 text-center">
+          {awbStatus?.isLoaded ? (
+            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-xs font-medium bg-green-100 text-green-700 rounded">
+              <CheckCircle className="w-3 h-3" />
+              Loaded
+            </span>
+          ) : awbStatus?.isOffloaded ? (
+            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-xs font-medium bg-orange-100 text-orange-700 rounded">
+              {awbStatus.offloadPieces} pcs
+            </span>
+          ) : (
+            <span className="text-xs text-gray-400">-</span>
+          )}
+        </td>
       </tr>
       {awb.remarks && (
         <tr>
-          <td colSpan={isQRTList ? 21 : 20} className={`px-2 py-1 text-xs italic ${
+          <td colSpan={isQRTList ? 22 : 21} className={`px-2 py-1 text-xs italic ${
             isModified && isFieldModified("remarks") 
               ? "text-red-600 font-semibold" 
               : baseTextColorClass
@@ -1981,7 +2101,7 @@ function ULDRow({ uld, uldEntries, isReadOnly, enableBulkCheckboxes, sectionKeys
           />
         </td>
       )}
-      <td colSpan={enableBulkCheckboxes ? (isQRTList ? 20 : 19) : (isQRTList ? 21 : 20)} className="px-2 py-1 font-semibold text-gray-900 text-center relative">
+      <td colSpan={enableBulkCheckboxes ? (isQRTList ? 21 : 20) : (isQRTList ? 22 : 21)} className="px-2 py-1 font-semibold text-gray-900 text-center relative">
         <div className="flex items-center justify-center gap-4">
           {displayNumbers && (
             <div className="group relative flex-shrink-0">

@@ -70,7 +70,7 @@ function AppContent() {
     | "bcr"
     | "settings-buildup-staff"
     | "settings-screening"
-  >("desktop")
+  >("load-plans")
   const [isSettingsMode, setIsSettingsMode] = useState(false)
   const [selectedULD, setSelectedULD] = useState<(ULD & { flightNumber: string; uldIndex: number }) | null>(null)
   const [buildupStaffParams, setBuildupStaffParams] = useState<{ staff?: string } | null>(null)
@@ -112,7 +112,7 @@ function AppContent() {
 
   const handleBackToDashboard = () => {
     setIsSettingsMode(false)
-    setCurrentScreen("desktop")
+    setCurrentScreen("load-plans")
   }
 
   const handleSettingsNavigate = (screen: string) => {
@@ -149,8 +149,8 @@ function AppContent() {
       }
     }
     
-    // Default: go to desktop (master view)
-    setCurrentScreen("desktop")
+    // Default: go to load-plans (Upload Load Plans page)
+    setCurrentScreen("load-plans")
   }
 
   const renderScreen = () => {
@@ -237,7 +237,7 @@ function AppContent() {
           </div>
         )
       default:
-        return <DesktopScreen onULDSelect={handleULDSelect} />
+        return <LoadPlansScreen />
     }
   }
 

@@ -206,7 +206,7 @@ export default function AllocationAssignmentScreen() {
       // Set first supervisor as default
       if (sups.length > 0) {
         setSelectedSupervisorId(sups[0].staff_no.toString())
-      }
+    }
     }
     loadStaff()
   }, [])

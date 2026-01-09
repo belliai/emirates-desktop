@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect, useMemo, useRef } from "react"
-import { ChevronRight, Plane, Calendar, Package, Users, Clock, FileText, Phone, User, Filter, X, Plus, Settings2, ChevronDown, Search, ArrowUpDown, SlidersHorizontal } from "lucide-react"
+import { ChevronRight, Plane, Calendar, Package, Users, Clock, FileText, Phone, User, Filter, X, Plus, Settings2, ChevronDown, Search, ArrowUpDown, SlidersHorizontal, CheckCircle2 } from "lucide-react"
 import LoadPlanDetailScreen from "./load-plan-detail-screen"
 import type { LoadPlanDetail, AWBRow, ULDSection } from "./load-plan-types"
 import type { ULDEntry } from "./uld-number-modal"
@@ -12,6 +12,8 @@ import { getULDEntriesFromStorage, getULDEntriesFromSupabase } from "@/lib/uld-s
 import { useWorkAreaFilter, WorkAreaFilterControls, WorkAreaFilterProvider } from "./work-area-filter-controls"
 import type { WorkArea, PilPerSubFilter } from "@/lib/work-area-filter-utils"
 import { shouldIncludeULDSection } from "@/lib/work-area-filter-utils"
+import { getBatchLoadedAWBCounts } from "@/lib/awb-status-storage"
+import { getBatchBCRStatus } from "@/lib/bcr-storage"
 
 // Types for completion tracking
 type CompletionStatus = "green" | "amber" | "red"
@@ -82,6 +84,11 @@ type FlightCompletion = {
   staffName: string
   staffContact: string
   shift: Shift
+  // AWB-level progress for shift handover
+  totalAWBs?: number
+  loadedAWBs?: number
+  // BCR submission status
+  bcrSubmitted?: boolean
 }
 
 // Hardcoded staff data for demo - in production this would come from a database
@@ -400,42 +407,87 @@ function FlightsViewScreenContent() {
   useEffect(() => {
     if (loadPlans.length === 0) return
     
-    const recalculatedCompletions = new Map<string, FlightCompletion>()
-    
-    loadPlans.forEach(plan => {
-      const cachedDetail = loadPlanDetailsCache.get(plan.flight)
-      const cachedEntries = uldEntriesCache.get(plan.flight)
+    const recalculateWithAWBCounts = async () => {
+      const recalculatedCompletions = new Map<string, FlightCompletion>()
       
-      // Always use detail-based calculation if available (same as load plan detail screen)
-      if (cachedDetail) {
-        const totalPlannedULDs = calculateTotalPlannedULDs(cachedDetail, selectedWorkArea, pilPerSubFilter)
-        const totalMarkedULDs = calculateTotalMarkedULDs(plan.flight, cachedDetail, selectedWorkArea, pilPerSubFilter, cachedEntries)
-        const completionPercentage = totalPlannedULDs > 0 
-          ? Math.round((totalMarkedULDs / totalPlannedULDs) * 100) 
-          : 0
-        const status = getCompletionStatus(completionPercentage)
-        
-        const staffInfo = STAFF_DATA[plan.flight] || { name: "Unassigned", contact: "-" }
-        const stdTime = SHIFT_DATA[plan.flight] || plan.std || "00:00"
-        const shift = getShiftFromStd(stdTime)
-        
-        recalculatedCompletions.set(plan.flight, {
-          flight: plan.flight,
-          totalPlannedULDs,
-          completedULDs: totalMarkedULDs,
-          completionPercentage,
-          status,
-          staffName: staffInfo.name,
-          staffContact: staffInfo.contact,
-          shift,
-        })
-      } else {
-        // Fall back to default calculation only if no detail available
-        recalculatedCompletions.set(plan.flight, calculateFlightCompletion(plan))
+      // Batch fetch all loaded AWB counts and BCR status in parallel (optimized)
+      const flightNumbers = loadPlans.map(p => p.flight)
+      let loadedAWBCountsMap = new Map<string, number>()
+      let bcrStatusMap = new Map<string, boolean>()
+      try {
+        const [awbCounts, bcrStatus] = await Promise.all([
+          getBatchLoadedAWBCounts(flightNumbers),
+          getBatchBCRStatus(flightNumbers)
+        ])
+        loadedAWBCountsMap = awbCounts
+        bcrStatusMap = bcrStatus
+      } catch (error) {
+        console.error(`[FlightsView] Error batch fetching AWB counts/BCR status:`, error)
       }
-    })
+      
+      for (const plan of loadPlans) {
+        const cachedDetail = loadPlanDetailsCache.get(plan.flight)
+        const cachedEntries = uldEntriesCache.get(plan.flight)
+        
+        // Calculate total AWBs from cached detail
+        let totalAWBs = 0
+        if (cachedDetail) {
+          cachedDetail.sectors.forEach(sector => {
+            sector.uldSections.forEach(uldSection => {
+              // Only count AWBs from included ULD sections (matching work area filter)
+              if (shouldIncludeULDSection(uldSection, selectedWorkArea || "All", pilPerSubFilter)) {
+                totalAWBs += uldSection.awbs.length
+              }
+            })
+          })
+        }
+        
+        // Get loaded AWB count and BCR status from batch results
+        const loadedAWBs = loadedAWBCountsMap.get(plan.flight) || 0
+        const bcrSubmitted = bcrStatusMap.get(plan.flight) || false
+        
+        // Always use detail-based calculation if available (same as load plan detail screen)
+        if (cachedDetail) {
+          const totalPlannedULDs = calculateTotalPlannedULDs(cachedDetail, selectedWorkArea, pilPerSubFilter)
+          const totalMarkedULDs = calculateTotalMarkedULDs(plan.flight, cachedDetail, selectedWorkArea, pilPerSubFilter, cachedEntries)
+          const completionPercentage = totalPlannedULDs > 0 
+            ? Math.round((totalMarkedULDs / totalPlannedULDs) * 100) 
+            : 0
+          const status = getCompletionStatus(completionPercentage)
+          
+          const staffInfo = STAFF_DATA[plan.flight] || { name: "Unassigned", contact: "-" }
+          const stdTime = SHIFT_DATA[plan.flight] || plan.std || "00:00"
+          const shift = getShiftFromStd(stdTime)
+          
+          recalculatedCompletions.set(plan.flight, {
+            flight: plan.flight,
+            totalPlannedULDs,
+            completedULDs: totalMarkedULDs,
+            completionPercentage,
+            status,
+            staffName: staffInfo.name,
+            staffContact: staffInfo.contact,
+            shift,
+            totalAWBs,
+            loadedAWBs,
+            bcrSubmitted,
+          })
+        } else {
+          // Fall back to default calculation only if no detail available
+          const baseCompletion = calculateFlightCompletion(plan)
+          recalculatedCompletions.set(plan.flight, {
+            ...baseCompletion,
+            totalAWBs,
+            loadedAWBs,
+            bcrSubmitted,
+          })
+        }
+      }
+      
+      setFlightCompletions(recalculatedCompletions)
+    }
     
-    setFlightCompletions(recalculatedCompletions)
+    recalculateWithAWBCounts()
   }, [loadPlans, loadPlanDetailsCache, uldEntriesCache, selectedWorkArea, pilPerSubFilter, uldUpdateTrigger])
 
   // Generate hourly time options (00:00 to 23:00)
@@ -1395,23 +1447,42 @@ function FlightRow({ loadPlan, completion, onClick }: FlightRowProps) {
       <td className="px-2 py-1 text-gray-900 text-xs whitespace-nowrap truncate">{loadPlan.ttlPlnUld}</td>
       {/* Completion percentage with visual bar */}
       <td className="px-2 py-1 text-xs whitespace-nowrap">
-        <div className="flex items-center gap-2">
-          <div className="w-16 h-2 bg-gray-200 rounded-full overflow-hidden">
-            <div 
-              className={`h-full ${getStatusColor(completion.status)} transition-all duration-300`}
-              style={{ width: `${Math.min(completion.completionPercentage, 100)}%` }}
-            />
-          </div>
-          <span className={`font-semibold ${
-            completion.status === "green" ? "text-green-600" :
-            completion.status === "amber" ? "text-amber-600" :
-            "text-red-600"
-          }`}>
-            {completion.completionPercentage}%
-          </span>
-          <span className="text-gray-500 text-[10px]">
-            ({completion.completedULDs}/{completion.totalPlannedULDs})
-          </span>
+        <div className="space-y-0.5">
+          {/* ULD Progress - Show "Completed" if BCR submitted */}
+          {completion.bcrSubmitted ? (
+            <div className="flex items-center gap-2">
+              <div className="w-16 h-2 bg-green-500 rounded-full" />
+              <span className="font-semibold text-green-600 flex items-center gap-1">
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                Completed
+              </span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2">
+              <div className="w-16 h-2 bg-gray-200 rounded-full overflow-hidden">
+                <div 
+                  className={`h-full ${getStatusColor(completion.status)} transition-all duration-300`}
+                  style={{ width: `${Math.min(completion.completionPercentage, 100)}%` }}
+                />
+              </div>
+              <span className={`font-semibold ${
+                completion.status === "green" ? "text-green-600" :
+                completion.status === "amber" ? "text-amber-600" :
+                "text-red-600"
+              }`}>
+                {completion.completionPercentage}%
+              </span>
+              <span className="text-gray-500 text-[10px]">
+                ({completion.completedULDs}/{completion.totalPlannedULDs})
+              </span>
+            </div>
+          )}
+          {/* AWB Progress (Option D) - hide if BCR submitted */}
+          {!completion.bcrSubmitted && completion.totalAWBs !== undefined && completion.totalAWBs > 0 && (
+            <div className="text-[10px] text-gray-500">
+              {completion.loadedAWBs || 0}/{completion.totalAWBs} AWBs loaded
+            </div>
+          )}
         </div>
       </td>
       <td className="px-2 py-1 text-gray-900 text-xs whitespace-nowrap truncate">{completion.staffName}</td>

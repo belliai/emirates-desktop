@@ -1,11 +1,12 @@
 "use client"
 
 import { useState, useRef, useEffect } from "react"
-import { X, Download, FileText, Printer, Plus, Trash2 } from "lucide-react"
+import { X, Download, FileText, Printer, Plus, Trash2, CheckCircle, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import type { LoadPlanDetail, AWBRow } from "./load-plan-types"
 import jsPDF from "jspdf"
 import html2canvas from "html2canvas"
+import { submitBCR } from "@/lib/bcr-storage"
 
 // Infrastructure for future commenting/status tracking
 export type AWBStatus = "completed" | "split" | "offloaded" | "pending" | "hold" | "late"
@@ -62,19 +63,66 @@ interface BCRModalProps {
   onClose: () => void
   loadPlan: LoadPlanDetail
   bcrData: BCRData
+  onSubmit?: () => void  // Called when BCR is successfully submitted
+  isAlreadySubmitted?: boolean  // If true, show as read-only
+  staffName?: string  // Current user's name for sentBy field
 }
 
-export default function BCRModal({ isOpen, onClose, loadPlan, bcrData: initialBcrData }: BCRModalProps) {
+export default function BCRModal({ isOpen, onClose, loadPlan, bcrData: initialBcrData, onSubmit, isAlreadySubmitted = false, staffName }: BCRModalProps) {
   const [bcrData, setBcrData] = useState<BCRData>(initialBcrData)
   const [showPDFView, setShowPDFView] = useState(false)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [isSubmitted, setIsSubmitted] = useState(isAlreadySubmitted)
+  const [submitError, setSubmitError] = useState<string | null>(null)
   const pdfContentRef = useRef<HTMLDivElement>(null)
 
   // Update bcrData when initialBcrData changes (e.g., when comments are updated)
   useEffect(() => {
     if (isOpen) {
       setBcrData(initialBcrData)
+      setIsSubmitted(isAlreadySubmitted)
+      setSubmitError(null)
     }
-  }, [initialBcrData, isOpen])
+  }, [initialBcrData, isOpen, isAlreadySubmitted])
+
+  // Handle BCR submission to Supabase
+  const handleSubmit = async () => {
+    setIsSubmitting(true)
+    setSubmitError(null)
+
+    try {
+      const result = await submitBCR({
+        flightNumber: loadPlan.flight,
+        handoverFrom: bcrData.handoverTakenFrom || "",
+        loadersName: bcrData.loadersName || "",
+        buildupStaff: bcrData.buildupStaff || "",
+        supervisor: bcrData.supervisor || "",
+        partiallyActioned: bcrData.flightPartiallyActioned,
+        volumeDifferences: bcrData.volumeDifferences.map(v => ({
+          awb: v.awb,
+          declaredVolume: v.declaredVolume,
+          loadableVolume: v.loadableVolume,
+          remarks: v.remarks,
+        })),
+        unitsUnableToUpdate: bcrData.unitsUnableToUpdate.map(u => ({
+          uld: u.uld,
+          reason: u.reason,
+        })),
+        sentBy: staffName || "Unknown",
+      })
+
+      if (result.success) {
+        setIsSubmitted(true)
+        onSubmit?.()
+      } else {
+        setSubmitError(result.error || "Failed to submit BCR")
+      }
+    } catch (e) {
+      setSubmitError(String(e))
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
 
   if (!isOpen) return null
 
@@ -876,19 +924,63 @@ export default function BCRModal({ isOpen, onClose, loadPlan, bcrData: initialBc
         </div>
 
         {/* Footer Actions */}
-        <div className="sticky bottom-0 bg-gray-50 border-t border-gray-200 px-6 py-4 flex items-center justify-end gap-3">
-          <Button variant="outline" onClick={handleViewPDF} className="flex items-center gap-2">
-            <FileText className="w-4 h-4" />
-            View PDF
-          </Button>
-          <Button variant="outline" onClick={handlePrint} className="flex items-center gap-2">
-            <Printer className="w-4 h-4" />
-            Print
-          </Button>
-          <Button onClick={handleDownloadPDF} className="flex items-center gap-2 bg-[#D71A21] hover:bg-[#B0151A]">
-            <Download className="w-4 h-4" />
-            Download
-          </Button>
+        <div className="sticky bottom-0 bg-gray-50 border-t border-gray-200 px-6 py-4">
+          {/* Error message */}
+          {submitError && (
+            <div className="mb-3 text-sm text-red-600 bg-red-50 px-3 py-2 rounded">
+              {submitError}
+            </div>
+          )}
+          
+          {/* Success message */}
+          {isSubmitted && (
+            <div className="mb-3 text-sm text-green-700 bg-green-50 px-3 py-2 rounded flex items-center gap-2">
+              <CheckCircle className="w-4 h-4" />
+              BCR has been submitted successfully
+            </div>
+          )}
+          
+          <div className="flex items-center justify-end gap-3">
+            <Button variant="outline" onClick={handleViewPDF} className="flex items-center gap-2">
+              <FileText className="w-4 h-4" />
+              View Preview
+            </Button>
+            <Button variant="outline" onClick={handlePrint} className="flex items-center gap-2">
+              <Printer className="w-4 h-4" />
+              Print
+            </Button>
+            <Button variant="outline" onClick={handleDownloadPDF} className="flex items-center gap-2">
+              <Download className="w-4 h-4" />
+              Download
+            </Button>
+            {!isSubmitted ? (
+              <Button 
+                onClick={handleSubmit} 
+                disabled={isSubmitting}
+                className="flex items-center gap-2 bg-[#D71A21] hover:bg-[#B0151A]"
+              >
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Submitting...
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle className="w-4 h-4" />
+                    Submit BCR
+                  </>
+                )}
+              </Button>
+            ) : (
+              <Button 
+                disabled
+                className="flex items-center gap-2 bg-green-600 cursor-not-allowed"
+              >
+                <CheckCircle className="w-4 h-4" />
+                Submitted
+              </Button>
+            )}
+          </div>
         </div>
       </div>
     </div>

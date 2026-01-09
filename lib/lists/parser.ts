@@ -855,7 +855,7 @@ export function parseShipments(content: string, header: LoadPlanHeader): Shipmen
                 pcs: lenientMatch[4],
                 rest: lenientMatch[8]?.substring(0, 50)
               })
-              
+                
               // Parse the remaining fields from the "rest" portion
               const rest = lenientMatch[8] || ""
               const restParts = rest.split(/\s+/).filter(p => p.length > 0)

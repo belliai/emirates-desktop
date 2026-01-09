@@ -807,7 +807,7 @@ export default function QRTListScreen({ onBack }: QRTListScreenProps) {
       arrivalInfo = parseBayInfoRow(bayArrivalData.headers, bayArrivalData.rows[arrivalIndex])
     }
     setSelectedBayInfo(arrivalInfo)
-
+    
     // Fetch from Supabase
     try {
       console.log(`[QRTListScreen] Fetching load plan detail from Supabase for ${loadPlan.flight}`)
