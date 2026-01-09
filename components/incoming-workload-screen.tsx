@@ -8,14 +8,30 @@ import type { WorkArea } from "@/lib/work-area-filter-utils"
 import { useWorkAreaFilter, WorkAreaFilterControls, WorkAreaFilterProvider } from "./work-area-filter-controls"
 import { getUnassignedLoadPlansFromSupabase } from "@/lib/load-plans-supabase"
 
-// Parse ULD count from ttlPlnUld string (e.g., "06PMC/07AKE" -> {pmc: 6, ake: 7, total: 13})
-function parseULDCount(ttlPlnUld: string): { pmc: number; ake: number; total: number } {
-  if (!ttlPlnUld) return { pmc: 0, ake: 0, total: 0 }
+// Parse ULD count from ttlPlnUld string (e.g., "06PMC/02PLA/07AKE" -> {pmc: 6, pla: 2, ake: 7, other: 0, total: 15})
+function parseULDCount(ttlPlnUld: string): { pmc: number; pla: number; ake: number; other: number; total: number } {
+  if (!ttlPlnUld) return { pmc: 0, pla: 0, ake: 0, other: 0, total: 0 }
+  
+  // Match specific ULD types
   const pmcMatch = ttlPlnUld.match(/(\d+)PMC/i)
+  const plaMatch = ttlPlnUld.match(/(\d+)PLA/i)
   const akeMatch = ttlPlnUld.match(/(\d+)AKE/i)
+  
   const pmc = pmcMatch ? parseInt(pmcMatch[1]) : 0
+  const pla = plaMatch ? parseInt(plaMatch[1]) : 0
   const ake = akeMatch ? parseInt(akeMatch[1]) : 0
-  return { pmc, ake, total: pmc + ake }
+  
+  // Count all other ULD types (RAP, AMF, ALF, AKL, etc.)
+  let other = 0
+  const allMatches = ttlPlnUld.matchAll(/(\d+)\s*([A-Z]{2,4})/gi)
+  for (const match of allMatches) {
+    const type = match[2].toUpperCase()
+    if (type !== 'PMC' && type !== 'PLA' && type !== 'AKE') {
+      other += parseInt(match[1])
+    }
+  }
+  
+  return { pmc, pla, ake, other, total: pmc + pla + ake + other }
 }
 
 // Parse GCR ULD count from ttlPlnUld string (PMC/AMF, ALF/PLA, AKE/AKL)
@@ -105,12 +121,18 @@ function createCustomTooltip(selectedWorkArea: WorkArea) {
         items.push({ name: "LD-PMC/AMF", value: data.ldPmcAmf, color: "#DC2626" })
       }
     } else {
-      // "All" - original breakdown
+      // "All" - full breakdown
       if (data.pmc > 0) {
         items.push({ name: "PMC", value: data.pmc, color: "#DC2626" })
       }
+      if (data.pla > 0) {
+        items.push({ name: "PLA", value: data.pla, color: "#F59E0B" })
+      }
       if (data.ake > 0) {
         items.push({ name: "AKE", value: data.ake, color: "#EF4444" })
+      }
+      if (data.other > 0) {
+        items.push({ name: "Other", value: data.other, color: "#6B7280" })
       }
     }
     
@@ -163,7 +185,17 @@ function createCustomTooltip(selectedWorkArea: WorkArea) {
     }
   } else {
     // "All"
-    color = label === "AKE" ? "#EF4444" : "#DC2626"
+    if (label === "PMC") {
+      color = "#DC2626"
+    } else if (label === "PLA") {
+      color = "#F59E0B"
+    } else if (label === "AKE") {
+      color = "#EF4444"
+    } else if (label === "Other") {
+      color = "#6B7280"
+    } else {
+      color = "#DC2626"
+    }
   }
   
   return (
@@ -228,19 +260,25 @@ function getRoute(pax: string): string {
 }
 
 // Calculate ULD breakdown from actual flight data
-function calculateULDBreakdown(flights: Array<{ uldBreakdown: { pmc: number; ake: number; total: number } }>) {
+function calculateULDBreakdown(flights: Array<{ uldBreakdown: { pmc: number; pla: number; ake: number; other: number; total: number } }>) {
   let pmcCount = 0
+  let plaCount = 0
   let akeCount = 0
+  let otherCount = 0
 
   flights.forEach((flight) => {
     pmcCount += flight.uldBreakdown.pmc
+    plaCount += flight.uldBreakdown.pla
     akeCount += flight.uldBreakdown.ake
+    otherCount += flight.uldBreakdown.other
   })
 
   return {
     PMC: pmcCount,
+    PLA: plaCount,
     AKE: akeCount,
-    total: pmcCount + akeCount,
+    Other: otherCount,
+    total: pmcCount + plaCount + akeCount + otherCount,
   }
 }
 
@@ -524,7 +562,7 @@ function IncomingWorkloadScreenContent() {
         },
       ]
     } else {
-      // "All" - use original breakdown
+      // "All" - use original breakdown with all ULD types
       const uldBreakdownData = calculateULDBreakdown(displayFlights)
       return [
         {
@@ -533,15 +571,27 @@ function IncomingWorkloadScreenContent() {
           total: uldBreakdownData.PMC,
         },
         {
+          type: "PLA",
+          value: uldBreakdownData.PLA,
+          total: uldBreakdownData.PLA,
+        },
+        {
           type: "AKE",
           value: uldBreakdownData.AKE,
           total: uldBreakdownData.AKE,
         },
+        ...(uldBreakdownData.Other > 0 ? [{
+          type: "Other",
+          value: uldBreakdownData.Other,
+          total: uldBreakdownData.Other,
+        }] : []),
         {
           type: "Total",
           value: uldBreakdownData.total,
           pmc: uldBreakdownData.PMC,
+          pla: uldBreakdownData.PLA,
           ake: uldBreakdownData.AKE,
+          other: uldBreakdownData.Other,
           total: uldBreakdownData.total,
         },
       ]
@@ -879,9 +929,9 @@ function IncomingWorkloadScreenContent() {
                         </ul>
                       )
                     } else {
-                      // "All" - original legend
+                      // "All" - full legend
                       return (
-                        <ul className="flex justify-center gap-4 text-xs">
+                        <ul className="flex justify-center gap-4 text-xs flex-wrap">
                           <li className="flex items-center gap-1">
                             <span 
                               style={{ 
@@ -900,11 +950,35 @@ function IncomingWorkloadScreenContent() {
                                 display: "inline-block",
                                 width: "12px",
                                 height: "12px",
+                                backgroundColor: "#F59E0B",
+                                borderRadius: "2px"
+                              }}
+                            />
+                            <span>PLA</span>
+                          </li>
+                          <li className="flex items-center gap-1">
+                            <span 
+                              style={{ 
+                                display: "inline-block",
+                                width: "12px",
+                                height: "12px",
                                 backgroundColor: "#EF4444",
                                 borderRadius: "2px"
                               }}
                             />
                             <span>AKE</span>
+                          </li>
+                          <li className="flex items-center gap-1">
+                            <span 
+                              style={{ 
+                                display: "inline-block",
+                                width: "12px",
+                                height: "12px",
+                                backgroundColor: "#6B7280",
+                                borderRadius: "2px"
+                              }}
+                            />
+                            <span>Other</span>
                           </li>
                         </ul>
                       )
@@ -936,11 +1010,17 @@ function IncomingWorkloadScreenContent() {
                         fillColor = "#DC2626" // Red
                       }
                     } else {
-                      // "All" - original colors
-                      if (entry.type === "AKE") {
-                        fillColor = "#EF4444"
+                      // "All" - full colors
+                      if (entry.type === "PMC") {
+                        fillColor = "#DC2626" // Red
+                      } else if (entry.type === "PLA") {
+                        fillColor = "#F59E0B" // Amber
+                      } else if (entry.type === "AKE") {
+                        fillColor = "#EF4444" // Light red
+                      } else if (entry.type === "Other") {
+                        fillColor = "#6B7280" // Gray
                       } else if (entry.type === "Total") {
-                        fillColor = "#DC2626"
+                        fillColor = "#DC2626" // Red
                       }
                     }
                     
