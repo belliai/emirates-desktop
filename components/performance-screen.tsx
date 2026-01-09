@@ -1,15 +1,52 @@
-"use client"
+"use client";
 
-import { useState, useEffect, useMemo, useRef } from "react"
-import { Download, Plus, Search, Clock, X, Settings2, ArrowUpDown, SlidersHorizontal } from "lucide-react"
-import { Button } from "@/components/ui/button"
-import { useWorkAreaFilter, WorkAreaFilterControls, WorkAreaFilterProvider } from "./work-area-filter-controls"
+import { useState, useEffect, useMemo, useRef } from "react";
+import {
+  Download,
+  Plus,
+  Search,
+  Clock,
+  X,
+  Settings2,
+  ArrowUpDown,
+  SlidersHorizontal,
+  Users,
+  TrendingUp,
+  Zap,
+  Trophy,
+  ChevronDown,
+  ChevronUp,
+  Phone,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import {
+  useWorkAreaFilter,
+  WorkAreaFilterControls,
+  WorkAreaFilterProvider,
+} from "./work-area-filter-controls";
+import {
+  StatCard,
+  ChartCard,
+  EfficiencyLeaderboard,
+  ProductivityScatter,
+  ULDStackedBar,
+} from "@/components/ui/dashboard-charts";
 
 // Filter types
-type Shift = "All" | "9am to 9pm" | "9pm to 9am"
-type Module = "All" | "PAX & PF build-up EUR (1st floor, E)" | "PAX & PF build-up AFR (1st floor, F)" | "PAX & PF build-up ME, SubCon, Asia (1st floor, G)" | "Build-up AUS (1st floor, H)" | "US Screening Flights (1st floor, I)" | "Freighter & PAX Breakdown & build-up (Ground floor, F)" | "IND/PAK Build-up (Ground floor, G)" | "PER (Ground floor, H)" | "PIL (Ground floor, I)"
+type Shift = "All" | "9am to 9pm" | "9pm to 9am";
+type Module =
+  | "All"
+  | "PAX & PF build-up EUR (1st floor, E)"
+  | "PAX & PF build-up AFR (1st floor, F)"
+  | "PAX & PF build-up ME, SubCon, Asia (1st floor, G)"
+  | "Build-up AUS (1st floor, H)"
+  | "US Screening Flights (1st floor, I)"
+  | "Freighter & PAX Breakdown & build-up (Ground floor, F)"
+  | "IND/PAK Build-up (Ground floor, G)"
+  | "PER (Ground floor, H)"
+  | "PIL (Ground floor, I)";
 
-const SHIFTS: Shift[] = ["All", "9am to 9pm", "9pm to 9am"]
+const SHIFTS: Shift[] = ["All", "9am to 9pm", "9pm to 9am"];
 const MODULES: Module[] = [
   "All",
   "PAX & PF build-up EUR (1st floor, E)",
@@ -21,36 +58,39 @@ const MODULES: Module[] = [
   "IND/PAK Build-up (Ground floor, G)",
   "PER (Ground floor, H)",
   "PIL (Ground floor, I)",
-]
+];
 
 // Unified Staff Performance Type
 type StaffPerformance = {
-  id: number
-  staffName: string
-  avatar: string
-  staffNo: string
-  ekOutsource: string
-  totalHrs: number
-  totalUnits: number
-  efficiency: number | string // Can be number or "#DIV/0!" for division by zero
+  id: number;
+  staffName: string;
+  avatar: string;
+  staffNo: string;
+  ekOutsource: string;
+  totalHrs: number;
+  totalUnits: number;
+  efficiency: number | string; // Can be number or "#DIV/0!" for division by zero
   // GCR-specific fields
-  flightCount?: number
-  deployment?: string
-  contact?: string
+  flightCount?: number;
+  deployment?: string;
+  contact?: string;
   // PIL/PER-specific fields
-  akeDpe?: number
-  alfDqf?: number
-  ldPmcAmf?: number
-  mdQ6Q7?: number
-  bulkKg?: number
-  actualThruUnit?: number
-  actualTopUpUnit?: string
-}
+  akeDpe?: number;
+  alfDqf?: number;
+  ldPmcAmf?: number;
+  mdQ6Q7?: number;
+  bulkKg?: number;
+  actualThruUnit?: number;
+  actualTopUpUnit?: string;
+};
 
 // Helper function to calculate efficiency
-function calculateEfficiency(totalUnits: number, totalHrs: number): number | string {
-  if (totalHrs === 0) return "#DIV/0!"
-  return Number((totalUnits / totalHrs).toFixed(1))
+function calculateEfficiency(
+  totalUnits: number,
+  totalHrs: number
+): number | string {
+  if (totalHrs === 0) return "#DIV/0!";
+  return Number((totalUnits / totalHrs).toFixed(1));
 }
 
 const HARDCODED_STAFF: StaffPerformance[] = [
@@ -111,6 +151,7 @@ const HARDCODED_STAFF: StaffPerformance[] = [
     bulkKg: 0,
     actualThruUnit: 0,
     actualTopUpUnit: "EKP BUILD UP",
+    contact: "+971 50 567 8901",
   },
   {
     id: 5,
@@ -128,13 +169,14 @@ const HARDCODED_STAFF: StaffPerformance[] = [
     bulkKg: 0,
     actualThruUnit: 0,
     actualTopUpUnit: "EKP BUILD UP",
+    contact: "+971 50 678 9012",
   },
   {
     id: 6,
-    staffName: "RYAN",
-    avatar: "RY",
-    staffNo: "",
-    ekOutsource: "EK",
+    staffName: "Ryan Martinez",
+    avatar: "RM",
+    staffNo: "OS001",
+    ekOutsource: "DPWorld",
     totalHrs: 12,
     totalUnits: 32,
     efficiency: calculateEfficiency(32, 12),
@@ -145,8 +187,40 @@ const HARDCODED_STAFF: StaffPerformance[] = [
     bulkKg: 0,
     actualThruUnit: 0,
     actualTopUpUnit: "CTO SCREENING",
+    contact: "+971 50 789 0123",
   },
-]
+  {
+    id: 7,
+    staffName: "James Wilson",
+    avatar: "JW",
+    staffNo: "EK006",
+    ekOutsource: "EK",
+    totalHrs: 10,
+    totalUnits: 28,
+    efficiency: calculateEfficiency(28, 10),
+    flightCount: 4,
+    deployment: "Module E",
+    contact: "+971 50 456 7890",
+  },
+  {
+    id: 8,
+    staffName: "Sarah Khan",
+    avatar: "SK",
+    staffNo: "OS002",
+    ekOutsource: "TG",
+    totalHrs: 11,
+    totalUnits: 25,
+    efficiency: calculateEfficiency(25, 11),
+    akeDpe: 12,
+    alfDqf: 8,
+    ldPmcAmf: 3,
+    mdQ6Q7: 2,
+    bulkKg: 0,
+    actualThruUnit: 0,
+    actualTopUpUnit: "EKP BUILD UP",
+    contact: "+971 50 890 1234",
+  },
+];
 
 // Wrapper component that provides the WorkAreaFilter context
 export default function PerformanceScreen() {
@@ -154,378 +228,564 @@ export default function PerformanceScreen() {
     <WorkAreaFilterProvider>
       <PerformanceScreenContent />
     </WorkAreaFilterProvider>
-  )
+  );
 }
 
 // Inner component that uses the shared WorkAreaFilter context
 function PerformanceScreenContent() {
   // Work area filter hook
-  const { selectedWorkArea, pilPerSubFilter } = useWorkAreaFilter()
-  const [selectedShift, setSelectedShift] = useState<Shift>("All" as Shift)
-  const [selectedModule, setSelectedModule] = useState<Module>("All")
-  const [customTimeRange, setCustomTimeRange] = useState<{ start: string; end: string } | null>(null)
-  const [showTimeRangePicker, setShowTimeRangePicker] = useState(false)
-  const timeRangePickerRef = useRef<HTMLDivElement>(null)
-  const [showAddFilterDropdown, setShowAddFilterDropdown] = useState(false)
-  const [showViewOptions, setShowViewOptions] = useState(false)
-  const addFilterRef = useRef<HTMLDivElement>(null)
-  const viewOptionsRef = useRef<HTMLDivElement>(null)
+  const { selectedWorkArea, pilPerSubFilter } = useWorkAreaFilter();
+  const [selectedShift, setSelectedShift] = useState<Shift>("All" as Shift);
+  const [selectedModule, setSelectedModule] = useState<Module>("All");
+  const [customTimeRange, setCustomTimeRange] = useState<{
+    start: string;
+    end: string;
+  } | null>(null);
+  const [showTimeRangePicker, setShowTimeRangePicker] = useState(false);
+  const timeRangePickerRef = useRef<HTMLDivElement>(null);
+  const [showAddFilterDropdown, setShowAddFilterDropdown] = useState(false);
+  const [showViewOptions, setShowViewOptions] = useState(false);
+  const addFilterRef = useRef<HTMLDivElement>(null);
+  const viewOptionsRef = useRef<HTMLDivElement>(null);
+  const [showDetailedTable, setShowDetailedTable] = useState(true);
 
   // Generate hourly time options (00:00 to 23:00)
   const timeOptions = useMemo(() => {
-    const options: string[] = []
+    const options: string[] = [];
     for (let hour = 0; hour < 24; hour++) {
-      options.push(`${hour.toString().padStart(2, '0')}:00`)
+      options.push(`${hour.toString().padStart(2, "0")}:00`);
     }
-    return options
-  }, [])
+    return options;
+  }, []);
 
   // Close dropdowns when clicking outside
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
-      if (timeRangePickerRef.current && !timeRangePickerRef.current.contains(event.target as Node)) {
-        setShowTimeRangePicker(false)
+      if (
+        timeRangePickerRef.current &&
+        !timeRangePickerRef.current.contains(event.target as Node)
+      ) {
+        setShowTimeRangePicker(false);
       }
-      if (addFilterRef.current && !addFilterRef.current.contains(event.target as Node)) {
-        setShowAddFilterDropdown(false)
+      if (
+        addFilterRef.current &&
+        !addFilterRef.current.contains(event.target as Node)
+      ) {
+        setShowAddFilterDropdown(false);
       }
-      if (viewOptionsRef.current && !viewOptionsRef.current.contains(event.target as Node)) {
-        setShowViewOptions(false)
+      if (
+        viewOptionsRef.current &&
+        !viewOptionsRef.current.contains(event.target as Node)
+      ) {
+        setShowViewOptions(false);
       }
     }
 
     if (showTimeRangePicker || showAddFilterDropdown || showViewOptions) {
-      document.addEventListener('mousedown', handleClickOutside)
+      document.addEventListener("mousedown", handleClickOutside);
       return () => {
-        document.removeEventListener('mousedown', handleClickOutside)
-      }
+        document.removeEventListener("mousedown", handleClickOutside);
+      };
     }
-  }, [showTimeRangePicker, showAddFilterDropdown, showViewOptions])
+  }, [showTimeRangePicker, showAddFilterDropdown, showViewOptions]);
 
   // Filter staff based on work area
   const filteredStaff = useMemo(() => {
-    if (selectedWorkArea === "All") return HARDCODED_STAFF
+    if (selectedWorkArea === "All") return HARDCODED_STAFF;
     if (selectedWorkArea === "GCR") {
-      return HARDCODED_STAFF.filter(s => s.flightCount !== undefined)
+      return HARDCODED_STAFF.filter((s) => s.flightCount !== undefined);
     }
     if (selectedWorkArea === "PIL and PER") {
-      return HARDCODED_STAFF.filter(s => s.akeDpe !== undefined)
+      return HARDCODED_STAFF.filter((s) => s.akeDpe !== undefined);
     }
-    return HARDCODED_STAFF
-  }, [selectedWorkArea])
+    return HARDCODED_STAFF;
+  }, [selectedWorkArea]);
 
-  // Calculate averages
-  const avgTotalUnits = Math.round(
-    filteredStaff.reduce((sum, s) => sum + s.totalUnits, 0) / (filteredStaff.length || 1)
-  )
-  const avgTotalHrs = (
-    filteredStaff.reduce((sum, s) => sum + s.totalHrs, 0) / (filteredStaff.length || 1)
-  ).toFixed(1)
-  
-  // Calculate average efficiency (weighted by hours)
-  const totalHours = filteredStaff.reduce((sum, s) => sum + s.totalHrs, 0)
-  const totalUnits = filteredStaff.reduce((sum, s) => sum + s.totalUnits, 0)
-  const avgEfficiency = totalHours > 0 ? (totalUnits / totalHours).toFixed(1) : "#DIV/0!"
+  // PIL/PER staff for ULD breakdown chart
+  const pilPerStaff = useMemo(() => {
+    return HARDCODED_STAFF.filter((s) => s.akeDpe !== undefined);
+  }, []);
 
-  // Top performers
-  const topPerformers = useMemo(() => {
-    const sorted = [...filteredStaff].sort((a, b) => {
-      const aEff = typeof a.efficiency === "number" ? a.efficiency : 0
-      const bEff = typeof b.efficiency === "number" ? b.efficiency : 0
-      return bEff - aEff
-    })
-    return sorted.slice(0, 3)
-  }, [filteredStaff])
+  // Calculate stats
+  const stats = useMemo(() => {
+    const totalStaff = filteredStaff.length;
+    const totalUnits = filteredStaff.reduce((sum, s) => sum + s.totalUnits, 0);
+    const totalHours = filteredStaff.reduce((sum, s) => sum + s.totalHrs, 0);
+    const avgEfficiency = totalHours > 0 ? totalUnits / totalHours : 0;
+
+    // Get top performer
+    const sortedByEfficiency = [...filteredStaff].sort((a, b) => {
+      const aEff = typeof a.efficiency === "number" ? a.efficiency : 0;
+      const bEff = typeof b.efficiency === "number" ? b.efficiency : 0;
+      return bEff - aEff;
+    });
+    const topPerformer = sortedByEfficiency[0];
+
+    return {
+      totalStaff,
+      totalUnits,
+      avgEfficiency,
+      topPerformer,
+      avgTotalHrs: totalHours / (totalStaff || 1),
+      avgTotalUnits: totalUnits / (totalStaff || 1),
+    };
+  }, [filteredStaff]);
+
+  // Efficiency leaderboard data
+  const efficiencyData = useMemo(() => {
+    return filteredStaff.map((s) => ({
+      name: s.staffName,
+      avatar: s.avatar,
+      efficiency: typeof s.efficiency === "number" ? s.efficiency : 0,
+      isAboveAverage:
+        typeof s.efficiency === "number"
+          ? s.efficiency >= stats.avgEfficiency
+          : false,
+    }));
+  }, [filteredStaff, stats.avgEfficiency]);
+
+  // Productivity scatter data
+  const scatterData = useMemo(() => {
+    return filteredStaff.map((s) => ({
+      name: s.staffName,
+      hours: s.totalHrs,
+      units: s.totalUnits,
+      efficiency: typeof s.efficiency === "number" ? s.efficiency : 0,
+      isEK: s.ekOutsource === "EK",
+    }));
+  }, [filteredStaff]);
+
+  // ULD breakdown data (for PIL/PER)
+  const uldBreakdownData = useMemo(() => {
+    return pilPerStaff.map((s) => ({
+      name: s.staffName,
+      akeDpe: s.akeDpe || 0,
+      alfDqf: s.alfDqf || 0,
+      ldPmcAmf: s.ldPmcAmf || 0,
+      mdQ6Q7: s.mdQ6Q7 || 0,
+    }));
+  }, [pilPerStaff]);
 
   return (
-    <div className="min-h-screen bg-white p-6">
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 p-6">
       <div className="max-w-full">
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
-          <h1 className="text-xl font-bold">Staff Performance</h1>
-          <Button variant="outline" size="sm" className="gap-2 bg-transparent">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">
+              Staff Performance
+            </h1>
+            <p className="text-sm text-gray-500 mt-1">
+              Real-time performance tracking and analytics
+            </p>
+          </div>
+          <Button variant="outline" size="sm" className="gap-2 bg-white">
             <Download className="h-4 w-4" />
-            Download Data
+            Export Report
           </Button>
         </div>
 
+        {/* KPI Cards */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+          <StatCard
+            title="ACTIVE STAFF"
+            value={stats.totalStaff}
+            icon={<Users className="w-5 h-5" />}
+            trend={{ value: 12, label: "vs yesterday" }}
+            className="chart-delay-1"
+          />
+          <StatCard
+            title="TOTAL UNITS"
+            value={stats.totalUnits}
+            icon={<Zap className="w-5 h-5" />}
+            trend={{ value: 8, label: "vs yesterday" }}
+            className="chart-delay-2"
+          />
+          <StatCard
+            title="AVG EFFICIENCY"
+            value={`${stats.avgEfficiency.toFixed(1)}`}
+            subtitle="units per hour"
+            icon={<TrendingUp className="w-5 h-5" />}
+            trend={{ value: 5, label: "vs yesterday" }}
+            className="chart-delay-3"
+          />
+          <StatCard
+            title="TOP PERFORMER"
+            value={stats.topPerformer?.staffName || "—"}
+            subtitle={
+              stats.topPerformer
+                ? `${stats.topPerformer.efficiency} units/hr`
+                : ""
+            }
+            icon={<Trophy className="w-5 h-5" />}
+            className="chart-delay-4"
+          />
+        </div>
+
         {/* Filters */}
-        <div className="flex items-center gap-2 mb-6 px-2 flex-wrap">
-          {/* Default View Dropdown */}
-          <div className="flex items-center">
-            <select
-              className="px-2 py-1.5 text-xs border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-[#D71A21] focus:border-transparent"
-            >
-              <option value="default">≡ Default</option>
-              <option value="custom">Custom View</option>
-            </select>
-          </div>
-
-          {/* Add Filter Dropdown */}
-          <div className="relative" ref={addFilterRef}>
-            <button
-              type="button"
-              onClick={() => setShowAddFilterDropdown(!showAddFilterDropdown)}
-              className="flex items-center gap-1 px-2 py-1.5 text-xs border border-gray-300 rounded-md bg-white hover:border-gray-400 transition-colors"
-            >
-              <Plus className="w-3 h-3" />
-              <span>Add Filter</span>
-            </button>
-            
-            {showAddFilterDropdown && (
-              <div className="absolute top-full left-0 mt-1 z-50 bg-white border border-gray-200 rounded-lg shadow-lg w-48">
-                <div className="p-2">
-                  <div className="relative mb-2">
-                    <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 w-3 h-3 text-gray-400" />
-                    <input
-                      type="text"
-                      placeholder="Search column..."
-                      className="w-full pl-7 pr-2 py-1.5 text-xs border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-[#D71A21]"
-                    />
-                  </div>
-                  <div className="space-y-0.5">
-                    {["Staff Name", "Staff Number", "EK/Outsource", "Total Hours", "Efficiency"].map((col) => (
-                      <button
-                        key={col}
-                        className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-gray-700 hover:bg-gray-50 rounded transition-colors text-left"
-                        onClick={() => setShowAddFilterDropdown(false)}
-                      >
-                        <span className="text-gray-400">≡</span>
-                        {col}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Search Staff */}
-          <div className="relative">
-            <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 w-3 h-3 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Search staff..."
-              className="pl-7 pr-2 py-1.5 text-xs border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-[#D71A21] focus:border-transparent w-32"
-            />
-          </div>
-
-          <div className="w-px h-6 bg-gray-200" />
-
+        <div className="flex items-center gap-3 mb-6 flex-wrap bg-white rounded-xl border border-gray-200 px-4 py-3">
           {/* Work Area Filter */}
           <WorkAreaFilterControls />
 
-          {/* Shift Filter - Compact */}
+          {/* Shift Filter */}
           <select
             id="shift-filter"
             value={selectedShift}
             onChange={(e) => {
-              setSelectedShift(e.target.value as Shift)
-              if (e.target.value !== "All") setCustomTimeRange(null)
+              setSelectedShift(e.target.value as Shift);
+              if (e.target.value !== "All") setCustomTimeRange(null);
             }}
-            className="px-2 py-1.5 text-xs border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-[#D71A21] focus:border-transparent"
+            className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-[#D71A21] focus:border-transparent shadow-sm"
           >
-            {SHIFTS.map(shift => (
+            {SHIFTS.map((shift) => (
               <option key={shift} value={shift}>
                 Shift: {shift}
               </option>
             ))}
           </select>
 
-          {/* Time Range - Compact */}
+          {/* Time Range */}
           <div className="relative" ref={timeRangePickerRef}>
             <button
               type="button"
               onClick={() => setShowTimeRangePicker(!showTimeRangePicker)}
-              className={`flex items-center gap-1 px-2 py-1.5 text-xs border rounded-md bg-white transition-colors ${
-                customTimeRange ? "border-[#D71A21] text-[#D71A21]" : "border-gray-300 text-gray-700 hover:border-gray-400"
+              className={`flex items-center gap-1 px-3 py-1.5 text-xs border rounded-lg bg-white transition-colors shadow-sm ${
+                customTimeRange
+                  ? "border-[#D71A21] text-[#D71A21]"
+                  : "border-gray-200 text-gray-700 hover:border-gray-300"
               }`}
             >
               <Clock className="w-3 h-3" />
-              <span>{customTimeRange ? `${customTimeRange.start}-${customTimeRange.end}` : "Time"}</span>
+              <span>
+                {customTimeRange
+                  ? `${customTimeRange.start}-${customTimeRange.end}`
+                  : "Time Range"}
+              </span>
               {customTimeRange && (
-                <X className="w-3 h-3" onClick={(e) => { e.stopPropagation(); setCustomTimeRange(null) }} />
+                <X
+                  className="w-3 h-3"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setCustomTimeRange(null);
+                  }}
+                />
               )}
             </button>
-            
+
             {showTimeRangePicker && (
               <div className="absolute top-full left-0 mt-1 z-50 bg-white border border-gray-200 rounded-lg shadow-lg p-3 w-56">
                 <div className="flex items-center justify-between mb-2">
-                  <h3 className="text-xs font-semibold text-gray-900">Time Range</h3>
-                  <button onClick={() => setShowTimeRangePicker(false)} className="text-gray-400 hover:text-gray-600">
+                  <h3 className="text-xs font-semibold text-gray-900">
+                    Time Range
+                  </h3>
+                  <button
+                    onClick={() => setShowTimeRangePicker(false)}
+                    className="text-gray-400 hover:text-gray-600"
+                  >
                     <X className="w-3 h-3" />
                   </button>
                 </div>
                 <div className="flex items-center gap-2 mb-2">
                   <select
                     value={customTimeRange?.start || "00:00"}
-                    onChange={(e) => setCustomTimeRange(prev => ({ start: e.target.value, end: prev?.end || e.target.value }))}
+                    onChange={(e) =>
+                      setCustomTimeRange((prev) => ({
+                        start: e.target.value,
+                        end: prev?.end || e.target.value,
+                      }))
+                    }
                     className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded"
                   >
-                    {timeOptions.map(time => <option key={time} value={time}>{time}</option>)}
+                    {timeOptions.map((time) => (
+                      <option key={time} value={time}>
+                        {time}
+                      </option>
+                    ))}
                   </select>
                   <span className="text-xs text-gray-400">to</span>
                   <select
                     value={customTimeRange?.end || "23:00"}
-                    onChange={(e) => setCustomTimeRange(prev => ({ start: prev?.start || "00:00", end: e.target.value }))}
+                    onChange={(e) =>
+                      setCustomTimeRange((prev) => ({
+                        start: prev?.start || "00:00",
+                        end: e.target.value,
+                      }))
+                    }
                     className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded"
                   >
-                    {timeOptions.map(time => <option key={time} value={time}>{time}</option>)}
+                    {timeOptions.map((time) => (
+                      <option key={time} value={time}>
+                        {time}
+                      </option>
+                    ))}
                   </select>
                 </div>
                 <div className="flex gap-2">
-                  <button onClick={() => { setCustomTimeRange(null); setShowTimeRangePicker(false) }} className="flex-1 px-2 py-1 text-xs border rounded">Clear</button>
-                  <button onClick={() => setShowTimeRangePicker(false)} className="flex-1 px-2 py-1 text-xs bg-[#D71A21] text-white rounded">Apply</button>
+                  <button
+                    onClick={() => {
+                      setCustomTimeRange(null);
+                      setShowTimeRangePicker(false);
+                    }}
+                    className="flex-1 px-2 py-1 text-xs border rounded"
+                  >
+                    Clear
+                  </button>
+                  <button
+                    onClick={() => setShowTimeRangePicker(false)}
+                    className="flex-1 px-2 py-1 text-xs bg-[#D71A21] text-white rounded"
+                  >
+                    Apply
+                  </button>
                 </div>
               </div>
             )}
           </div>
 
-          {/* Module Filter - Compact */}
+          {/* Module Filter */}
           <select
             id="module-filter"
             value={selectedModule}
             onChange={(e) => setSelectedModule(e.target.value as Module)}
-            className="px-2 py-1.5 text-xs border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-[#D71A21] focus:border-transparent max-w-40 truncate"
+            className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-[#D71A21] focus:border-transparent max-w-48 truncate shadow-sm"
           >
-            {MODULES.map(module => (
+            {MODULES.map((module) => (
               <option key={module} value={module}>
-                {module === "All" ? "Module: All" : module.length > 30 ? module.slice(0, 30) + "..." : module}
+                {module === "All"
+                  ? "Module: All"
+                  : module.length > 30
+                  ? module.slice(0, 30) + "..."
+                  : module}
               </option>
             ))}
           </select>
 
           <div className="flex-1" />
 
-          {/* View Options Panel */}
-          <div className="relative" ref={viewOptionsRef}>
-            <button
-              type="button"
-              onClick={() => setShowViewOptions(!showViewOptions)}
-              className="flex items-center gap-1 px-2 py-1.5 text-xs border border-gray-300 rounded-md bg-white hover:border-gray-400 transition-colors"
-            >
-              <SlidersHorizontal className="w-3 h-3" />
-            </button>
-            
-            {showViewOptions && (
-              <div className="absolute top-full right-0 mt-1 z-50 bg-white border border-gray-200 rounded-lg shadow-lg w-64">
-                <div className="p-3">
-                  <h3 className="text-sm font-semibold text-gray-900 mb-3">View Options</h3>
-                  
-                  {/* Ordering */}
-                  <div className="mb-3">
-                    <div className="flex items-center gap-1.5 text-xs text-gray-600 mb-1.5">
-                      <ArrowUpDown className="w-3 h-3" />
-                      <span>Ordering</span>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <select className="flex-1 px-2 py-1.5 text-xs border border-gray-200 rounded">
-                        <option>Staff Name</option>
-                        <option>Total Hours</option>
-                        <option>Efficiency</option>
-                        <option>Total Units</option>
-                      </select>
-                      <button className="p-1.5 border border-gray-200 rounded hover:bg-gray-50">
-                        <ArrowUpDown className="w-3 h-3 text-gray-500" />
-                      </button>
-                    </div>
-                  </div>
-                  
-                  {/* Display Fields */}
-                  <div>
-                    <div className="flex items-center gap-1.5 text-xs text-gray-600 mb-1.5">
-                      <Settings2 className="w-3 h-3" />
-                      <span>Display Fields</span>
-                    </div>
-                    <div className="flex flex-wrap gap-1">
-                      {["Staff Name", "Total Hours", "Total Units", "Efficiency"].map((field) => (
-                        <span
-                          key={field}
-                          className="px-1.5 py-0.5 text-[10px] bg-[#D71A21]/10 text-[#D71A21] border border-[#D71A21]/20 rounded cursor-pointer hover:bg-[#D71A21]/20 transition-colors"
-                        >
-                          {field}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-
           {/* Staff count */}
-          <div className="text-xs text-gray-500 whitespace-nowrap">
-            Showing {filteredStaff.length} of {HARDCODED_STAFF.length} staff
+          <div className="text-xs text-gray-500 whitespace-nowrap bg-white px-3 py-1.5 rounded-lg shadow-sm">
+            {filteredStaff.length} staff members
           </div>
         </div>
 
-        {/* Top Performers */}
-        <div className="mb-8">
-          <h3 className="text-lg font-semibold mb-4">Top Performers</h3>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {topPerformers.map((staff, index) => (
-              <div key={staff.id} className="border rounded-lg p-4 flex items-center gap-4">
-                <div className="w-12 h-12 rounded-full bg-[#D71A21] flex items-center justify-center text-white font-semibold">
-                  {staff.avatar}
-                </div>
-                <div className="flex-1">
-                  <div className="font-semibold text-sm">{staff.staffName}</div>
-                  <div className="text-xs text-gray-500 mt-1">
-                    {index === 0 && `Efficiency: ${staff.efficiency}`}
-                    {index === 1 && `Total Units: ${staff.totalUnits}`}
-                    {index === 2 && `Total Hours: ${staff.totalHrs}h`}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
+        {/* Charts Dashboard */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+          {/* Efficiency Leaderboard */}
+          <ChartCard
+            title="Efficiency Leaderboard"
+            subtitle="Staff ranked by units processed per hour"
+            className="chart-delay-1"
+          >
+            <EfficiencyLeaderboard
+              data={efficiencyData}
+              averageValue={stats.avgEfficiency}
+              height={320}
+            />
+          </ChartCard>
+
+          {/* Productivity Scatter */}
+          <ChartCard
+            title="Productivity Analysis"
+            subtitle="Hours worked vs. units processed"
+            className="chart-delay-2"
+          >
+            <ProductivityScatter data={scatterData} height={320} />
+          </ChartCard>
         </div>
 
-        {/* Staff Performance Table */}
-        <div>
-          <h3 className="text-lg font-semibold mb-4">Staff Performance</h3>
-          <div className="border rounded-lg overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Staff</th>
-                    <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase">Total Hours</th>
-                    <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase">Total Units</th>
-                    <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase">Efficiency<br/>(Units/HR)</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y">
-                  {/* Average Row */}
-                  <tr className="bg-gray-50 font-semibold">
-                    <td className="px-4 py-3 text-sm">Average</td>
-                    <td className="px-4 py-3 text-sm text-center">{avgTotalHrs}</td>
-                    <td className="px-4 py-3 text-sm text-center">{avgTotalUnits}</td>
-                    <td className="px-4 py-3 text-sm text-center">{avgEfficiency}</td>
-                  </tr>
-                  {/* Staff Rows */}
-                  {filteredStaff.map((staff) => (
-                    <tr key={staff.id} className="hover:bg-gray-50">
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-full bg-[#D71A21] flex items-center justify-center text-white text-xs font-semibold">
-                            {staff.avatar}
-                          </div>
-                          <span className="text-sm font-medium text-[#D71A21]">{staff.staffName}</span>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 text-sm text-center">{staff.totalHrs}</td>
-                      <td className="px-4 py-3 text-sm text-center text-[#D71A21]">{staff.totalUnits}</td>
-                      <td className="px-4 py-3 text-sm text-center text-[#D71A21]">{staff.efficiency}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+        {/* ULD Type Breakdown - commented out for now */}
+        {/* {pilPerStaff.length > 0 && (selectedWorkArea === "All" || selectedWorkArea === "PIL and PER") && (
+          <ChartCard
+            title="ULD Type Breakdown"
+            subtitle="Container type distribution by staff (PIL/PER)"
+            className="mb-6 chart-delay-3"
+          >
+            <ULDStackedBar
+              data={uldBreakdownData}
+              height={Math.max(200, uldBreakdownData.length * 50)}
+            />
+          </ChartCard>
+        )} */}
+
+        {/* Detailed Performance Table (Collapsible) */}
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          <button
+            onClick={() => setShowDetailedTable(!showDetailedTable)}
+            className="w-full flex items-center justify-between px-6 py-4 hover:bg-gray-50 transition-colors"
+          >
+            <div className="flex items-center gap-3">
+              <h3 className="text-sm font-semibold text-gray-900">
+                Detailed Performance Data
+              </h3>
+              <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">
+                {filteredStaff.length} records
+              </span>
             </div>
-          </div>
+            {showDetailedTable ? (
+              <ChevronUp className="w-5 h-5 text-gray-400" />
+            ) : (
+              <ChevronDown className="w-5 h-5 text-gray-400" />
+            )}
+          </button>
+
+          {showDetailedTable && (
+            <div className="border-t border-gray-100">
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                        Staff
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                        Contact
+                      </th>
+                      <th className="px-6 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                        Type
+                      </th>
+                      <th className="px-6 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                        Hours
+                      </th>
+                      <th className="px-6 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                        Units
+                      </th>
+                      <th className="px-6 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                        Efficiency
+                      </th>
+                      <th className="px-6 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                        Status
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {/* Average Row */}
+                    <tr className="bg-gray-50/50">
+                      <td className="px-6 py-4">
+                        <span className="font-semibold text-sm text-gray-900">
+                          Team Average
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-sm text-gray-500">—</td>
+                      <td className="px-6 py-4 text-center text-sm text-gray-500">
+                        —
+                      </td>
+                      <td className="px-6 py-4 text-center text-sm font-medium text-gray-900">
+                        {stats.avgTotalHrs.toFixed(1)}h
+                      </td>
+                      <td className="px-6 py-4 text-center text-sm font-medium text-gray-900">
+                        {Math.round(stats.avgTotalUnits)}
+                      </td>
+                      <td className="px-6 py-4 text-center">
+                        <span className="text-sm font-bold text-[#D71A21]">
+                          {stats.avgEfficiency.toFixed(1)}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-center text-sm text-gray-500">
+                        —
+                      </td>
+                    </tr>
+                    {/* Staff Rows */}
+                    {filteredStaff.map((staff) => {
+                      const efficiency =
+                        typeof staff.efficiency === "number"
+                          ? staff.efficiency
+                          : 0;
+                      const isAboveAvg = efficiency >= stats.avgEfficiency;
+                      const isNearAvg =
+                        efficiency >= stats.avgEfficiency * 0.8 &&
+                        efficiency < stats.avgEfficiency;
+
+                      return (
+                        <tr
+                          key={staff.id}
+                          className="hover:bg-gray-50 transition-colors"
+                        >
+                          <td className="px-6 py-4">
+                            <div className="flex items-center gap-3">
+                              <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[#D71A21] to-[#B91C1C] flex items-center justify-center text-white text-xs font-semibold shadow-sm">
+                                {staff.avatar}
+                              </div>
+                              <div>
+                                <div className="text-sm font-medium text-gray-900">
+                                  {staff.staffName}
+                                </div>
+                                <div className="text-xs text-gray-500">
+                                  {staff.staffNo || "No ID"}
+                                </div>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-6 py-4">
+                            <div className="flex items-center gap-1.5 text-sm text-gray-600">
+                              <Phone className="w-3.5 h-3.5 text-gray-400" />
+                              <span>{staff.contact || "—"}</span>
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 text-center">
+                            <span
+                              className={`text-xs px-2 py-1 rounded-full ${
+                                staff.ekOutsource === "EK"
+                                  ? "bg-red-50 text-red-700"
+                                  : "bg-gray-100 text-gray-600"
+                              }`}
+                            >
+                              {staff.ekOutsource}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 text-center text-sm text-gray-900">
+                            {staff.totalHrs}h
+                          </td>
+                          <td className="px-6 py-4 text-center text-sm font-medium text-gray-900">
+                            {staff.totalUnits}
+                          </td>
+                          <td className="px-6 py-4 text-center">
+                            <span
+                              className={`text-sm font-bold ${
+                                isAboveAvg
+                                  ? "text-green-600"
+                                  : isNearAvg
+                                  ? "text-amber-600"
+                                  : "text-red-600"
+                              }`}
+                            >
+                              {staff.efficiency}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 text-center">
+                            <span
+                              className={`inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full ${
+                                isAboveAvg
+                                  ? "bg-green-50 text-green-700"
+                                  : isNearAvg
+                                  ? "bg-amber-50 text-amber-700"
+                                  : "bg-red-50 text-red-700"
+                              }`}
+                            >
+                              <span
+                                className={`w-1.5 h-1.5 rounded-full ${
+                                  isAboveAvg
+                                    ? "bg-green-500"
+                                    : isNearAvg
+                                    ? "bg-amber-500"
+                                    : "bg-red-500"
+                                }`}
+                              />
+                              {isAboveAvg
+                                ? "Above Avg"
+                                : isNearAvg
+                                ? "Near Avg"
+                                : "Below Avg"}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
-  )
+  );
 }
-
