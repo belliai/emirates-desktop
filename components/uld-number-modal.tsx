@@ -128,7 +128,7 @@ export function ULDNumberModal({
             number: number || "",
             checked: initialChecked?.[index] ?? false,
             type: initialTypes[index] || expandedTypes[index] || types[0] || "PMC",
-            workType: initialWorkTypes?.[index] ?? null
+            workType: initialWorkTypes?.[index] ?? 'BUILT' // Default to BUILT
           }))
           setUldEntries(entries)
         } else if (expectedCount > 0) {
@@ -137,7 +137,7 @@ export function ULDNumberModal({
             number: "",
             checked: false,
             type: type,
-            workType: null
+            workType: 'BUILT' // Default to BUILT
           }))
           setUldEntries(entries)
         } else {
@@ -211,7 +211,7 @@ export function ULDNumberModal({
     
     setUldEntries((prev) => [
       ...prev,
-      { number: "", checked: false, type: lastType, workType: null }
+      { number: "", checked: false, type: lastType, workType: 'BUILT' } // Default to BUILT
     ])
   }
 
@@ -329,7 +329,7 @@ export function ULDNumberModal({
                     autoFocus={index === 0 && uldEntries.every(e => !e.number)}
                   />
                   <WorkTypeSelect
-                    value={entry.workType || null}
+                    value={entry.workType || 'BUILT'}
                     onChange={(newValue) => handleWorkTypeChange(index, newValue)}
                   />
                   <button
