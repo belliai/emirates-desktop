@@ -1,12 +1,13 @@
 "use client"
 
 import { useState, useRef, useEffect } from "react"
-import { X, Download, FileText, Printer, Plus, Trash2, CheckCircle, Loader2 } from "lucide-react"
+import { X, Download, FileText, Printer, Plus, Trash2, CheckCircle, Loader2, ChevronDown } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import type { LoadPlanDetail, AWBRow } from "./load-plan-types"
 import jsPDF from "jspdf"
 import html2canvas from "html2canvas"
 import { submitBCR } from "@/lib/bcr-storage"
+import { BCR_REASON_CODES } from "@/lib/bcr-reason-codes"
 
 // Infrastructure for future commenting/status tracking
 export type AWBStatus = "completed" | "split" | "offloaded" | "pending" | "hold" | "late"
@@ -98,6 +99,15 @@ export default function BCRModal({ isOpen, onClose, loadPlan, bcrData: initialBc
         buildupStaff: bcrData.buildupStaff || "",
         supervisor: bcrData.supervisor || "",
         partiallyActioned: bcrData.flightPartiallyActioned,
+        shipments: bcrData.shipments.map(s => ({
+          srNo: s.srNo,
+          awb: s.awb,
+          pcs: s.pcs,
+          location: s.location,
+          reason: s.reason,
+          locationChecked: s.locationChecked,
+          remarks: s.remarks,
+        })),
         volumeDifferences: bcrData.volumeDifferences.map(v => ({
           awb: v.awb,
           declaredVolume: v.declaredVolume,
@@ -663,12 +673,16 @@ export default function BCRModal({ isOpen, onClose, loadPlan, bcrData: initialBc
                           />
                         </td>
                         <td className="px-3 py-2 border-b border-gray-100">
-                          <input
-                            type="text"
+                          <select
                             value={shipment.reason}
                             onChange={(e) => updateShipment(index, "reason", e.target.value)}
                             className="w-full px-2 py-1 border border-gray-300 rounded text-xs"
-                          />
+                          >
+                            <option value="">Select...</option>
+                            {BCR_REASON_CODES.map((r) => (
+                              <option key={r.code} value={r.code}>{r.code}</option>
+                            ))}
+                          </select>
                         </td>
                         <td className="px-3 py-2 border-b border-gray-100">
                           <input

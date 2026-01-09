@@ -6,6 +6,16 @@
 
 import { createClient } from "@/lib/supabase/client"
 
+export interface BCRShipment {
+  srNo: string
+  awb: string
+  pcs: string
+  location: string
+  reason: string
+  locationChecked: string
+  remarks: string
+}
+
 export interface BCRSubmission {
   flightNumber: string
   handoverFrom: string
@@ -13,6 +23,7 @@ export interface BCRSubmission {
   buildupStaff: string
   supervisor: string
   partiallyActioned: boolean
+  shipments: BCRShipment[]
   volumeDifferences: Array<{
     awb: string
     declaredVolume: string
@@ -34,6 +45,7 @@ export interface BCRData {
   bcrBuildupStaff: string | null
   bcrSupervisor: string | null
   bcrPartiallyActioned: boolean | null
+  bcrShipments: BCRShipment[] | null
   bcrVolumeDifferences: any[] | null
   bcrUnitsUnableUpdate: any[] | null
 }
@@ -74,6 +86,7 @@ export async function submitBCR(submission: BCRSubmission): Promise<{ success: b
         bcr_buildup_staff: submission.buildupStaff || null,
         bcr_supervisor: submission.supervisor || null,
         bcr_partially_actioned: submission.partiallyActioned,
+        bcr_shipments: submission.shipments.length > 0 ? submission.shipments : null,
         bcr_volume_differences: submission.volumeDifferences.length > 0 ? submission.volumeDifferences : null,
         bcr_units_unable_update: submission.unitsUnableToUpdate.length > 0 ? submission.unitsUnableToUpdate : null,
       })
@@ -106,7 +119,7 @@ export async function getBCRData(flightNumber: string): Promise<BCRData | null> 
     const supabase = createClient()
     const { data, error } = await supabase
       .from("load_plans")
-      .select("bcr_sent_at, bcr_sent_by, bcr_handover_from, bcr_loaders_name, bcr_buildup_staff, bcr_supervisor, bcr_partially_actioned, bcr_volume_differences, bcr_units_unable_update")
+      .select("bcr_sent_at, bcr_sent_by, bcr_handover_from, bcr_loaders_name, bcr_buildup_staff, bcr_supervisor, bcr_partially_actioned, bcr_shipments, bcr_volume_differences, bcr_units_unable_update")
       .eq("flight_number", flightNumber)
       .order("created_at", { ascending: false })
       .limit(1)
@@ -124,6 +137,7 @@ export async function getBCRData(flightNumber: string): Promise<BCRData | null> 
       bcrBuildupStaff: data.bcr_buildup_staff,
       bcrSupervisor: data.bcr_supervisor,
       bcrPartiallyActioned: data.bcr_partially_actioned,
+      bcrShipments: data.bcr_shipments,
       bcrVolumeDifferences: data.bcr_volume_differences,
       bcrUnitsUnableUpdate: data.bcr_units_unable_update,
     }
@@ -141,16 +155,26 @@ export async function isBCRSubmitted(flightNumber: string): Promise<boolean> {
   return bcrData?.bcrSentAt !== null && bcrData?.bcrSentAt !== undefined
 }
 
-/**
- * Get all submitted BCRs for display in BCR list
- */
-export async function getAllSubmittedBCRs(): Promise<Array<{
+export interface SubmittedBCR {
   flightNumber: string
   flightDate: string
   acftType: string
   sentBy: string
   sentAt: string
-}>> {
+  shipments: BCRShipment[] | null
+  volumeDifferences: any[] | null
+  unitsUnableToUpdate: any[] | null
+  handoverFrom: string | null
+  loadersName: string | null
+  buildupStaff: string | null
+  supervisor: string | null
+  partiallyActioned: boolean | null
+}
+
+/**
+ * Get all submitted BCRs for display in BCR list
+ */
+export async function getAllSubmittedBCRs(): Promise<SubmittedBCR[]> {
   if (!isSupabaseConfigured()) {
     return []
   }
@@ -159,7 +183,7 @@ export async function getAllSubmittedBCRs(): Promise<Array<{
     const supabase = createClient()
     const { data, error } = await supabase
       .from("load_plans")
-      .select("flight_number, flight_date, aircraft_type, bcr_sent_by, bcr_sent_at")
+      .select("flight_number, flight_date, aircraft_type, bcr_sent_by, bcr_sent_at, bcr_shipments, bcr_volume_differences, bcr_units_unable_update, bcr_handover_from, bcr_loaders_name, bcr_buildup_staff, bcr_supervisor, bcr_partially_actioned")
       .not("bcr_sent_at", "is", null)
       .order("bcr_sent_at", { ascending: false })
 
@@ -174,6 +198,14 @@ export async function getAllSubmittedBCRs(): Promise<Array<{
       acftType: row.aircraft_type || "",
       sentBy: row.bcr_sent_by || "",
       sentAt: row.bcr_sent_at,
+      shipments: row.bcr_shipments || null,
+      volumeDifferences: row.bcr_volume_differences || null,
+      unitsUnableToUpdate: row.bcr_units_unable_update || null,
+      handoverFrom: row.bcr_handover_from || null,
+      loadersName: row.bcr_loaders_name || null,
+      buildupStaff: row.bcr_buildup_staff || null,
+      supervisor: row.bcr_supervisor || null,
+      partiallyActioned: row.bcr_partially_actioned || null,
     }))
   } catch (e) {
     console.error(`[BCR] Exception fetching submitted BCRs:`, e)
