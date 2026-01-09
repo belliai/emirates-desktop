@@ -3,10 +3,10 @@
 import { useMemo, useState, useEffect, useRef } from "react"
 import { Plane, Clock, MapPin, Package, Plus, Search, SlidersHorizontal, Settings2, ArrowUpDown } from "lucide-react"
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell, TooltipProps } from "recharts"
-import { useLoadPlans, type LoadPlan, type ShiftType, type PeriodType, type WaveType } from "@/lib/load-plan-context"
-import { BUP_ALLOCATION_DATA } from "@/lib/bup-allocation-data"
+import { type LoadPlan, type ShiftType, type PeriodType, type WaveType } from "@/lib/load-plan-context"
 import type { WorkArea } from "@/lib/work-area-filter-utils"
 import { useWorkAreaFilter, WorkAreaFilterControls, WorkAreaFilterProvider } from "./work-area-filter-controls"
+import { getUnassignedLoadPlansFromSupabase } from "@/lib/load-plans-supabase"
 
 // Parse ULD count from ttlPlnUld string (e.g., "06PMC/07AKE" -> {pmc: 6, ake: 7, total: 13})
 function parseULDCount(ttlPlnUld: string): { pmc: number; ake: number; total: number } {
@@ -307,7 +307,8 @@ export default function IncomingWorkloadScreen() {
 
 // Inner component that uses the shared WorkAreaFilter context
 function IncomingWorkloadScreenContent() {
-  const { loadPlans } = useLoadPlans()
+  const [loadPlans, setLoadPlans] = useState<LoadPlan[]>([])
+  const [isLoading, setIsLoading] = useState(true)
   const [showAddFilterDropdown, setShowAddFilterDropdown] = useState(false)
   const [showViewOptions, setShowViewOptions] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
@@ -318,6 +319,24 @@ function IncomingWorkloadScreenContent() {
   const { selectedWorkArea, pilPerSubFilter } = useWorkAreaFilter()
   const addFilterRef = useRef<HTMLDivElement>(null)
   const viewOptionsRef = useRef<HTMLDivElement>(null)
+
+  // Fetch unassigned load plans from Supabase on mount
+  useEffect(() => {
+    const fetchUnassignedFlights = async () => {
+      setIsLoading(true)
+      try {
+        const unassignedPlans = await getUnassignedLoadPlansFromSupabase()
+        setLoadPlans(unassignedPlans)
+      } catch (error) {
+        console.error("[IncomingWorkload] Error fetching unassigned flights:", error)
+        setLoadPlans([])
+      } finally {
+        setIsLoading(false)
+      }
+    }
+    
+    fetchUnassignedFlights()
+  }, [])
 
   // Close dropdowns when clicking outside
   useEffect(() => {
@@ -450,24 +469,6 @@ function IncomingWorkloadScreenContent() {
 
   // Determine if wave filter should be shown
   const showWaveFilter = periodFilter === "late-morning" || periodFilter === "afternoon"
-
-  // Get flights that are NOT in BUP allocation list (logic kept for future filtering)
-  // Currently showing all load plans first as requested
-  const incomingFlightsLogic = useMemo(() => {
-    // Get all flight numbers from BUP allocation (normalize to match load plan format)
-    const bupFlightNumbers = new Set(
-      BUP_ALLOCATION_DATA.map((a) => {
-        return a.flightNo.startsWith("EK") ? a.flightNo : `EK${a.flightNo}`
-      })
-    )
-
-    // Filter load plans to only include flights NOT in BUP allocation
-    // Logic kept but showing all flights first as requested
-    return allFlights.filter((flight) => {
-      const normalizedFlight = flight.flight.startsWith("EK") ? flight.flight : `EK${flight.flight}`
-      return !bupFlightNumbers.has(normalizedFlight)
-    })
-  }, [allFlights])
 
   // Use filtered flights for display
   const displayFlights = filteredFlights
@@ -989,10 +990,18 @@ function IncomingWorkloadScreenContent() {
                 </tr>
               </thead>
               <tbody>
-                {displayFlights.length === 0 ? (
+                {isLoading ? (
                   <tr>
-                    <td colSpan={4} className="px-3 py-2 text-center text-gray-500 text-sm">
-                      {allFlights.length === 0 ? "No load plans available" : "No flights match the selected filters"}
+                    <td colSpan={4} className="px-3 py-8 text-center text-gray-500 text-sm">
+                      Loading unassigned flights...
+                    </td>
+                  </tr>
+                ) : displayFlights.length === 0 ? (
+                  <tr>
+                    <td colSpan={4} className="px-3 py-8 text-center text-gray-500 text-sm">
+                      {allFlights.length === 0 
+                        ? "All flights have been assigned - no pending workload" 
+                        : "No flights match the selected filters"}
                     </td>
                   </tr>
                 ) : (

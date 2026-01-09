@@ -3,6 +3,7 @@
 import { useState } from "react"
 import { X, PackageIcon, CheckCircle, PackageX } from "lucide-react"
 import type { AWBRow } from "./load-plan-types"
+import { BCR_REASON_CODES } from "@/lib/bcr-reason-codes"
 
 interface AWBSplitOffloadModalProps {
   isOpen: boolean
@@ -127,16 +128,21 @@ export function AWBSplitOffloadModal({
                   </div>
                   <div>
                     <label className="text-xs font-medium text-gray-700 block mb-1">
-                      Remarks (Optional)
+                      Reason
                     </label>
-                    <textarea
+                    <select
                       value={offloadRemarks}
                       onChange={(e) => setOffloadRemarks(e.target.value)}
                       onClick={(e) => e.stopPropagation()}
-                      className="w-full px-2 py-1.5 border border-gray-300 rounded-md text-sm focus:outline-none focus:border-gray-400 resize-none"
-                      rows={2}
-                      placeholder="Enter reason for offload..."
-                    />
+                      className="w-full px-2 py-1.5 border border-gray-300 rounded-md text-sm focus:outline-none focus:border-gray-400 bg-white"
+                    >
+                      <option value="">Select...</option>
+                      {BCR_REASON_CODES.map((reason) => (
+                        <option key={reason.code} value={reason.code}>
+                          {reason.code} - {reason.description.length > 40 ? reason.description.substring(0, 37) + "..." : reason.description}
+                        </option>
+                      ))}
+                    </select>
                   </div>
                   <button
                     type="button"

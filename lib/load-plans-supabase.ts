@@ -197,6 +197,83 @@ export async function getLoadPlansFromSupabase(): Promise<LoadPlan[]> {
 }
 
 /**
+ * Fetch UNASSIGNED load plans from Supabase (flights not assigned to anyone)
+ * Used by Incoming Workload screen to show pending work
+ */
+export async function getUnassignedLoadPlansFromSupabase(): Promise<LoadPlan[]> {
+  try {
+    const isSupabaseConfigured = 
+      process.env.NEXT_PUBLIC_SUPABASE_URL && 
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY &&
+      process.env.NEXT_PUBLIC_SUPABASE_URL !== "https://placeholder.supabase.co" &&
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY !== "placeholder-anon-key"
+
+    if (!isSupabaseConfigured) {
+      console.log("[LoadPlans] Supabase not configured, returning empty array")
+      return []
+    }
+
+    const supabase = createClient()
+
+    // Fetch load plans where assigned_to is NULL or 0 (unassigned flights)
+    // Note: When flights are unassigned via sendToFlightAssignment(), assigned_to is set to 0
+    const { data: loadPlans, error } = await supabase
+      .from("load_plans")
+      .select(`
+        *,
+        load_plan_items(work_areas)
+      `)
+      .or("assigned_to.is.null,assigned_to.eq.0")
+      .order("flight_date", { ascending: false })
+      .order("std_time", { ascending: true })
+
+    if (error) {
+      console.error("[LoadPlans] Error fetching unassigned load plans:", error.message)
+      return []
+    }
+
+    if (!loadPlans || loadPlans.length === 0) {
+      console.log("[LoadPlans] No unassigned load plans found")
+      return []
+    }
+
+    // Transform Supabase data to LoadPlan format
+    const transformed: LoadPlan[] = loadPlans.map((plan) => {
+      let pax = ""
+      if (plan.route_full) {
+        pax = plan.route_full
+      } else if (plan.route_origin && plan.route_destination) {
+        pax = `${plan.route_origin}/${plan.route_destination}`
+      }
+      
+      const itemWorkAreas = (plan.load_plan_items || [])
+        .map((item: { work_areas: string | null }) => item.work_areas)
+        .filter((wa: string | null): wa is string => wa !== null && wa !== undefined)
+      const uniqueWorkAreas = Array.from(new Set(itemWorkAreas))
+      
+      return {
+        flight: plan.flight_number || "",
+        date: formatDateForDisplay(plan.flight_date),
+        acftType: plan.aircraft_type || "",
+        acftReg: plan.aircraft_registration || "",
+        pax,
+        std: formatTime(plan.std_time),
+        uldVersion: plan.uld_version || "",
+        ttlPlnUld: plan.total_planned_uld || "",
+        adjustedTtlPlnUld: plan.adjusted_ttl_pln_uld || undefined,
+        workAreas: uniqueWorkAreas.length > 0 ? uniqueWorkAreas : ["GCR"],
+      }
+    })
+
+    console.log(`[LoadPlans] Successfully fetched ${transformed.length} unassigned load plans`)
+    return transformed
+  } catch (error) {
+    console.error("[LoadPlans] Error fetching unassigned load plans:", error)
+    return []
+  }
+}
+
+/**
  * Fetch load plan detail from Supabase
  */
 export async function getLoadPlanDetailFromSupabase(flightNumber: string): Promise<LoadPlanDetail | null> {
