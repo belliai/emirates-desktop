@@ -10,6 +10,7 @@ ADD COLUMN IF NOT EXISTS bcr_loaders_name character varying(100),
 ADD COLUMN IF NOT EXISTS bcr_buildup_staff character varying(100),
 ADD COLUMN IF NOT EXISTS bcr_supervisor character varying(100),
 ADD COLUMN IF NOT EXISTS bcr_partially_actioned boolean,
+ADD COLUMN IF NOT EXISTS bcr_shipments jsonb,
 ADD COLUMN IF NOT EXISTS bcr_volume_differences jsonb,
 ADD COLUMN IF NOT EXISTS bcr_units_unable_update jsonb;
 
@@ -24,6 +25,7 @@ COMMENT ON COLUMN public.load_plans.bcr_loaders_name IS 'Name/number of loaders'
 COMMENT ON COLUMN public.load_plans.bcr_buildup_staff IS 'Build-up/UWS staff name';
 COMMENT ON COLUMN public.load_plans.bcr_supervisor IS 'Supervisor name';
 COMMENT ON COLUMN public.load_plans.bcr_partially_actioned IS 'Whether flight was partially actioned';
+COMMENT ON COLUMN public.load_plans.bcr_shipments IS 'JSON array of offloaded shipments';
 COMMENT ON COLUMN public.load_plans.bcr_volume_differences IS 'JSON array of volume difference entries';
 COMMENT ON COLUMN public.load_plans.bcr_units_unable_update IS 'JSON array of units unable to update via HHT';
 

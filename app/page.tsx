@@ -38,7 +38,7 @@ import { findStaffByStaffNo } from "@/lib/buildup-staff"
 
 function AppContent() {
   const [isLoggedIn, setIsLoggedIn] = useState(false)
-  const { setCurrentUser } = useUser()
+  const { currentUser, setCurrentUser } = useUser()
   const [currentScreen, setCurrentScreen] = useState<
     | "desktop"
     | "history"
@@ -218,7 +218,7 @@ function AppContent() {
       case "shift-summary-report":
         return <ShiftSummaryReportScreen />
       case "bcr":
-        return <BCRScreen />
+        return <BCRScreen staffName={currentUser?.name || undefined} />
       case "settings-buildup-staff":
         return <SettingsBuildupStaffList />
       case "settings-screening":

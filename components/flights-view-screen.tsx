@@ -13,7 +13,7 @@ import { useWorkAreaFilter, WorkAreaFilterControls, WorkAreaFilterProvider } fro
 import type { WorkArea, PilPerSubFilter } from "@/lib/work-area-filter-utils"
 import { shouldIncludeULDSection } from "@/lib/work-area-filter-utils"
 import { getBatchLoadedAWBCounts } from "@/lib/awb-status-storage"
-import { getBatchBCRStatus } from "@/lib/bcr-storage"
+import { getBatchBCRStatus, getBatchStaffInfo } from "@/lib/bcr-storage"
 
 // Types for completion tracking
 type CompletionStatus = "green" | "amber" | "red"
@@ -92,18 +92,7 @@ type FlightCompletion = {
 }
 
 // Hardcoded staff data for demo - in production this would come from a database
-const STAFF_DATA: Record<string, { name: string; contact: string }> = {
-  "EK0544": { name: "David Belisario", contact: "+971 50 123 4567" },
-  "EK0205": { name: "Harley Quinn", contact: "+971 50 987 6543" },
-  "EK0301": { name: "John Smith", contact: "+971 50 456 7890" },
-  "EK0402": { name: "Sarah Connor", contact: "+971 50 321 0987" },
-  "EK0112": { name: "Mike Ross", contact: "+971 50 654 3210" },
-  "EK0618": { name: "Rachel Green", contact: "+971 50 111 2222" },
-  "EK0720": { name: "Joey Tribbiani", contact: "+971 50 333 4444" },
-  "EK0832": { name: "Monica Geller", contact: "+971 50 555 6666" },
-  "EK0915": { name: "Ross Geller", contact: "+971 50 777 8888" },
-  "EK1024": { name: "Chandler Bing", contact: "+971 50 999 0000" },
-}
+// Staff data is now fetched from Supabase via getBatchStaffInfo()
 
 // Hardcoded completion data for demo - in production this would be calculated
 const COMPLETION_DATA: Record<string, { completedULDs: number }> = {
@@ -286,7 +275,11 @@ function calculateTotalMarkedULDs(
   }
 }
 
-function calculateFlightCompletion(loadPlan: LoadPlan, loadedAWBCount?: number): FlightCompletion {
+function calculateFlightCompletion(
+  loadPlan: LoadPlan, 
+  loadedAWBCount?: number,
+  staffInfoMap?: Map<string, { name: string; contact: string }>
+): FlightCompletion {
   const totalPlannedULDs = parseTTLPlnUld(loadPlan.ttlPlnUld)
   
   // Use hardcoded data for demo, or calculate from loaded AWBs
@@ -298,7 +291,8 @@ function calculateFlightCompletion(loadPlan: LoadPlan, loadedAWBCount?: number):
   const completionPercentage = Math.round((completedULDs / totalPlannedULDs) * 100)
   const status = getCompletionStatus(completionPercentage)
   
-  const staffInfo = STAFF_DATA[loadPlan.flight] || { name: "Unassigned", contact: "-" }
+  // Use real staff info from Supabase if available, otherwise show Unassigned
+  const staffInfo = staffInfoMap?.get(loadPlan.flight) || { name: "Unassigned", contact: "-" }
   
   // Calculate shift from STD - use demo data or actual STD from load plan
   const stdTime = SHIFT_DATA[loadPlan.flight] || loadPlan.std || "00:00"
@@ -349,6 +343,7 @@ function FlightsViewScreenContent() {
   const [editingFilterId, setEditingFilterId] = useState<string | null>(null)
   const [sortColumn, setSortColumn] = useState<SortColumn>(null)
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc")
+  const [staffInfoMap, setStaffInfoMap] = useState<Map<string, { name: string; contact: string }>>(new Map())
 
   // Fetch load plans from Supabase on mount
   useEffect(() => {
@@ -384,9 +379,14 @@ function FlightsViewScreenContent() {
           setLoadPlanDetailsCache(detailsCache)
           setUldEntriesCache(entriesCache)
           
-          // Calculate initial completions (will be recalculated when filter changes)
+          // Fetch staff info for all flights
+          const flightNumbers = supabaseLoadPlans.map(p => p.flight)
+          const staffInfo = await getBatchStaffInfo(flightNumbers)
+          setStaffInfoMap(staffInfo)
+          
+          // Calculate initial completions with staff info (will be recalculated when filter changes)
           supabaseLoadPlans.forEach(plan => {
-            completions.set(plan.flight, calculateFlightCompletion(plan))
+            completions.set(plan.flight, calculateFlightCompletion(plan, undefined, staffInfo))
           })
           setFlightCompletions(completions)
         } else {
@@ -455,7 +455,8 @@ function FlightsViewScreenContent() {
             : 0
           const status = getCompletionStatus(completionPercentage)
           
-          const staffInfo = STAFF_DATA[plan.flight] || { name: "Unassigned", contact: "-" }
+          // Use real staff info from Supabase
+          const staffInfo = staffInfoMap.get(plan.flight) || { name: "Unassigned", contact: "-" }
           const stdTime = SHIFT_DATA[plan.flight] || plan.std || "00:00"
           const shift = getShiftFromStd(stdTime)
           
@@ -474,7 +475,7 @@ function FlightsViewScreenContent() {
           })
         } else {
           // Fall back to default calculation only if no detail available
-          const baseCompletion = calculateFlightCompletion(plan)
+          const baseCompletion = calculateFlightCompletion(plan, undefined, staffInfoMap)
           recalculatedCompletions.set(plan.flight, {
             ...baseCompletion,
             totalAWBs,
@@ -488,7 +489,7 @@ function FlightsViewScreenContent() {
     }
     
     recalculateWithAWBCounts()
-  }, [loadPlans, loadPlanDetailsCache, uldEntriesCache, selectedWorkArea, pilPerSubFilter, uldUpdateTrigger])
+  }, [loadPlans, loadPlanDetailsCache, uldEntriesCache, selectedWorkArea, pilPerSubFilter, uldUpdateTrigger, staffInfoMap])
 
   // Generate hourly time options (00:00 to 23:00)
   const timeOptions = useMemo(() => {

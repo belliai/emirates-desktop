@@ -778,6 +778,69 @@ export async function updateLoadPlanAssignment(
   }
 }
 
+/**
+ * Save handover info before clearing assignment
+ * This stores who handed over the flight so BCR can show "Handover taken from"
+ */
+export async function saveHandoverInfo(
+  flightNumber: string,
+  handedOverBy: number
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const isSupabaseConfigured = 
+      process.env.NEXT_PUBLIC_SUPABASE_URL && 
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY &&
+      process.env.NEXT_PUBLIC_SUPABASE_URL !== "https://placeholder.supabase.co" &&
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY !== "placeholder-anon-key"
+
+    if (!isSupabaseConfigured) {
+      console.log("[LoadPlans] Supabase not configured")
+      return { success: false, error: "Supabase not configured" }
+    }
+
+    if (!handedOverBy || handedOverBy === 0) {
+      console.log("[LoadPlans] No valid handedOverBy staff number provided")
+      return { success: false, error: "No staff number provided" }
+    }
+
+    const supabase = createClient()
+    const flightNo = flightNumber.replace(/^EK0?/, "")
+
+    // Find the load plan first
+    const { data: existing, error: findError } = await supabase
+      .from("load_plans")
+      .select("id, flight_number, assigned_to")
+      .or(`flight_number.eq.${flightNumber},flight_number.eq.EK${flightNo},flight_number.eq.EK0${flightNo}`)
+      .limit(1)
+      .single()
+
+    if (findError || !existing) {
+      console.log(`[LoadPlans] No load plan found for ${flightNumber}`)
+      return { success: false, error: "Load plan not found" }
+    }
+
+    // Update handover info
+    const { error: updateError } = await supabase
+      .from("load_plans")
+      .update({
+        handed_over_by: handedOverBy,
+        handed_over_at: new Date().toISOString(),
+      })
+      .eq("id", existing.id)
+
+    if (updateError) {
+      console.error("[LoadPlans] Handover update error:", updateError.message)
+      return { success: false, error: updateError.message }
+    }
+
+    console.log(`[LoadPlans] ✅ Saved handover info for ${existing.flight_number} (handed over by staff ${handedOverBy})`)
+    return { success: true }
+  } catch (error) {
+    console.error("[LoadPlans] Error saving handover:", error)
+    return { success: false, error: error instanceof Error ? error.message : "Unknown error" }
+  }
+}
+
 // BUP Allocation type for desktop
 export type BUPAllocationFromSupabase = {
   carrier: string

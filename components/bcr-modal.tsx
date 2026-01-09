@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import type { LoadPlanDetail, AWBRow } from "./load-plan-types"
 import jsPDF from "jspdf"
 import html2canvas from "html2canvas"
-import { submitBCR } from "@/lib/bcr-storage"
+import { submitBCR, updateBCR } from "@/lib/bcr-storage"
 import { BCR_REASON_CODES } from "@/lib/bcr-reason-codes"
 
 // Infrastructure for future commenting/status tracking
@@ -69,22 +69,66 @@ interface BCRModalProps {
   staffName?: string  // Current user's name for sentBy field
 }
 
+// Helper to compare BCR data for change detection
+function bcrDataHasChanges(original: BCRData, current: BCRData): boolean {
+  // Simple deep comparison for change detection
+  const originalStr = JSON.stringify({
+    shipments: original.shipments,
+    volumeDifferences: original.volumeDifferences,
+    unitsUnableToUpdate: original.unitsUnableToUpdate,
+    flightPartiallyActioned: original.flightPartiallyActioned,
+    handoverTakenFrom: original.handoverTakenFrom,
+    loadersName: original.loadersName,
+    buildupStaff: original.buildupStaff,
+    supervisor: original.supervisor,
+  })
+  const currentStr = JSON.stringify({
+    shipments: current.shipments,
+    volumeDifferences: current.volumeDifferences,
+    unitsUnableToUpdate: current.unitsUnableToUpdate,
+    flightPartiallyActioned: current.flightPartiallyActioned,
+    handoverTakenFrom: current.handoverTakenFrom,
+    loadersName: current.loadersName,
+    buildupStaff: current.buildupStaff,
+    supervisor: current.supervisor,
+  })
+  return originalStr !== currentStr
+}
+
 export default function BCRModal({ isOpen, onClose, loadPlan, bcrData: initialBcrData, onSubmit, isAlreadySubmitted = false, staffName }: BCRModalProps) {
   const [bcrData, setBcrData] = useState<BCRData>(initialBcrData)
   const [showPDFView, setShowPDFView] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isSubmitted, setIsSubmitted] = useState(isAlreadySubmitted)
   const [submitError, setSubmitError] = useState<string | null>(null)
+  const [hasChanges, setHasChanges] = useState(false)
+  const [savedBcrData, setSavedBcrData] = useState<BCRData>(initialBcrData)
+  const [justSaved, setJustSaved] = useState(false)
   const pdfContentRef = useRef<HTMLDivElement>(null)
 
   // Update bcrData when initialBcrData changes (e.g., when comments are updated)
   useEffect(() => {
     if (isOpen) {
       setBcrData(initialBcrData)
+      setSavedBcrData(initialBcrData)
       setIsSubmitted(isAlreadySubmitted)
       setSubmitError(null)
+      setHasChanges(false)
+      setJustSaved(false)
     }
   }, [initialBcrData, isOpen, isAlreadySubmitted])
+
+  // Track changes when bcrData changes
+  useEffect(() => {
+    if (isAlreadySubmitted) {
+      const changed = bcrDataHasChanges(savedBcrData, bcrData)
+      setHasChanges(changed)
+      // Clear the "saved" message when user makes new changes
+      if (changed && justSaved) {
+        setJustSaved(false)
+      }
+    }
+  }, [bcrData, savedBcrData, isAlreadySubmitted, justSaved])
 
   // Handle BCR submission to Supabase
   const handleSubmit = async () => {
@@ -92,7 +136,7 @@ export default function BCRModal({ isOpen, onClose, loadPlan, bcrData: initialBc
     setSubmitError(null)
 
     try {
-      const result = await submitBCR({
+      const submission = {
         flightNumber: loadPlan.flight,
         handoverFrom: bcrData.handoverTakenFrom || "",
         loadersName: bcrData.loadersName || "",
@@ -119,10 +163,18 @@ export default function BCRModal({ isOpen, onClose, loadPlan, bcrData: initialBc
           reason: u.reason,
         })),
         sentBy: staffName || "Unknown",
-      })
+      }
+
+      // Use update if already submitted, otherwise use submit
+      const result = isAlreadySubmitted 
+        ? await updateBCR(submission)
+        : await submitBCR(submission)
 
       if (result.success) {
         setIsSubmitted(true)
+        setSavedBcrData(bcrData) // Update saved state so hasChanges becomes false
+        setHasChanges(false)
+        setJustSaved(isAlreadySubmitted) // Only show "saved" message for updates
         onSubmit?.()
       } else {
         setSubmitError(result.error || "Failed to submit BCR")
@@ -947,10 +999,16 @@ export default function BCRModal({ isOpen, onClose, loadPlan, bcrData: initialBc
           )}
           
           {/* Success message */}
-          {isSubmitted && (
+          {isSubmitted && !isAlreadySubmitted && (
             <div className="mb-3 text-sm text-green-700 bg-green-50 px-3 py-2 rounded flex items-center gap-2">
               <CheckCircle className="w-4 h-4" />
               BCR has been submitted successfully
+            </div>
+          )}
+          {justSaved && (
+            <div className="mb-3 text-sm text-green-700 bg-green-50 px-3 py-2 rounded flex items-center gap-2">
+              <CheckCircle className="w-4 h-4" />
+              Changes saved successfully
             </div>
           )}
           
@@ -969,7 +1027,30 @@ export default function BCRModal({ isOpen, onClose, loadPlan, bcrData: initialBc
                 Download
               </Button>
             </div>
-            {!isSubmitted ? (
+            {isAlreadySubmitted ? (
+              // Already submitted BCR - show "Save Changes" only when there are changes
+              hasChanges ? (
+                <Button 
+                  onClick={handleSubmit} 
+                  disabled={isSubmitting}
+                  className="flex items-center gap-2 bg-[#D71A21] hover:bg-[#B0151A]"
+                >
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Saving...
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle className="w-4 h-4" />
+                      Save Changes
+                    </>
+                  )}
+                </Button>
+              ) : (
+                <span className="text-sm text-gray-500 italic">No changes to save</span>
+              )
+            ) : !isSubmitted ? (
               <Button 
                 onClick={handleSubmit} 
                 disabled={isSubmitting}
@@ -1008,7 +1089,8 @@ export function generateBCRData(
   loadPlan: LoadPlanDetail,
   comments?: AWBComment[],
   awbAssignments?: Map<string, { awbNo: string; isLoaded: boolean }>,
-  uldEntries?: Map<string, Array<{ number: string; checked: boolean; type: string }>>
+  uldEntries?: Map<string, Array<{ number: string; checked: boolean; type: string }>>,
+  staffInfo?: { buildupStaff?: string | null; handoverFrom?: string | null }
 ): BCRData {
   // Extract all AWBs from the load plan with their sector/uldSection info
   const allAWBsWithContext: Array<{
@@ -1088,8 +1170,21 @@ export function generateBCRData(
   // Units unable to update - leave blank by default
   // unitsUnableToUpdate remains empty array
 
-  // Extract destination from Route field (e.g., "DXB/MXP" -> "MXP")
-  const destination = loadPlan.pax.split("/")[1] || loadPlan.pax.split("/")[0] || "N/A"
+  // Extract destination from Route field - always use last 3 characters
+  // Route formats: "DXB/KWI", "DXBKWI", "DXB/KWI/0/23/251" - destination is always last 3-letter code
+  let destination = "N/A"
+  const pax = loadPlan.pax || ""
+  if (pax.includes("/")) {
+    // Format: "DXB/KWI" or "DXB/KWI/0/23/251" - get the second 3-letter code
+    const parts = pax.split("/")
+    const destPart = parts.find((p, i) => i > 0 && /^[A-Z]{3}$/.test(p))
+    destination = destPart || parts[1]?.substring(0, 3) || "N/A"
+  } else if (pax.length >= 6) {
+    // Format: "DXBKWI" - get last 3 characters
+    destination = pax.slice(-3)
+  } else if (pax.length === 3) {
+    destination = pax
+  }
 
   return {
     flightNo: loadPlan.flight,
@@ -1099,9 +1194,9 @@ export function generateBCRData(
     volumeDifferences: volumeDifferences,
     unitsUnableToUpdate: unitsUnableToUpdate,
     flightPartiallyActioned: shipments.length > 0,
-    handoverTakenFrom: "",
+    handoverTakenFrom: staffInfo?.handoverFrom || "",
     loadersName: "",
-    buildupStaff: "",
+    buildupStaff: staffInfo?.buildupStaff || "",
     supervisor: "",
   }
 }

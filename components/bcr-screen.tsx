@@ -1,61 +1,101 @@
 "use client"
 
-import { useState } from 'react'
-import { ChevronRight, Plane, Calendar, Package, Users, Clock, FileText } from 'lucide-react'
-import LoadPlanDetailScreen from './load-plan-detail-screen'
+import { useState, useEffect } from 'react'
+import { ChevronRight, Plane, Calendar, Package, Users, Clock, Loader2 } from 'lucide-react'
 import BCRModal from './bcr-modal'
-import type { LoadPlanDetail } from './load-plan-types'
-import { useLoadPlans, type SentBCR } from '@/lib/load-plan-context'
+import type { BCRData, BCRShipment, BCRVolumeDifference, BCRUnitUnableToUpdate } from './bcr-modal'
+import { getAllSubmittedBCRs, updateBCR, type SubmittedBCR } from '@/lib/bcr-storage'
 
 interface BCRScreenProps {
   onBack?: () => void
+  staffName?: string
 }
 
-export default function BCRScreen({ onBack }: BCRScreenProps) {
-  const { sentBCRs } = useLoadPlans()
-  const [selectedLoadPlan, setSelectedLoadPlan] = useState<LoadPlanDetail | null>(null)
-  const [selectedBCR, setSelectedBCR] = useState<SentBCR | null>(null)
+export default function BCRScreen({ onBack, staffName }: BCRScreenProps) {
+  const [submittedBCRs, setSubmittedBCRs] = useState<SubmittedBCR[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [selectedBCR, setSelectedBCR] = useState<SubmittedBCR | null>(null)
   const [showBCRModal, setShowBCRModal] = useState(false)
+  const [initialBcrData, setInitialBcrData] = useState<BCRData | null>(null)
 
-  const handleRowClick = (bcr: SentBCR) => {
-    // Open the load plan detail view with BCR modal on top
-    if (bcr.loadPlan) {
-      setSelectedLoadPlan(bcr.loadPlan)
-      setSelectedBCR(bcr)
-      setShowBCRModal(true)
+  // Fetch submitted BCRs from Supabase on mount
+  useEffect(() => {
+    async function fetchBCRs() {
+      setIsLoading(true)
+      try {
+        const bcrs = await getAllSubmittedBCRs()
+        setSubmittedBCRs(bcrs)
+        console.log(`[BCR Screen] Loaded ${bcrs.length} submitted BCRs`)
+      } catch (error) {
+        console.error("[BCR Screen] Error fetching BCRs:", error)
+      } finally {
+        setIsLoading(false)
+      }
     }
+    fetchBCRs()
+  }, [])
+
+  const handleRowClick = (bcr: SubmittedBCR) => {
+    // Convert SubmittedBCR to BCRData format for the modal
+    const bcrData: BCRData = {
+      flightNo: bcr.flightNumber,
+      date: bcr.flightDate,
+      destination: bcr.destination || "",
+      shipments: (bcr.shipments || []).map((s: any, index: number) => ({
+        srNo: s.srNo || String(index + 1),
+        awb: s.awb || "",
+        pcs: s.pcs || "",
+        location: s.location || "",
+        reason: s.reason || "",
+        locationChecked: s.locationChecked || "",
+        remarks: s.remarks || "",
+      })),
+      volumeDifferences: (bcr.volumeDifferences || []).map((v: any) => ({
+        awb: v.awb || "",
+        declaredVolume: v.declaredVolume || "",
+        loadableVolume: v.loadableVolume || "",
+        remarks: v.remarks || "",
+      })),
+      unitsUnableToUpdate: (bcr.unitsUnableToUpdate || []).map((u: any) => ({
+        uld: u.uld || "",
+        reason: u.reason || "",
+      })),
+      flightPartiallyActioned: bcr.partiallyActioned || false,
+      handoverTakenFrom: bcr.handoverFrom || "",
+      loadersName: bcr.loadersName || "",
+      buildupStaff: bcr.buildupStaff || "",
+      supervisor: bcr.supervisor || "",
+    }
+
+    setSelectedBCR(bcr)
+    setInitialBcrData(bcrData)
+    setShowBCRModal(true)
   }
 
-  // Show load plan detail view when a BCR is selected
-  if (selectedLoadPlan) {
-    return (
-      <>
-        <LoadPlanDetailScreen
-          loadPlan={selectedLoadPlan}
-          onBack={() => {
-            setSelectedLoadPlan(null)
-            setSelectedBCR(null)
-            setShowBCRModal(false)
-          }}
-          // Read-only view for supervisor verification
-          enableBulkCheckboxes={true}
-        />
-        
-        {/* BCR Modal on top */}
-        {selectedBCR && (
-          <BCRModal
-            isOpen={showBCRModal}
-            onClose={() => {
-              setShowBCRModal(false)
-              setSelectedBCR(null)
-            }}
-            loadPlan={selectedBCR.loadPlan}
-            bcrData={selectedBCR.bcrData}
-          />
-        )}
-      </>
-    )
+  const handleModalClose = () => {
+    setShowBCRModal(false)
+    setSelectedBCR(null)
+    setInitialBcrData(null)
   }
+
+  const handleBCRUpdate = async () => {
+    // Refresh the list after update
+    const bcrs = await getAllSubmittedBCRs()
+    setSubmittedBCRs(bcrs)
+  }
+
+  // Create a minimal LoadPlanDetail object for BCR modal
+  const createMinimalLoadPlan = (bcr: SubmittedBCR) => ({
+    flight: bcr.flightNumber,
+    date: bcr.flightDate,
+    acftType: bcr.acftType,
+    acftReg: "",
+    pax: "",
+    std: "",
+    uldVersion: "",
+    ttlPlnUld: "",
+    sectors: [],
+  })
 
   return (
     <div className="min-h-screen bg-gray-50 p-4">
@@ -103,15 +143,24 @@ export default function BCRScreen({ onBack }: BCRScreenProps) {
                 </tr>
               </thead>
               <tbody>
-                {sentBCRs.length === 0 ? (
+                {isLoading ? (
+                  <tr>
+                    <td colSpan={6} className="px-3 py-4 text-center">
+                      <div className="flex items-center justify-center gap-2 text-gray-500">
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span className="text-sm">Loading BCRs...</span>
+                      </div>
+                    </td>
+                  </tr>
+                ) : submittedBCRs.length === 0 ? (
                   <tr>
                     <td colSpan={6} className="px-3 py-2 text-center text-gray-500 text-sm">
                       No sent BCRs available
                     </td>
                   </tr>
                 ) : (
-                  sentBCRs.map((bcr, index) => (
-                    <BCRRow key={index} bcr={bcr} onClick={() => handleRowClick(bcr)} />
+                  submittedBCRs.map((bcr, index) => (
+                    <BCRRow key={`${bcr.flightNumber}-${index}`} bcr={bcr} onClick={() => handleRowClick(bcr)} />
                   ))
                 )}
               </tbody>
@@ -119,12 +168,25 @@ export default function BCRScreen({ onBack }: BCRScreenProps) {
           </div>
         </div>
       </div>
+
+      {/* BCR Modal */}
+      {selectedBCR && initialBcrData && (
+        <BCRModal
+          isOpen={showBCRModal}
+          onClose={handleModalClose}
+          loadPlan={createMinimalLoadPlan(selectedBCR)}
+          bcrData={initialBcrData}
+          onSubmit={handleBCRUpdate}
+          isAlreadySubmitted={true}
+          staffName={staffName}
+        />
+      )}
     </div>
   )
 }
 
 interface BCRRowProps {
-  bcr: SentBCR
+  bcr: SubmittedBCR
   onClick: () => void
 }
 
@@ -145,17 +207,33 @@ function BCRRow({ bcr, onClick }: BCRRowProps) {
     }
   }
 
+  const formatFlightDate = (dateString: string) => {
+    if (!dateString) return '-'
+    try {
+      const date = new Date(dateString)
+      return date.toLocaleDateString('en-US', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+      })
+    } catch {
+      return dateString
+    }
+  }
+
   return (
     <tr
       onClick={onClick}
       className="border-b border-gray-100 last:border-b-0 hover:bg-gray-50 cursor-pointer"
     >
       <td className="px-2 py-1 font-semibold text-gray-900 text-xs whitespace-nowrap truncate">
-        {bcr.flight}
+        {bcr.flightNumber}
       </td>
-      <td className="px-2 py-1 text-gray-900 text-xs whitespace-nowrap truncate">{bcr.date}</td>
       <td className="px-2 py-1 text-gray-900 text-xs whitespace-nowrap truncate">
-        {bcr.loadPlan?.acftType || '-'}
+        {formatFlightDate(bcr.flightDate)}
+      </td>
+      <td className="px-2 py-1 text-gray-900 text-xs whitespace-nowrap truncate">
+        {bcr.acftType || '-'}
       </td>
       <td className="px-2 py-1 text-gray-900 text-xs whitespace-nowrap truncate">
         {bcr.sentBy || '-'}
@@ -169,4 +247,3 @@ function BCRRow({ bcr, onClick }: BCRRowProps) {
     </tr>
   )
 }
-

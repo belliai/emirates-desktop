@@ -5,7 +5,7 @@ import { ChevronRight, Plane, Calendar, Package, Users, Clock, FileText, Check, 
 import { useLoadPlans, type LoadPlan } from "@/lib/load-plan-context"
 import LoadPlanDetailScreen from "./load-plan-detail-screen"
 import type { LoadPlanDetail } from "./load-plan-types"
-import { getLoadPlanDetailFromSupabase } from "@/lib/load-plans-supabase"
+import { getLoadPlanDetailFromSupabase, saveHandoverInfo } from "@/lib/load-plans-supabase"
 import { getOperators, parseStaffName, type BuildupStaff } from "@/lib/buildup-staff"
 import { Button } from "@/components/ui/button"
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
@@ -180,6 +180,15 @@ export default function BuildupStaffScreen({ initialStaff, onNavigate }: Buildup
       // Process each assigned flight
       for (const loadPlan of assignedLoadPlans) {
         console.log(`[BuildupStaffScreen] Handing over flight ${loadPlan.flight}`)
+        
+        // Save who is handing over before clearing assignment
+        // This enables "Handover taken from" field in BCR
+        if (selectedStaffId) {
+          const staffNo = parseInt(selectedStaffId, 10)
+          if (!isNaN(staffNo) && staffNo > 0) {
+            await saveHandoverInfo(loadPlan.flight, staffNo)
+          }
+        }
         
         // Clear the assignment (send back to flight assignment pool)
         await sendToFlightAssignment(loadPlan.flight)

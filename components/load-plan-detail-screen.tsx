@@ -21,6 +21,7 @@ import { shouldIncludeULDSection } from "@/lib/work-area-filter-utils"
 import { getLoadPlanChanges, type LoadPlanChange } from "@/lib/load-plan-diff"
 import { createClient } from "@/lib/supabase/client"
 import { getAWBStatusesFromSupabase, markAWBLoaded, markAWBOffloaded, bulkMarkAWBsLoaded, type AWBStatus } from "@/lib/awb-status-storage"
+import { getAssignedStaffForFlight } from "@/lib/bcr-storage"
 import { useUser } from "@/lib/user-context"
 
 // Re-export types for backward compatibility
@@ -140,6 +141,20 @@ export default function LoadPlanDetailScreen({ loadPlan, onBack, onNavigateToBui
   const [showHandoverModal, setShowHandoverModal] = useState(false)
   const [awbComments, setAwbComments] = useState<AWBComment[]>([])
   const [showULDModal, setShowULDModal] = useState(false)
+  const [bcrStaffInfo, setBcrStaffInfo] = useState<{ buildupStaff?: string | null; handoverFrom?: string | null }>({})
+  
+  // Fetch assigned staff info for BCR auto-population
+  useEffect(() => {
+    async function fetchStaffInfo() {
+      if (loadPlan.flight) {
+        console.log(`[LoadPlanDetail] Fetching staff info for BCR: ${loadPlan.flight}`)
+        const staffInfo = await getAssignedStaffForFlight(loadPlan.flight)
+        console.log(`[LoadPlanDetail] Staff info result:`, staffInfo)
+        setBcrStaffInfo(staffInfo)
+      }
+    }
+    fetchStaffInfo()
+  }, [loadPlan.flight])
   
   // Calculate connection time for QRT List (flight-level, applies to all AWBs)
   const calculatedConnectionTime = isQRTList && arrivalBayInfo && departureBayInfo
@@ -966,8 +981,10 @@ export default function LoadPlanDetailScreen({ loadPlan, onBack, onNavigateToBui
             editedPlan, 
             awbComments, 
             undefined, 
-            mergedUldEntries // Pass full entries with checked state for future use
+            mergedUldEntries, // Pass full entries with checked state for future use
+            bcrStaffInfo // Auto-populate build-up staff from assigned staff
           )}
+          staffName={currentUser?.name || undefined}
         />
       )}
 
