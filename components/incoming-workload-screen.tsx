@@ -397,14 +397,17 @@ function IncomingWorkloadScreenContent() {
 
   // Get all load plans first (show all available load plans)
   // Calculate work-area-specific breakdowns for each flight
+  // Use adjusted (post-exclusion) TTL PLN ULD if available for accurate workload calculation
   const allFlights = useMemo(() => {
     return loadPlans.map((plan) => {
+      // Use adjusted TTL PLN ULD if available (excludes RAMP TRANSFER, BULK, etc.)
+      const uldStr = plan.adjustedTtlPlnUld || plan.ttlPlnUld
       // Calculate GCR breakdown
-      const gcrBreakdown = parseGCRULDCount(plan.ttlPlnUld, null)
+      const gcrBreakdown = parseGCRULDCount(uldStr, null)
       // Calculate PIL/PER breakdown
-      const pilPerBreakdown = parsePilPerULDCount(plan.ttlPlnUld, null)
+      const pilPerBreakdown = parsePilPerULDCount(uldStr, null)
       // Original breakdown for "All" view
-      const originalBreakdown = parseULDCount(plan.ttlPlnUld)
+      const originalBreakdown = parseULDCount(uldStr)
       
       return {
         flight: plan.flight,
@@ -414,7 +417,7 @@ function IncomingWorkloadScreenContent() {
         uldBreakdown: originalBreakdown, // Keep for backward compatibility
         gcrBreakdown,
         pilPerBreakdown,
-        ttlPlnUld: plan.ttlPlnUld,
+        ttlPlnUld: uldStr, // Use adjusted value for display
       }
     })
   }, [loadPlans])

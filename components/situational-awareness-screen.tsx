@@ -305,8 +305,10 @@ function calculateTotalPlannedULDs(
   });
 
   // If filtered result is 0, fall back to parsing from ttlPlnUld (for "All" case)
+  // Use adjusted (post-exclusion) TTL PLN ULD if available
   if (total === 0 && (!workAreaFilter || workAreaFilter === "All")) {
-    const fromTtlPlnUld = parseTTLPlnUld(loadPlanDetail.ttlPlnUld || "");
+    const uldStr = loadPlanDetail.adjustedTtlPlnUld || loadPlanDetail.ttlPlnUld || "";
+    const fromTtlPlnUld = parseTTLPlnUld(uldStr);
     if (fromTtlPlnUld > 0) {
       return fromTtlPlnUld;
     }
@@ -367,7 +369,10 @@ function calculateFlightCompletion(
   loadPlan: LoadPlan,
   loadedAWBCount?: number
 ): FlightCompletion {
-  const totalPlannedULDs = parseTTLPlnUld(loadPlan.ttlPlnUld);
+  // Use adjusted (post-exclusion) TTL PLN ULD if available, otherwise fall back to raw
+  const totalPlannedULDs = loadPlan.adjustedTtlPlnUld 
+    ? parseTTLPlnUld(loadPlan.adjustedTtlPlnUld) 
+    : parseTTLPlnUld(loadPlan.ttlPlnUld);
 
   const completionInfo = COMPLETION_DATA[loadPlan.flight];
   // Generate mock completion based on flight string hash if no real data

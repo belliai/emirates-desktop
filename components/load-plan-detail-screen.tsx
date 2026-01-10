@@ -17,7 +17,7 @@ import { ULDNumberModal, type ULDEntry, type WorkType, type AWBInfo } from "./ul
 import { parseULDSection, formatULDSection, formatULDSectionFromEntries, formatULDSectionFromCheckedEntries, extractULDParts } from "@/lib/uld-parser"
 import { getULDEntriesFromStorage, saveULDEntriesToStorage, getULDEntriesFromSupabase, saveULDEntriesToSupabase } from "@/lib/uld-storage"
 import type { WorkArea, PilPerSubFilter } from "@/lib/work-area-filter-utils"
-import { shouldIncludeULDSection } from "@/lib/work-area-filter-utils"
+import { shouldIncludeULDSection, shouldDisplayULDSection } from "@/lib/work-area-filter-utils"
 import { getLoadPlanChanges, type LoadPlanChange } from "@/lib/load-plan-diff"
 import { createClient } from "@/lib/supabase/client"
 import { getAWBStatusesFromSupabase, markAWBLoaded, markAWBOffloaded, bulkMarkAWBsLoaded, type AWBStatus } from "@/lib/awb-status-storage"
@@ -1201,10 +1201,12 @@ function CombinedTable({
     const sectorName = sector.sector || "UNKNOWN"
     
     // Filter ULD sections based on workAreaFilter, tracking original indices
+    // Use shouldDisplayULDSection for UI display (includes RAMP TRANSFER and BULK)
+    // Use shouldIncludeULDSection for completion calculations (excludes RAMP TRANSFER and BULK)
     const filteredUldSectionsWithIndices = sector.uldSections
       .map((uldSection, originalIndex) => ({ uldSection, originalIndex }))
       .filter(({ uldSection }) => {
-        return shouldIncludeULDSection(uldSection, workAreaFilter || "All", pilPerSubFilter)
+        return shouldDisplayULDSection(uldSection, workAreaFilter || "All", pilPerSubFilter)
       })
     
     filteredUldSectionsWithIndices.forEach(({ uldSection, originalIndex }) => {

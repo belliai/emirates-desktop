@@ -99,11 +99,45 @@ export function isBulkULDSection(uldSection: ULDSection): boolean {
 }
 
 /**
- * Determine if a ULD section should be included based on work area filter
- * Centralizes the filtering logic used across multiple screens
+ * Check if an AWB has VAL (Valuable) or AVI (Live Animals) SHC code
+ * These shipments are handled by specialized teams, not regular build-up staff
+ * VAL = Valuable cargo (gold, jewelry, cash) → Handled by security team
+ * AVI = Live Animals → Handled by animal handling team
+ */
+export function hasValAviShcCode(awb: AWBRow): boolean {
+  if (!awb.shc || awb.shc.trim() === "") {
+    return false
+  }
+  
+  const shcUpper = awb.shc.trim().toUpperCase()
+  // VAL = Valuable cargo, AVI = Live Animals
+  return shcUpper.includes("VAL") || shcUpper.includes("AVI")
+}
+
+/**
+ * Check if a ULD section contains ONLY VAL/AVI cargo (no regular cargo)
+ * These sections are handled by specialized teams and should be excluded from completion calculations
  * 
- * IMPORTANT: This function excludes Ramp Transfer and BULK-only sections from
- * completion calculations, as they are not part of the TTL PLN ULD count.
+ * NOTE: If a section has MIXED cargo (VAL + regular), it's still included because
+ * staff needs to build up the regular cargo even if they don't handle the VAL/AVI pieces
+ */
+export function isValAviOnlyULDSection(uldSection: ULDSection): boolean {
+  if (!uldSection.awbs || uldSection.awbs.length === 0) {
+    return false
+  }
+  // Section is VAL/AVI only if ALL AWBs have VAL or AVI SHC
+  return uldSection.awbs.every(awb => hasValAviShcCode(awb))
+}
+
+/**
+ * Determine if a ULD section should be included in COMPLETION BAR calculations
+ * 
+ * IMPORTANT: This function excludes the following from completion calculations:
+ * - Ramp Transfer sections (not part of TTL PLN ULD count)
+ * - BULK-only sections (view-only, not part of ULD completion tracking)
+ * - VAL/AVI-only sections (handled by specialized teams, not regular build-up staff)
+ * 
+ * For UI DISPLAY filtering (showing sections in the table), use shouldDisplayULDSection instead.
  */
 export function shouldIncludeULDSection(
   uldSection: ULDSection,
@@ -122,8 +156,66 @@ export function shouldIncludeULDSection(
     return false
   }
   
+  // Always exclude VAL/AVI-only sections from completion calculations
+  // VAL (Valuable) and AVI (Live Animals) are handled by specialized teams
+  // Only exclude if ALL AWBs in the section are VAL/AVI (not mixed cargo)
+  if (isValAviOnlyULDSection(uldSection)) {
+    return false
+  }
+  
   // If no filter or filter is "All", show all sections
   if (!workArea || workArea === "All") {
+    return true
+  }
+  
+  // For "GCR" filter, only show sections that DON'T have PIL/PER SHC codes
+  if (workArea === "GCR") {
+    return !uldSectionHasPilPerShc(uldSection)
+  }
+  
+  // For "PIL and PER" filter, show sections that have PIL/PER SHC codes
+  if (workArea === "PIL and PER") {
+    const hasPilPer = uldSectionHasPilPerShc(uldSection)
+    
+    // Apply PIL/PER sub-filter if specified
+    if (hasPilPer && pilPerSubFilter && pilPerSubFilter !== "Both") {
+      if (pilPerSubFilter === "PIL only") {
+        return uldSectionHasPilShc(uldSection)
+      } else if (pilPerSubFilter === "PER only") {
+        return uldSectionHasPerShc(uldSection)
+      }
+    }
+    
+    return hasPilPer
+  }
+  
+  return true
+}
+
+/**
+ * Determine if a ULD section should be DISPLAYED in the UI based on work area filter
+ * 
+ * Unlike shouldIncludeULDSection (used for completion calculations), this function:
+ * - INCLUDES Ramp Transfer sections (they should be visible but grayed out)
+ * - INCLUDES BULK sections (they should be visible)
+ * - INCLUDES VAL/AVI-only sections (they should be visible but handled by specialized teams)
+ * - Still filters by work area (GCR vs PIL/PER)
+ * 
+ * Use this for filtering what's shown in the load plan detail table.
+ */
+export function shouldDisplayULDSection(
+  uldSection: ULDSection,
+  workArea: WorkArea,
+  pilPerSubFilter?: PilPerSubFilter
+): boolean {
+  // If no filter or filter is "All", show all sections (including RAMP TRANSFER, BULK, VAL/AVI)
+  if (!workArea || workArea === "All") {
+    return true
+  }
+  
+  // For RAMP TRANSFER, BULK, and VAL/AVI-only sections, always show them regardless of work area filter
+  // They should be visible but styled differently (grayed out / not counted in completion)
+  if (uldSection.isRampTransfer || isBulkULDSection(uldSection) || isValAviOnlyULDSection(uldSection)) {
     return true
   }
   

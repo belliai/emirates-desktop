@@ -210,8 +210,10 @@ function calculateTotalPlannedULDs(loadPlanDetail: LoadPlanDetail, workAreaFilte
   })
   
   // If filtered result is 0, fall back to parsing from ttlPlnUld (for "All" case)
+  // Use adjusted (post-exclusion) TTL PLN ULD if available
   if (total === 0 && (!workAreaFilter || workAreaFilter === "All")) {
-    const fromTtlPlnUld = parseTTLPlnUld(loadPlanDetail.ttlPlnUld || "")
+    const uldStr = loadPlanDetail.adjustedTtlPlnUld || loadPlanDetail.ttlPlnUld || ""
+    const fromTtlPlnUld = parseTTLPlnUld(uldStr)
     if (fromTtlPlnUld > 0) {
       return fromTtlPlnUld
     }
@@ -284,7 +286,10 @@ function calculateFlightCompletion(
   loadedAWBCount?: number,
   staffInfoMap?: Map<string, { name: string; contact: string }>
 ): FlightCompletion {
-  const totalPlannedULDs = parseTTLPlnUld(loadPlan.ttlPlnUld)
+  // Use adjusted (post-exclusion) TTL PLN ULD if available, otherwise fall back to raw
+  const totalPlannedULDs = loadPlan.adjustedTtlPlnUld 
+    ? parseTTLPlnUld(loadPlan.adjustedTtlPlnUld) 
+    : parseTTLPlnUld(loadPlan.ttlPlnUld)
   
   // Use hardcoded data for demo, or calculate from loaded AWBs
   const completionInfo = COMPLETION_DATA[loadPlan.flight]
