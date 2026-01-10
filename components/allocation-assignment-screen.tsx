@@ -911,10 +911,11 @@ function StaffSelector({ currentStaff, operatorOptions, onSelect }: StaffSelecto
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState("")
 
+  // Filter operators by name or staff ID
   const filteredOperators = useMemo(() => {
     if (!search.trim()) return operatorOptions
     const q = search.toLowerCase()
-    return operatorOptions.filter((op) => op.searchName.includes(q) || op.displayName.toLowerCase().includes(q))
+    return operatorOptions.filter((op) => op.searchName.includes(q) || op.displayName.toLowerCase().includes(q) || op.staff_no.toString().includes(search))
   }, [operatorOptions, search])
 
   return (
@@ -933,7 +934,7 @@ function StaffSelector({ currentStaff, operatorOptions, onSelect }: StaffSelecto
       </PopoverTrigger>
       <PopoverContent className="w-[220px] p-0" align="start">
         <Command shouldFilter={false}>
-          <CommandInput placeholder="Search name..." value={search} onValueChange={setSearch} />
+          <CommandInput placeholder="Search name or ID..." value={search} onValueChange={setSearch} />
           <CommandList>
             <CommandEmpty>No operator found.</CommandEmpty>
             <CommandGroup>

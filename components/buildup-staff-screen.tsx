@@ -286,7 +286,7 @@ export default function BuildupStaffScreen({ initialStaff, onNavigate }: Buildup
               <PopoverContent className="w-[280px] p-0" align="end">
                 <Command shouldFilter={false}>
                   <CommandInput
-                    placeholder="Search staff..."
+                    placeholder="Search name or ID..."
                     value={staffSearch}
                     onValueChange={setStaffSearch}
                   />

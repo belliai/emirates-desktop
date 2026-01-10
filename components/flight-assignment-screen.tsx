@@ -419,13 +419,14 @@ export default function FlightAssignmentScreen({ initialSupervisor }: FlightAssi
     })
   }, [supervisors])
 
-  // Filter supervisors based on search
+  // Filter supervisors based on search (name or staff ID)
   const filteredSupervisors = useMemo(() => {
     if (!supervisorSearch) return supervisorOptions
     const search = supervisorSearch.toLowerCase()
     return supervisorOptions.filter(sup => 
       sup.searchName.includes(search) || 
-      sup.displayName.toLowerCase().includes(search)
+      sup.displayName.toLowerCase().includes(search) ||
+      sup.staff_no.toString().includes(supervisorSearch)
     )
   }, [supervisorOptions, supervisorSearch])
 
@@ -510,7 +511,7 @@ export default function FlightAssignmentScreen({ initialSupervisor }: FlightAssi
             <PopoverContent className="w-[280px] p-0" align="end">
               <Command shouldFilter={false}>
                 <CommandInput
-                  placeholder="Search supervisor..."
+                  placeholder="Search name or ID..."
                   value={supervisorSearch}
                   onValueChange={setSupervisorSearch}
                 />
@@ -870,10 +871,11 @@ function FlightAssignmentRow({ assignment, operatorOptions, onNameChange, onSect
   const [nameOpen, setNameOpen] = useState(false)
   const [nameSearch, setNameSearch] = useState("")
 
+  // Filter operators by name or staff ID
   const filteredOperators = operatorOptions.filter((op) => {
     if (!nameSearch) return true
     const search = nameSearch.toLowerCase()
-    return op.searchName.includes(search) || op.displayName.toLowerCase().includes(search)
+    return op.searchName.includes(search) || op.displayName.toLowerCase().includes(search) || op.staff_no.toString().includes(nameSearch)
   })
 
   const originDestinationColor = getOriginDestinationColor(
@@ -915,7 +917,7 @@ function FlightAssignmentRow({ assignment, operatorOptions, onNameChange, onSect
           <PopoverContent className="w-[200px] p-0" align="start">
             <Command shouldFilter={false}>
               <CommandInput
-                placeholder="Search name..."
+                placeholder="Search name or ID..."
                 value={nameSearch}
                 onValueChange={setNameSearch}
               />
