@@ -80,6 +80,7 @@ export default function BCRScreen({ onBack, staffName }: BCRScreenProps) {
       handoverTakenFrom: bcr.handoverFrom || "",
       loadersName: bcr.loadersName || "",
       buildupStaff: bcr.buildupStaff || "",
+      loadersName2: bcr.loadersName2 || "",
       supervisor: bcr.supervisor || "",
     }
 

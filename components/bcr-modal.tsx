@@ -1,13 +1,17 @@
 "use client"
 
-import { useState, useRef, useEffect } from "react"
-import { X, Download, FileText, Printer, Plus, Trash2, CheckCircle, Loader2, ChevronDown } from "lucide-react"
+import { useState, useRef, useEffect, useMemo } from "react"
+import { X, Download, FileText, Printer, Plus, Trash2, CheckCircle, Loader2, ChevronDown, Check, ChevronsUpDown } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { cn } from "@/lib/utils"
 import type { LoadPlanDetail, AWBRow } from "./load-plan-types"
 import jsPDF from "jspdf"
 import html2canvas from "html2canvas"
 import { submitBCR, updateBCR } from "@/lib/bcr-storage"
 import { BCR_REASON_CODES } from "@/lib/bcr-reason-codes"
+import { getAllBuildupStaff, getSupervisors, parseStaffName, type BuildupStaff } from "@/lib/buildup-staff"
 
 // Infrastructure for future commenting/status tracking
 export type AWBStatus = "completed" | "split" | "offloaded" | "pending" | "hold" | "late"
@@ -34,6 +38,7 @@ export type BCRData = {
   handoverTakenFrom?: string
   loadersName?: string
   buildupStaff?: string
+  loadersName2?: string
   supervisor?: string
 }
 
@@ -80,6 +85,7 @@ function bcrDataHasChanges(original: BCRData, current: BCRData): boolean {
     handoverTakenFrom: original.handoverTakenFrom,
     loadersName: original.loadersName,
     buildupStaff: original.buildupStaff,
+    loadersName2: original.loadersName2,
     supervisor: original.supervisor,
   })
   const currentStr = JSON.stringify({
@@ -90,9 +96,130 @@ function bcrDataHasChanges(original: BCRData, current: BCRData): boolean {
     handoverTakenFrom: current.handoverTakenFrom,
     loadersName: current.loadersName,
     buildupStaff: current.buildupStaff,
+    loadersName2: current.loadersName2,
     supervisor: current.supervisor,
   })
   return originalStr !== currentStr
+}
+
+// Staff search dropdown component
+type StaffSearchDropdownProps = {
+  value: string
+  onChange: (value: string) => void
+  staffList: BuildupStaff[]
+  placeholder?: string
+  label?: string
+}
+
+function StaffSearchDropdown({ value, onChange, staffList, placeholder = "Select staff...", label }: StaffSearchDropdownProps) {
+  const [open, setOpen] = useState(false)
+  const [search, setSearch] = useState("")
+
+  // Parse all staff into options with display names
+  const staffOptions = useMemo(() => {
+    return staffList.map(staff => {
+      const parsed = parseStaffName(staff.name)
+      return {
+        staff_no: staff.staff_no,
+        displayName: parsed.displayName,
+        fullName: parsed.fullName,
+        searchName: parsed.searchName,
+        // Format: "Name / Number"
+        formattedValue: `${parsed.fullName} / ${staff.staff_no}`
+      }
+    })
+  }, [staffList])
+
+  // Filter staff based on search (name or staff ID)
+  const filteredStaff = useMemo(() => {
+    if (!search) return staffOptions
+    const searchLower = search.toLowerCase()
+    return staffOptions.filter(op =>
+      op.searchName.includes(searchLower) ||
+      op.displayName.toLowerCase().includes(searchLower) ||
+      op.staff_no.toString().includes(search)
+    )
+  }, [staffOptions, search])
+
+  // Find current selection
+  const currentSelection = useMemo(() => {
+    if (!value) return null
+    // Try to find by formatted value first
+    const byFormatted = staffOptions.find(op => op.formattedValue === value)
+    if (byFormatted) return byFormatted
+    // Try to find by staff_no
+    const staffNo = value.split("/").pop()?.trim()
+    if (staffNo) {
+      const byStaffNo = staffOptions.find(op => op.staff_no.toString() === staffNo)
+      if (byStaffNo) return byStaffNo
+    }
+    return null
+  }, [staffOptions, value])
+
+  return (
+    <div>
+      {label && <div className="text-xs text-gray-500 mb-1">{label}</div>}
+      <Popover
+        open={open}
+        onOpenChange={(isOpen) => {
+          setOpen(isOpen)
+          if (!isOpen) setSearch("")
+        }}
+      >
+        <PopoverTrigger asChild>
+          <Button
+            variant="outline"
+            role="combobox"
+            aria-expanded={open}
+            className="w-full justify-between text-sm font-normal h-8 px-2"
+          >
+            <span className={cn("truncate", !value && "text-gray-400")}>
+              {currentSelection ? currentSelection.formattedValue : (value || placeholder)}
+            </span>
+            <ChevronsUpDown className="ml-1 h-3 w-3 shrink-0 opacity-50" />
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent className="w-[280px] p-0" align="start">
+          <Command shouldFilter={false}>
+            <CommandInput
+              placeholder="Search by name or ID..."
+              value={search}
+              onValueChange={setSearch}
+            />
+            <CommandList>
+              {filteredStaff.length === 0 ? (
+                <CommandEmpty>No staff found.</CommandEmpty>
+              ) : (
+                <CommandGroup>
+                  {filteredStaff.map((staff) => (
+                    <CommandItem
+                      key={staff.staff_no}
+                      value={staff.staff_no.toString()}
+                      onSelect={() => {
+                        onChange(staff.formattedValue)
+                        setOpen(false)
+                        setSearch("")
+                      }}
+                    >
+                      <Check
+                        className={cn(
+                          "mr-2 h-4 w-4",
+                          currentSelection?.staff_no === staff.staff_no ? "opacity-100" : "opacity-0"
+                        )}
+                      />
+                      <div className="flex flex-col">
+                        <span className="text-sm">{staff.fullName} / {staff.staff_no}</span>
+                      </div>
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+              )}
+            </CommandList>
+          </Command>
+        </PopoverContent>
+      </Popover>
+    </div>
+  )
 }
 
 export default function BCRModal({ isOpen, onClose, loadPlan, bcrData: initialBcrData, onSubmit, isAlreadySubmitted = false, staffName }: BCRModalProps) {
@@ -105,6 +232,33 @@ export default function BCRModal({ isOpen, onClose, loadPlan, bcrData: initialBc
   const [savedBcrData, setSavedBcrData] = useState<BCRData>(initialBcrData)
   const [justSaved, setJustSaved] = useState(false)
   const pdfContentRef = useRef<HTMLDivElement>(null)
+  
+  // Staff data for dropdowns
+  const [allStaff, setAllStaff] = useState<BuildupStaff[]>([])
+  const [supervisors, setSupervisors] = useState<BuildupStaff[]>([])
+  const [isLoadingStaff, setIsLoadingStaff] = useState(true)
+
+  // Fetch staff data on mount
+  useEffect(() => {
+    async function fetchStaff() {
+      setIsLoadingStaff(true)
+      try {
+        const [staffData, supervisorData] = await Promise.all([
+          getAllBuildupStaff(),
+          getSupervisors()
+        ])
+        setAllStaff(staffData)
+        setSupervisors(supervisorData)
+      } catch (error) {
+        console.error("[BCRModal] Error fetching staff:", error)
+      } finally {
+        setIsLoadingStaff(false)
+      }
+    }
+    if (isOpen) {
+      fetchStaff()
+    }
+  }, [isOpen])
 
   // Update bcrData when initialBcrData changes (e.g., when comments are updated)
   useEffect(() => {
@@ -141,6 +295,7 @@ export default function BCRModal({ isOpen, onClose, loadPlan, bcrData: initialBc
         handoverFrom: bcrData.handoverTakenFrom || "",
         loadersName: bcrData.loadersName || "",
         buildupStaff: bcrData.buildupStaff || "",
+        loadersName2: bcrData.loadersName2 || "",
         supervisor: bcrData.supervisor || "",
         partiallyActioned: bcrData.flightPartiallyActioned,
         shipments: bcrData.shipments.map(s => ({
@@ -559,6 +714,7 @@ export default function BCRModal({ isOpen, onClose, loadPlan, bcrData: initialBc
                     <div className="text-sm font-semibold text-gray-900 border-b border-gray-900 pb-1">
                       {bcrData.handoverTakenFrom || ""}
                     </div>
+                    <div className="text-[10px] text-gray-400">(Staff Name / Number)</div>
                   </div>
                   <div>
                     <div className="text-xs text-gray-600 mb-1">Loaders Name/Number:</div>
@@ -571,12 +727,20 @@ export default function BCRModal({ isOpen, onClose, loadPlan, bcrData: initialBc
                     <div className="text-sm font-semibold text-gray-900 border-b border-gray-900 pb-1">
                       {bcrData.buildupStaff || ""}
                     </div>
+                    <div className="text-[10px] text-gray-400">(Staff Name / Number)</div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-gray-600 mb-1">Loaders Name/Number:</div>
+                    <div className="text-sm font-semibold text-gray-900 border-b border-gray-900 pb-1">
+                      {bcrData.loadersName2 || ""}
+                    </div>
                   </div>
                   <div>
                     <div className="text-xs text-gray-600 mb-1">Supervisor:</div>
                     <div className="text-sm font-semibold text-gray-900 border-b border-gray-900 pb-1">
                       {bcrData.supervisor || ""}
                     </div>
+                    <div className="text-[10px] text-gray-400">(Staff Name / Number)</div>
                   </div>
                 </div>
               </div>
@@ -949,42 +1113,47 @@ export default function BCRModal({ isOpen, onClose, loadPlan, bcrData: initialBc
             </div>
 
             <div className="grid grid-cols-2 gap-4">
-              <div>
-                <div className="text-xs text-gray-500 mb-1">Handover taken from:</div>
-                <input
-                  type="text"
-                  value={bcrData.handoverTakenFrom || ""}
-                  onChange={(e) => setBcrData((prev) => ({ ...prev, handoverTakenFrom: e.target.value }))}
-                  className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
-                />
-              </div>
+              <StaffSearchDropdown
+                label="Handover taken from:"
+                value={bcrData.handoverTakenFrom || ""}
+                onChange={(value) => setBcrData((prev) => ({ ...prev, handoverTakenFrom: value }))}
+                staffList={allStaff}
+                placeholder="(Staff Name / Number)"
+              />
               <div>
                 <div className="text-xs text-gray-500 mb-1">Loaders Name/Number:</div>
                 <input
                   type="text"
                   value={bcrData.loadersName || ""}
                   onChange={(e) => setBcrData((prev) => ({ ...prev, loadersName: e.target.value }))}
-                  className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                  className="w-full px-2 py-1 border border-gray-300 rounded text-sm h-8"
+                  placeholder=""
                 />
               </div>
+              <StaffSearchDropdown
+                label="Build-up / UWS Staff:"
+                value={bcrData.buildupStaff || ""}
+                onChange={(value) => setBcrData((prev) => ({ ...prev, buildupStaff: value }))}
+                staffList={allStaff}
+                placeholder="(Staff Name / Number)"
+              />
               <div>
-                <div className="text-xs text-gray-500 mb-1">Build-up / UWS Staff:</div>
+                <div className="text-xs text-gray-500 mb-1">Loaders Name/Number:</div>
                 <input
                   type="text"
-                  value={bcrData.buildupStaff || ""}
-                  onChange={(e) => setBcrData((prev) => ({ ...prev, buildupStaff: e.target.value }))}
-                  className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                  value={bcrData.loadersName2 || ""}
+                  onChange={(e) => setBcrData((prev) => ({ ...prev, loadersName2: e.target.value }))}
+                  className="w-full px-2 py-1 border border-gray-300 rounded text-sm h-8"
+                  placeholder=""
                 />
               </div>
-              <div>
-                <div className="text-xs text-gray-500 mb-1">Supervisor:</div>
-                <input
-                  type="text"
-                  value={bcrData.supervisor || ""}
-                  onChange={(e) => setBcrData((prev) => ({ ...prev, supervisor: e.target.value }))}
-                  className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
-                />
-              </div>
+              <StaffSearchDropdown
+                label="Supervisor:"
+                value={bcrData.supervisor || ""}
+                onChange={(value) => setBcrData((prev) => ({ ...prev, supervisor: value }))}
+                staffList={supervisors}
+                placeholder="(Staff Name / Number)"
+              />
             </div>
           </div>
         </div>
@@ -1197,6 +1366,7 @@ export function generateBCRData(
     handoverTakenFrom: staffInfo?.handoverFrom || "",
     loadersName: "",
     buildupStaff: staffInfo?.buildupStaff || "",
+    loadersName2: "",
     supervisor: "",
   }
 }

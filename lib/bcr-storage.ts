@@ -21,6 +21,7 @@ export interface BCRSubmission {
   handoverFrom: string
   loadersName: string
   buildupStaff: string
+  loadersName2?: string // Optional - will be stored in separate BCR table later
   supervisor: string
   partiallyActioned: boolean
   shipments: BCRShipment[]
@@ -43,6 +44,7 @@ export interface BCRData {
   bcrHandoverFrom: string | null
   bcrLoadersName: string | null
   bcrBuildupStaff: string | null
+  bcrLoadersName2?: string | null // Optional - will be stored in separate BCR table later
   bcrSupervisor: string | null
   bcrPartiallyActioned: boolean | null
   bcrShipments: BCRShipment[] | null
@@ -76,6 +78,7 @@ export async function submitBCR(submission: BCRSubmission): Promise<{ success: b
     const now = new Date().toISOString()
 
     // Update the load_plan with BCR data
+    // Note: loadersName2 will be stored in separate BCR table later
     const { error } = await supabase
       .from("load_plans")
       .update({
@@ -135,6 +138,7 @@ export async function getBCRData(flightNumber: string): Promise<BCRData | null> 
       bcrHandoverFrom: data.bcr_handover_from,
       bcrLoadersName: data.bcr_loaders_name,
       bcrBuildupStaff: data.bcr_buildup_staff,
+      bcrLoadersName2: null, // Will be stored in separate BCR table later
       bcrSupervisor: data.bcr_supervisor,
       bcrPartiallyActioned: data.bcr_partially_actioned,
       bcrShipments: data.bcr_shipments,
@@ -168,6 +172,7 @@ export interface SubmittedBCR {
   handoverFrom: string | null
   loadersName: string | null
   buildupStaff: string | null
+  loadersName2?: string | null // Optional - will be stored in separate BCR table later
   supervisor: string | null
   partiallyActioned: boolean | null
 }
@@ -206,6 +211,7 @@ export async function getAllSubmittedBCRs(): Promise<SubmittedBCR[]> {
       handoverFrom: row.bcr_handover_from || null,
       loadersName: row.bcr_loaders_name || null,
       buildupStaff: row.bcr_buildup_staff || null,
+      loadersName2: null, // Will be stored in separate BCR table later
       supervisor: row.bcr_supervisor || null,
       partiallyActioned: row.bcr_partially_actioned || null,
     }))
@@ -228,6 +234,7 @@ export async function updateBCR(submission: BCRSubmission): Promise<{ success: b
     const supabase = createClient()
 
     // Update the load_plan with BCR data (keep the original bcr_sent_at)
+    // Note: loadersName2 will be stored in separate BCR table later
     const { error } = await supabase
       .from("load_plans")
       .update({
