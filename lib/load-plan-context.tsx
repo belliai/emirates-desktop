@@ -25,6 +25,7 @@ export type FlightAssignment = {
   originDestination: string
   name: string
   sector: string
+  staffNo?: number // assigned_to staff_no - used for handover tracking
 }
 
 export type SentBCR = {
@@ -208,6 +209,7 @@ export function LoadPlanProvider({ children }: { children: ReactNode }) {
             originDestination,
             name: staffName.toLowerCase(),
             sector: plan.aircraft_type || "E75",
+            staffNo: plan.assigned_to || undefined, // Store staff_no for handover tracking
           }
         })
 
@@ -280,7 +282,7 @@ export function LoadPlanProvider({ children }: { children: ReactNode }) {
       
       const exists = prev.some((fa) => fa.flight === flight)
       if (exists) {
-        return prev.map((fa) => (fa.flight === flight ? { ...fa, name } : fa))
+        return prev.map((fa) => (fa.flight === flight ? { ...fa, name, staffNo: assignedToStaffNo || fa.staffNo } : fa))
       }
       // If assignment doesn't exist, find the load plan and create assignment
       const plan = loadPlans.find((p) => p.flight === flight)
@@ -293,6 +295,7 @@ export function LoadPlanProvider({ children }: { children: ReactNode }) {
             originDestination: parseOriginDestination(plan.pax),
             name,
             sector: plan.acftType || "E75",
+            staffNo: assignedToStaffNo,
           },
         ]
       }
@@ -305,6 +308,7 @@ export function LoadPlanProvider({ children }: { children: ReactNode }) {
           originDestination: "DXB-???",
           name,
           sector: "E75",
+          staffNo: assignedToStaffNo,
         },
       ]
     })
@@ -402,7 +406,7 @@ export function LoadPlanProvider({ children }: { children: ReactNode }) {
         const faFlightNum = extractFlightNum(fa.flight)
         if (faFlightNum === targetFlightNum) {
           console.log(`[LoadPlan] Clearing name for flight ${fa.flight} (was: ${fa.name})`)
-          return { ...fa, name: "" }
+          return { ...fa, name: "", staffNo: undefined }
         }
         return fa
       })

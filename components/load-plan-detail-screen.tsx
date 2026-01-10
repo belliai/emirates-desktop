@@ -22,6 +22,7 @@ import { getLoadPlanChanges, type LoadPlanChange } from "@/lib/load-plan-diff"
 import { createClient } from "@/lib/supabase/client"
 import { getAWBStatusesFromSupabase, markAWBLoaded, markAWBOffloaded, bulkMarkAWBsLoaded, type AWBStatus } from "@/lib/awb-status-storage"
 import { getAssignedStaffForFlight } from "@/lib/bcr-storage"
+import { saveHandoverInfo } from "@/lib/load-plans-supabase"
 import { useUser } from "@/lib/user-context"
 
 // Re-export types for backward compatibility
@@ -471,12 +472,20 @@ export default function LoadPlanDetailScreen({ loadPlan, onBack, onNavigateToBui
       return match ? parseInt(match[1], 10) : 0
     }
     
-    // Get the current staff name from flight assignments (use normalized comparison)
+    // Get the current staff name and staffNo from flight assignments (use normalized comparison)
     const targetFlightNum = extractFlightNum(editedPlan.flight)
     const assignment = flightAssignments.find(fa => extractFlightNum(fa.flight) === targetFlightNum)
     const staffName = assignment?.name || ""
+    const staffNo = assignment?.staffNo
     
-    console.log(`[LoadPlanDetail] handleHandover - flight: ${editedPlan.flight}, staffName: ${staffName}`)
+    console.log(`[LoadPlanDetail] handleHandover - flight: ${editedPlan.flight}, staffName: ${staffName}, staffNo: ${staffNo}`)
+    
+    // Save handover info BEFORE clearing assignment
+    // This enables "Handover taken from" field in BCR to show who handed over
+    if (staffNo && staffNo > 0) {
+      await saveHandoverInfo(editedPlan.flight, staffNo)
+      console.log(`[LoadPlanDetail] Saved handover info for ${editedPlan.flight} (handed over by staff ${staffNo})`)
+    }
     
     // Generate BCR data before sending
     const bcrData = generateBCRData(

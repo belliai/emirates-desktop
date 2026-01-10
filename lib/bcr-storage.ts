@@ -5,6 +5,7 @@
  */
 
 import { createClient } from "@/lib/supabase/client"
+import { parseStaffName } from "@/lib/buildup-staff"
 
 export interface BCRShipment {
   srNo: string
@@ -294,39 +295,41 @@ export async function getAssignedStaffForFlight(flightNumber: string): Promise<{
     let handoverFrom: string | null = null
 
     // Get current assignee name (build-up staff)
+    // Format: "Full Name / Staff Number" (e.g., "Farhan Khan / 427404")
     if (loadPlan?.assigned_to) {
       console.log(`[BCR] Found assigned_to: ${loadPlan.assigned_to}`)
       const { data: staff, error: staffError } = await supabase
         .from("buildup_staff_list")
-        .select("name")
+        .select("name, staff_no")
         .eq("staff_no", loadPlan.assigned_to)
         .single()
 
       console.log(`[BCR] Build-up staff query result:`, { staff, staffError })
 
       if (staff?.name) {
-        const nameParts = staff.name.split(",") || []
-        const firstNamePart = nameParts[1]?.trim().split(/\s+/)[0] || staff.name || ""
-        buildupStaff = firstNamePart.charAt(0).toUpperCase() + firstNamePart.slice(1).toLowerCase()
+        const parsed = parseStaffName(staff.name)
+        // Format: "Full Name / Staff Number"
+        buildupStaff = `${parsed.fullName} / ${staff.staff_no}`
         console.log(`[BCR] Build-up staff for ${flightNumber}: ${buildupStaff}`)
       }
     }
 
     // Get handover from person's name
+    // Format: "Full Name / Staff Number" (e.g., "Farhan Khan / 427404")
     if (loadPlan?.handed_over_by) {
       console.log(`[BCR] Found handed_over_by: ${loadPlan.handed_over_by}`)
       const { data: handoverStaff, error: handoverError } = await supabase
         .from("buildup_staff_list")
-        .select("name")
+        .select("name, staff_no")
         .eq("staff_no", loadPlan.handed_over_by)
         .single()
 
       console.log(`[BCR] Handover staff query result:`, { handoverStaff, handoverError })
 
       if (handoverStaff?.name) {
-        const nameParts = handoverStaff.name.split(",") || []
-        const firstNamePart = nameParts[1]?.trim().split(/\s+/)[0] || handoverStaff.name || ""
-        handoverFrom = firstNamePart.charAt(0).toUpperCase() + firstNamePart.slice(1).toLowerCase()
+        const parsed = parseStaffName(handoverStaff.name)
+        // Format: "Full Name / Staff Number"
+        handoverFrom = `${parsed.fullName} / ${handoverStaff.staff_no}`
         console.log(`[BCR] Handover from for ${flightNumber}: ${handoverFrom}`)
       }
     }
