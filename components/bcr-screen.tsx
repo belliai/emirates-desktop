@@ -5,13 +5,29 @@ import { ChevronRight, Plane, Calendar, Package, Users, Clock, Loader2 } from 'l
 import BCRModal from './bcr-modal'
 import type { BCRData, BCRShipment, BCRVolumeDifference, BCRUnitUnableToUpdate } from './bcr-modal'
 import { getAllSubmittedBCRs, updateBCR, type SubmittedBCR } from '@/lib/bcr-storage'
+import { useLoadPlans, type LoadPlan } from '@/lib/load-plan-context'
 
 interface BCRScreenProps {
   onBack?: () => void
   staffName?: string
 }
 
+// Helper to get route from load plan's pax field (same format as flights-view-screen)
+function getRouteFromLoadPlan(flightNumber: string, loadPlans: LoadPlan[]): string {
+  // Normalize flight number for comparison (EK0857 vs EK857)
+  const normalizeFlightNum = (f: string): number => {
+    const match = f.match(/EK0?(\d+)/i)
+    return match ? parseInt(match[1], 10) : 0
+  }
+  
+  const targetNum = normalizeFlightNum(flightNumber)
+  const loadPlan = loadPlans.find(p => normalizeFlightNum(p.flight) === targetNum)
+  
+  return loadPlan?.pax || '-'
+}
+
 export default function BCRScreen({ onBack, staffName }: BCRScreenProps) {
+  const { loadPlans } = useLoadPlans()
   const [submittedBCRs, setSubmittedBCRs] = useState<SubmittedBCR[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [selectedBCR, setSelectedBCR] = useState<SubmittedBCR | null>(null)
@@ -124,7 +140,7 @@ export default function BCRScreen({ onBack, staffName }: BCRScreenProps) {
                   <th className="px-2 py-1 text-left font-semibold text-xs">
                     <div className="flex items-center gap-2">
                       <Package className="w-4 h-4 flex-shrink-0" />
-                      <span className="whitespace-nowrap">ACFT TYPE</span>
+                      <span className="whitespace-nowrap">Route</span>
                     </div>
                   </th>
                   <th className="px-2 py-1 text-left font-semibold text-xs">
@@ -160,7 +176,7 @@ export default function BCRScreen({ onBack, staffName }: BCRScreenProps) {
                   </tr>
                 ) : (
                   submittedBCRs.map((bcr, index) => (
-                    <BCRRow key={`${bcr.flightNumber}-${index}`} bcr={bcr} onClick={() => handleRowClick(bcr)} />
+                    <BCRRow key={`${bcr.flightNumber}-${index}`} bcr={bcr} loadPlans={loadPlans} onClick={() => handleRowClick(bcr)} />
                   ))
                 )}
               </tbody>
@@ -187,10 +203,11 @@ export default function BCRScreen({ onBack, staffName }: BCRScreenProps) {
 
 interface BCRRowProps {
   bcr: SubmittedBCR
+  loadPlans: LoadPlan[]
   onClick: () => void
 }
 
-function BCRRow({ bcr, onClick }: BCRRowProps) {
+function BCRRow({ bcr, loadPlans, onClick }: BCRRowProps) {
   const formatDate = (dateString: string) => {
     try {
       const date = new Date(dateString)
@@ -233,7 +250,7 @@ function BCRRow({ bcr, onClick }: BCRRowProps) {
         {formatFlightDate(bcr.flightDate)}
       </td>
       <td className="px-2 py-1 text-gray-900 text-xs whitespace-nowrap truncate">
-        {bcr.acftType || '-'}
+        {getRouteFromLoadPlan(bcr.flightNumber, loadPlans)}
       </td>
       <td className="px-2 py-1 text-gray-900 text-xs whitespace-nowrap truncate">
         {bcr.sentBy || '-'}
